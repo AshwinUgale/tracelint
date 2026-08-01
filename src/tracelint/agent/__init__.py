@@ -13,6 +13,7 @@ from tracelint.agent.demo import (
     build_demo_toolset,
     run_demo,
     run_ignored_error_demo,
+    run_loop_demo,
 )
 from tracelint.agent.react import LLM, FinalAnswer, Proposal, ReActAgent, ToolInvocation
 from tracelint.agent.scripted import ScriptedLLM, final, tool
@@ -33,5 +34,6 @@ __all__ = [
     "build_demo_toolset",
     "run_demo",
     "run_ignored_error_demo",
+    "run_loop_demo",
     "DEMO_TASK",
 ]

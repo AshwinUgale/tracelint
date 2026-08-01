@@ -10,6 +10,7 @@ from __future__ import annotations
 from tracelint.rules.base import Rule, lint_trace
 from tracelint.rules.error_handling import ErrorHandlingRule, ToolErrorEventRule
 from tracelint.rules.hallucination import HallucinatedArgRule
+from tracelint.rules.loops import LoopRule, RedundantCallRule
 from tracelint.rules.schema_violation import SchemaViolationRule
 
 # Every implemented rule class, in run order. Each phase appends here.
@@ -18,6 +19,8 @@ _RULE_CLASSES: list[type[Rule]] = [
     ToolErrorEventRule,
     ErrorHandlingRule,
     HallucinatedArgRule,
+    LoopRule,
+    RedundantCallRule,
 ]
 
 
@@ -51,6 +54,8 @@ __all__ = [
     "ToolErrorEventRule",
     "ErrorHandlingRule",
     "HallucinatedArgRule",
+    "LoopRule",
+    "RedundantCallRule",
     "default_rules",
     "select_rules",
     "rule_ids",

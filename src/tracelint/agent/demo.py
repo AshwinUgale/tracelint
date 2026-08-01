@@ -121,3 +121,24 @@ def run_ignored_error_demo() -> tuple[Trace, AgentToolset]:
     )
     trace = agent.run("Cancel order 0000.", run_id="demo-ignored-error")
     return trace, toolset
+
+
+def _loop_script() -> list:
+    # The agent repeatedly looks up a missing order (each a 404), never changing tack — a stuck
+    # loop with no change in result state.
+    return [
+        tool("get_order_status", {"order_id": "0000"}),
+        tool("get_order_status", {"order_id": "0000"}),
+        tool("get_order_status", {"order_id": "0000"}),
+        final("I couldn't find the order."),
+    ]
+
+
+def run_loop_demo() -> tuple[Trace, AgentToolset]:
+    """Run a scenario where the agent loops on the same failing call."""
+    toolset = build_demo_toolset()
+    agent = ReActAgent(
+        ScriptedLLM(_loop_script()), toolset, system="You are an order-support agent."
+    )
+    trace = agent.run("Check order 0000.", run_id="demo-loop")
+    return trace, toolset

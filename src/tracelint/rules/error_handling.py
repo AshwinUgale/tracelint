@@ -30,6 +30,8 @@ from typing import Any
 
 from tracelint.findings import ConfidenceTier, Finding
 from tracelint.rules.base import Rule
+from tracelint.signatures import is_structured_error as _is_structured_error
+from tracelint.signatures import looks_empty as _looks_empty
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ResultStatus, ToolResult, Trace
 from tracelint.valueutil import significant_values as _significant_values
@@ -40,24 +42,6 @@ _EXCEPTION_RE = re.compile(
     r"http\s*[45]\d\d|\berrno\b",
     re.IGNORECASE,
 )
-_EMPTY_TEXT_RE = re.compile(r"^\s*(no results?|not found|none found|0 results?)\s*$", re.IGNORECASE)
-
-
-def _is_structured_error(result: ToolResult) -> bool:
-    """True iff the result carries an unambiguous, structured error signal."""
-    if result.status is ResultStatus.ERROR:
-        return True
-    if result.http_status is not None and result.http_status >= 400:
-        return True
-    return result.error is not None
-
-
-def _looks_empty(content: Any) -> bool:
-    if content is None:
-        return True
-    if isinstance(content, (str, list, tuple, dict)) and len(content) == 0:
-        return True
-    return bool(isinstance(content, str) and _EMPTY_TEXT_RE.match(content))
 
 
 def _exception_marker(content: Any) -> str | None:

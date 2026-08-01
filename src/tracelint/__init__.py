@@ -34,6 +34,8 @@ from tracelint.findings import ConfidenceTier, Finding, LintReport
 from tracelint.rules import (
     ErrorHandlingRule,
     HallucinatedArgRule,
+    LoopRule,
+    RedundantCallRule,
     Rule,
     SchemaViolationRule,
     ToolErrorEventRule,
@@ -60,7 +62,7 @@ __all__ = [
     "Finding", "ConfidenceTier", "LintReport",
     # Rules
     "Rule", "lint_trace", "SchemaViolationRule", "ToolErrorEventRule", "ErrorHandlingRule",
-    "HallucinatedArgRule", "default_rules",
+    "HallucinatedArgRule", "LoopRule", "RedundantCallRule", "default_rules",
     # Provenance
     "build_provenance", "ProvenanceGraph", "SourceType",
     # Adapters
