@@ -20,7 +20,7 @@ import json
 import sys
 from collections.abc import Sequence
 
-from tracelint.findings import EXIT_HARD_DEFECT, EXIT_INPUT_ERROR, EXIT_OK
+from tracelint.findings import EXIT_GATE, EXIT_HARD_DEFECT, EXIT_INPUT_ERROR, EXIT_OK
 from tracelint.report import render_report, reports_to_dict, write_json
 from tracelint.rules import lint_trace, rule_ids, select_rules
 from tracelint.tools import ToolRegistry
@@ -49,6 +49,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"subset of rules to run (default: all — {', '.join(rule_ids())})",
     )
     check.add_argument("--json", dest="json_out", metavar="OUT", help="write findings as JSON")
+    check.add_argument("--html", dest="html_out", metavar="OUT", help="write an HTML report")
     check.add_argument(
         "--include-candidates",
         action="store_true",
@@ -56,6 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check.add_argument("--quiet", action="store_true", help="suppress the text report")
     check.set_defaults(func=_cmd_check)
+
+    demo = sub.add_parser("demo", help="run the keyless validation suite + recovery scorecard")
+    demo.add_argument("--html", dest="html_out", metavar="OUT", help="write an HTML report")
+    demo.add_argument("--runs", type=int, default=3, help="scorecard runs per fault (default 3)")
+    demo.set_defaults(func=_cmd_demo)
 
     sc = sub.add_parser(
         "scorecard", help="measure per-fault recovery on the built-in demo task"
@@ -93,12 +99,56 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     if args.json_out:
         write_json(args.json_out, reports_to_dict(reports))
+    if args.html_out:
+        from tracelint.report import render_html, write_html
+
+        write_html(args.html_out, render_html(title="tracelint report", reports=reports))
 
     if not args.quiet:
         for report in reports:
             print(render_report(report, include_candidates=args.include_candidates))
 
     return EXIT_HARD_DEFECT if any(r.has_hard_defect for r in reports) else EXIT_OK
+
+
+def _cmd_demo(args: argparse.Namespace) -> int:
+    from tracelint.agent import build_recovery_task
+    from tracelint.injection import FaultType
+    from tracelint.report import render_html, write_html
+    from tracelint.rules import default_rules
+    from tracelint.scorecard import render_scorecard, run_scorecard
+    from tracelint.validation import validation_cases
+
+    results = []
+    all_ok = True
+    for case in validation_cases():
+        report = lint_trace(case.trace, default_rules(), case.registry)
+        ok = case.check(report)
+        all_ok = all_ok and ok
+        results.append((case, report, ok))
+
+    faults = [FaultType.TIMEOUT, FaultType.ERROR, FaultType.RATE_LIMIT]
+    runs = max(1, args.runs)
+    scorecards = [
+        run_scorecard(build_recovery_task(buggy=False), faults, runs=runs),
+        run_scorecard(build_recovery_task(buggy=True), faults, runs=runs),
+    ]
+
+    passed = sum(1 for *_r, ok in results if ok)
+    print(f"validation: {passed}/{len(results)} cases behaved as expected")
+    for case, _report, ok in results:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {case.name} - {case.expectation}")
+    print()
+    for sc in scorecards:
+        print(render_scorecard(sc))
+        print()
+
+    if args.html_out:
+        html = render_html(title="tracelint demo", validation=results, scorecards=scorecards)
+        write_html(args.html_out, html)
+        print(f"wrote {args.html_out}")
+
+    return EXIT_OK if all_ok else EXIT_GATE
 
 
 def _cmd_scorecard(args: argparse.Namespace) -> int:

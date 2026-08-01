@@ -80,7 +80,14 @@ from tracelint.scorecard import (
 from tracelint.adapters import from_openai_messages, openai_tools_to_registry
 
 # --- Reporting ----------------------------------------------------------------------
-from tracelint.report import read_json, render_report, render_reports, write_json
+from tracelint.report import (
+    read_json,
+    render_html,
+    render_report,
+    render_reports,
+    write_html,
+    write_json,
+)
 
 __all__ = [
     # Trace schema
@@ -105,7 +112,7 @@ __all__ = [
     # Adapters
     "from_openai_messages", "openai_tools_to_registry",
     # Reporting
-    "render_report", "render_reports", "write_json", "read_json",
+    "render_report", "render_reports", "render_html", "write_json", "write_html", "read_json",
 ]
 
 __version__ = "0.1.0"

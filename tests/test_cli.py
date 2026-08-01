@@ -117,3 +117,28 @@ def test_scorecard_demo_buggy_shows_low_recovery(capsys):
 
 def test_scorecard_unknown_fault_is_input_error():
     assert main(["scorecard", "--demo", "--faults", "meltdown"]) == 3
+
+
+def test_demo_runs_validation_and_scorecard(capsys):
+    code = main(["demo", "--runs", "1"])
+    assert code == 0  # all validation cases behave as expected → clean self-check
+    out = capsys.readouterr().out
+    assert "cases behaved as expected" in out
+    assert "FAIL" not in out  # every planted defect recovered, every control silent
+    assert "recovery scorecard" in out
+
+
+def test_demo_writes_html(tmp_path):
+    out = tmp_path / "demo.html"
+    code = main(["demo", "--runs", "1", "--html", str(out)])
+    assert code == 0
+    assert out.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_check_writes_html(tmp_path):
+    trace, toolset = _planted_trace()
+    tp = _write_trace(tmp_path, trace)
+    tt = _write_tools(tmp_path, toolset)
+    out = tmp_path / "report.html"
+    main(["check", tp, "--tools", tt, "--html", str(out), "--quiet"])
+    assert "hard_defect" in out.read_text(encoding="utf-8")
