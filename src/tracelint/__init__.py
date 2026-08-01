@@ -36,6 +36,9 @@ from tracelint.rules import Rule, SchemaViolationRule, default_rules, lint_trace
 # --- Adapters -----------------------------------------------------------------------
 from tracelint.adapters import from_openai_messages, openai_tools_to_registry
 
+# --- Reporting ----------------------------------------------------------------------
+from tracelint.report import read_json, render_report, render_reports, write_json
+
 __all__ = [
     # Trace schema
     "Trace", "Step", "Message", "ToolCall", "ToolResult", "StepMeta",
@@ -48,6 +51,8 @@ __all__ = [
     "Rule", "lint_trace", "SchemaViolationRule", "default_rules",
     # Adapters
     "from_openai_messages", "openai_tools_to_registry",
+    # Reporting
+    "render_report", "render_reports", "write_json", "read_json",
 ]
 
 __version__ = "0.1.0"

@@ -108,6 +108,7 @@ class Finding:
 EXIT_OK = 0
 EXIT_GATE = 1  # reserved: a configured gate (e.g. --fail-on candidate) was tripped.
 EXIT_HARD_DEFECT = 2
+EXIT_INPUT_ERROR = 3  # bad/missing trace or tools file, unknown rule, malformed JSON.
 
 
 @dataclass
