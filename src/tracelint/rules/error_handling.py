@@ -26,13 +26,13 @@ Without tool metadata, R2b cannot reach the hard tier — no ground truth, no ha
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
 from typing import Any
 
 from tracelint.findings import ConfidenceTier, Finding
 from tracelint.rules.base import Rule
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ResultStatus, ToolResult, Trace
+from tracelint.valueutil import significant_values as _significant_values
 
 # Heuristic markers for an exception-like string in a free-form (unknown-status) result.
 _EXCEPTION_RE = re.compile(
@@ -66,36 +66,6 @@ def _exception_marker(content: Any) -> str | None:
         if m:
             return m.group(0)
     return None
-
-
-def _iter_scalars(obj: Any) -> Iterator[Any]:
-    if isinstance(obj, bool):
-        return
-    if isinstance(obj, (int, float, str)):
-        yield obj
-    elif isinstance(obj, dict):
-        for v in obj.values():
-            yield from _iter_scalars(v)
-    elif isinstance(obj, (list, tuple)):
-        for v in obj:
-            yield from _iter_scalars(v)
-
-
-def _significant_values(obj: Any) -> set[str]:
-    """Normalized scalar values worth tracking across steps (ids, amounts, tokens).
-
-    Trivial values (short strings, tiny numbers) are excluded so a coincidental match on ``"ok"``
-    or ``0`` cannot ground a defect. Numbers and their string forms both normalize to ``str``.
-    """
-    out: set[str] = set()
-    for s in _iter_scalars(obj):
-        if isinstance(s, str):
-            t = s.strip()
-            if len(t) >= 4:
-                out.add(t)
-        elif abs(s) >= 100:
-            out.add(str(s))
-    return out
 
 
 class ToolErrorEventRule(Rule):

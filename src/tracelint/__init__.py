@@ -33,12 +33,16 @@ from tracelint.findings import ConfidenceTier, Finding, LintReport
 # --- Rules + driver -----------------------------------------------------------------
 from tracelint.rules import (
     ErrorHandlingRule,
+    HallucinatedArgRule,
     Rule,
     SchemaViolationRule,
     ToolErrorEventRule,
     default_rules,
     lint_trace,
 )
+
+# --- Provenance ---------------------------------------------------------------------
+from tracelint.provenance import ProvenanceGraph, SourceType, build_provenance
 
 # --- Adapters -----------------------------------------------------------------------
 from tracelint.adapters import from_openai_messages, openai_tools_to_registry
@@ -56,7 +60,9 @@ __all__ = [
     "Finding", "ConfidenceTier", "LintReport",
     # Rules
     "Rule", "lint_trace", "SchemaViolationRule", "ToolErrorEventRule", "ErrorHandlingRule",
-    "default_rules",
+    "HallucinatedArgRule", "default_rules",
+    # Provenance
+    "build_provenance", "ProvenanceGraph", "SourceType",
     # Adapters
     "from_openai_messages", "openai_tools_to_registry",
     # Reporting

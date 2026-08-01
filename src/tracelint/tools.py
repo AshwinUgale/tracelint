@@ -59,6 +59,14 @@ class ToolSpec:
     schema_version: str | None = None
     value_origins: dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Populate x-value-origin annotations from the schema when not passed explicitly, so a
+        # directly-constructed ToolSpec behaves the same as one loaded via from_dict.
+        if not self.value_origins:
+            origins = _extract_value_origins(self.schema, None)
+            if origins:
+                object.__setattr__(self, "value_origins", origins)
+
     @classmethod
     def from_dict(cls, name: str, data: dict[str, Any]) -> ToolSpec:
         schema = data.get("schema") or data.get("input_schema") or data.get("parameters")
