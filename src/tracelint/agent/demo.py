@@ -100,3 +100,24 @@ def run_demo() -> tuple[Trace, AgentToolset]:
     )
     trace = agent.run(DEMO_TASK, run_id="demo-clean")
     return trace, toolset
+
+
+def _ignored_error_script() -> list:
+    # The agent looks up an order that does not exist (404), ignores the error, tries to cancel it
+    # (another 404), and still claims success — the "proceeded on a failed call" story.
+    return [
+        tool("get_order_status", {"order_id": "0000"}, thought="Check the order first."),
+        tool("cancel_order", {"order_id": "0000", "reason": "customer_request"},
+             thought="Go ahead and cancel it."),
+        final("Done — I've cancelled your order."),
+    ]
+
+
+def run_ignored_error_demo() -> tuple[Trace, AgentToolset]:
+    """Run a scenario where the agent ignores tool errors and falsely claims success."""
+    toolset = build_demo_toolset()
+    agent = ReActAgent(
+        ScriptedLLM(_ignored_error_script()), toolset, system="You are an order-support agent."
+    )
+    trace = agent.run("Cancel order 0000.", run_id="demo-ignored-error")
+    return trace, toolset

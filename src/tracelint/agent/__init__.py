@@ -8,7 +8,12 @@ the real backend. See ``PROJECTS-TECHNICAL-SPEC.md`` §II.1 and learning-doc 01.
 
 from __future__ import annotations
 
-from tracelint.agent.demo import DEMO_TASK, build_demo_toolset, run_demo
+from tracelint.agent.demo import (
+    DEMO_TASK,
+    build_demo_toolset,
+    run_demo,
+    run_ignored_error_demo,
+)
 from tracelint.agent.react import LLM, FinalAnswer, Proposal, ReActAgent, ToolInvocation
 from tracelint.agent.scripted import ScriptedLLM, final, tool
 from tracelint.agent.tools import AgentTool, AgentToolset, ToolError
@@ -27,5 +32,6 @@ __all__ = [
     "ToolError",
     "build_demo_toolset",
     "run_demo",
+    "run_ignored_error_demo",
     "DEMO_TASK",
 ]

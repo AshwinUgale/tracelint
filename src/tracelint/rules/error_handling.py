@@ -1,0 +1,244 @@
+"""R2 — Tool error handling (spec §II.5, R2; deep-design Trap 3).
+
+Detecting an error is deterministic; detecting that the agent *mishandled* it usually is not, so
+R2 is split into two rules with different confidence semantics:
+
+**R2a — a tool returned an error** (``finding_type: tool_error_event``). Tiered by *how* the error
+is expressed (Trap 3 — "what counts as an error is partly tool-specific"):
+  - ``hard_event`` for **structured** signals only: an explicit ``status="error"``, an
+    ``http_status >= 400``, or a structured ``error`` field. These are unambiguous.
+  - ``candidate`` for **heuristics** on an otherwise-``unknown`` result: an exception-like string
+    in free-form content (a search/docs tool may legitimately return text containing "Exception"),
+    or an empty result. Flagged with ``possible_false_positive`` because they are not certain.
+  R2a reports that an error *happened*; it is never a defect by itself, so it never fails CI.
+
+**R2b — the error was improperly consumed / ignored** (``finding_type: error_mishandled``).
+  - ``hard_defect`` (structurally provable): a value from a **structured-errored** result is reused
+    as an argument to a later **side-effecting** tool call (metadata) — the agent fed data from a
+    failed call into a real-world action with no fallback (the spec's ``send_itinerary`` case).
+  - ``candidate`` otherwise: the same consumption into a non-side-effecting tool (could be
+    legitimate error forwarding/logging), or a structured error the agent never retried before
+    proceeding (judging whether a natural-language reply "acknowledged" it is not deterministic).
+
+Without tool metadata, R2b cannot reach the hard tier — no ground truth, no hard verdict.
+"""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Iterator
+from typing import Any
+
+from tracelint.findings import ConfidenceTier, Finding
+from tracelint.rules.base import Rule
+from tracelint.tools import ToolRegistry
+from tracelint.trace import ResultStatus, ToolResult, Trace
+
+# Heuristic markers for an exception-like string in a free-form (unknown-status) result.
+_EXCEPTION_RE = re.compile(
+    r"traceback \(most recent call last\)|\bexception\b|\b[A-Za-z]*Error\b|"
+    r"http\s*[45]\d\d|\berrno\b",
+    re.IGNORECASE,
+)
+_EMPTY_TEXT_RE = re.compile(r"^\s*(no results?|not found|none found|0 results?)\s*$", re.IGNORECASE)
+
+
+def _is_structured_error(result: ToolResult) -> bool:
+    """True iff the result carries an unambiguous, structured error signal."""
+    if result.status is ResultStatus.ERROR:
+        return True
+    if result.http_status is not None and result.http_status >= 400:
+        return True
+    return result.error is not None
+
+
+def _looks_empty(content: Any) -> bool:
+    if content is None:
+        return True
+    if isinstance(content, (str, list, tuple, dict)) and len(content) == 0:
+        return True
+    return bool(isinstance(content, str) and _EMPTY_TEXT_RE.match(content))
+
+
+def _exception_marker(content: Any) -> str | None:
+    if isinstance(content, str):
+        m = _EXCEPTION_RE.search(content)
+        if m:
+            return m.group(0)
+    return None
+
+
+def _iter_scalars(obj: Any) -> Iterator[Any]:
+    if isinstance(obj, bool):
+        return
+    if isinstance(obj, (int, float, str)):
+        yield obj
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            yield from _iter_scalars(v)
+    elif isinstance(obj, (list, tuple)):
+        for v in obj:
+            yield from _iter_scalars(v)
+
+
+def _significant_values(obj: Any) -> set[str]:
+    """Normalized scalar values worth tracking across steps (ids, amounts, tokens).
+
+    Trivial values (short strings, tiny numbers) are excluded so a coincidental match on ``"ok"``
+    or ``0`` cannot ground a defect. Numbers and their string forms both normalize to ``str``.
+    """
+    out: set[str] = set()
+    for s in _iter_scalars(obj):
+        if isinstance(s, str):
+            t = s.strip()
+            if len(t) >= 4:
+                out.add(t)
+        elif abs(s) >= 100:
+            out.add(str(s))
+    return out
+
+
+class ToolErrorEventRule(Rule):
+    """R2a: a tool returned an error (structured → hard_event, heuristic → candidate)."""
+
+    id = "R2a"
+    finding_type = "tool_error_event"
+
+    def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
+        if not trace.tool_results():
+            return "trace has no tool results"
+        return None
+
+    def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
+        findings: list[Finding] = []
+        for result in trace.tool_results():
+            call = trace.call_for(result)
+            tool = call.name if call else "?"
+            if _is_structured_error(result):
+                findings.append(self._hard(result, tool))
+                continue
+            # Heuristics only on an unknown-status result — trust an explicit OK.
+            if result.status is ResultStatus.OK:
+                continue
+            marker = _exception_marker(result.content)
+            if marker is not None:
+                findings.append(self._candidate(result, tool, "exception_text", marker))
+            elif _looks_empty(result.content):
+                findings.append(self._candidate(result, tool, "empty_result", ""))
+        return findings
+
+    def _hard(self, result: ToolResult, tool: str) -> Finding:
+        detail = (
+            f"http {result.http_status}"
+            if result.http_status is not None
+            else (result.error or "status=error")
+        )
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.HARD_EVENT,
+            summary=f"{tool!r} returned an error ({detail})",
+            evidence={
+                "step_indices": [result.index],
+                "tool": tool,
+                "signal": "structured",
+                "http_status": result.http_status,
+                "error": result.error,
+            },
+        )
+
+    def _candidate(self, result: ToolResult, tool: str, signal: str, marker: str) -> Finding:
+        why = (
+            f"content matches an exception-like pattern ({marker!r})"
+            if signal == "exception_text"
+            else "result is empty"
+        )
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.CANDIDATE,
+            summary=f"{tool!r} result may be an error — {why}",
+            evidence={"step_indices": [result.index], "tool": tool, "signal": signal},
+            possible_false_positive=True,
+        )
+
+
+class ErrorHandlingRule(Rule):
+    """R2b: a structured error consumed by / ignored before a later action."""
+
+    id = "R2b"
+    finding_type = "error_mishandled"
+
+    def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
+        if not trace.tool_results():
+            return "trace has no tool results"
+        return None
+
+    def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
+        findings: list[Finding] = []
+        calls = trace.tool_calls()
+        for result in trace.tool_results():
+            if not _is_structured_error(result):
+                continue
+            errored_call = trace.call_for(result)
+            err_vals = _significant_values(result.content) | _significant_values(result.error or "")
+
+            consumer = None
+            consumed: set[str] = set()
+            for call in calls:
+                if call.index <= result.index:
+                    continue
+                common = err_vals & _significant_values(call.args)
+                if common:
+                    consumer, consumed = call, common
+                    break
+
+            if consumer is not None:
+                findings.append(
+                    self._consumption(result, errored_call, consumer, consumed, registry)
+                )
+                continue
+
+            # Not consumed — was the failing tool retried afterwards? If not, it may be ignored.
+            failing = errored_call.name if errored_call else None
+            retried = any(c.name == failing and c.index > result.index for c in calls)
+            if not retried:
+                findings.append(self._unhandled(result, failing))
+        return findings
+
+    def _consumption(self, result, errored_call, consumer, consumed, registry) -> Finding:
+        meta = registry.metadata_for(consumer.name)
+        is_side_effecting = bool(meta and meta.side_effecting)
+        errored_tool = errored_call.name if errored_call else "?"
+        values = ", ".join(sorted(consumed))
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.HARD_DEFECT if is_side_effecting else ConfidenceTier.CANDIDATE,
+            summary=(
+                f"value(s) from the errored {errored_tool!r} result ({values}) reused as arguments "
+                f"to {consumer.name!r}"
+                + (" (a side-effecting action, no fallback)" if is_side_effecting else "")
+            ),
+            evidence={
+                "step_indices": [result.index, consumer.index],
+                "errored_tool": errored_tool,
+                "consumer": consumer.name,
+                "consumed_values": sorted(consumed),
+                "side_effecting": is_side_effecting,
+            },
+            possible_false_positive=not is_side_effecting,
+        )
+
+    def _unhandled(self, result, failing) -> Finding:
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.CANDIDATE,
+            summary=(
+                f"{failing!r} returned a structured error that was not retried before the agent "
+                "proceeded (acknowledgement cannot be verified deterministically)"
+            ),
+            evidence={"step_indices": [result.index], "tool": failing, "signal": "not_retried"},
+            possible_false_positive=True,
+        )
