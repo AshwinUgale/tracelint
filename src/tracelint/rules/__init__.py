@@ -8,5 +8,12 @@ redundant call) arrive in later phases and register here.
 from __future__ import annotations
 
 from tracelint.rules.base import Rule, lint_trace
+from tracelint.rules.schema_violation import SchemaViolationRule
 
-__all__ = ["Rule", "lint_trace"]
+
+def default_rules() -> list[Rule]:
+    """The rules run by ``tracelint check`` when no subset is named. Grows each phase."""
+    return [SchemaViolationRule()]
+
+
+__all__ = ["Rule", "lint_trace", "SchemaViolationRule", "default_rules"]

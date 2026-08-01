@@ -31,7 +31,10 @@ from tracelint.tools import ToolMetadata, ToolRegistry, ToolSpec
 from tracelint.findings import ConfidenceTier, Finding, LintReport
 
 # --- Rules + driver -----------------------------------------------------------------
-from tracelint.rules import Rule, lint_trace
+from tracelint.rules import Rule, SchemaViolationRule, default_rules, lint_trace
+
+# --- Adapters -----------------------------------------------------------------------
+from tracelint.adapters import from_openai_messages, openai_tools_to_registry
 
 __all__ = [
     # Trace schema
@@ -42,7 +45,9 @@ __all__ = [
     # Findings
     "Finding", "ConfidenceTier", "LintReport",
     # Rules
-    "Rule", "lint_trace",
+    "Rule", "lint_trace", "SchemaViolationRule", "default_rules",
+    # Adapters
+    "from_openai_messages", "openai_tools_to_registry",
 ]
 
 __version__ = "0.1.0"
