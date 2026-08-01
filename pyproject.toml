@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tracelint"
+version = "0.1.0"
+description = "Deterministic, judge-free static analyzer for tool-calling agent execution traces."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Ashwin Ugale" }]
+keywords = [
+    "agents", "llm", "tool-calling", "traces", "static-analysis",
+    "linter", "observability", "reliability",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+]
+
+# Light core: jsonschema + stdlib only. Heavy integrations live behind extras.
+dependencies = [
+    "jsonschema>=4.0",
+]
+
+[project.optional-dependencies]
+# A real OpenAI ReAct agent used to *generate* traces to lint (the system under test,
+# never part of the deterministic linter). Opt-in; the whole test/validation path is offline.
+real-agent = ["openai>=1.0"]
+# Everything needed to run the full test suite.
+dev = [
+    "pytest>=7",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+tracelint = "tracelint.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/AshwinUgale/tracelint"
+Repository = "https://github.com/AshwinUgale/tracelint"
+Issues = "https://github.com/AshwinUgale/tracelint/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tracelint"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# Run the suite from a source checkout without an editable install.
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
