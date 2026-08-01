@@ -46,6 +46,22 @@ from tracelint.rules import (
 # --- Provenance ---------------------------------------------------------------------
 from tracelint.provenance import ProvenanceGraph, SourceType, build_provenance
 
+# --- Reliability: fault injection, statistics, nondeterminism -----------------------
+from tracelint.injection import (
+    FaultInjector,
+    FaultType,
+    RandomInjection,
+    TargetedInjection,
+    apply_fault,
+)
+from tracelint.stats import bootstrap_mean_ci, wilson_interval
+from tracelint.nondeterminism import (
+    FindingReproduction,
+    ReproductionReport,
+    aggregate_runs,
+    lint_runs,
+)
+
 # --- Adapters -----------------------------------------------------------------------
 from tracelint.adapters import from_openai_messages, openai_tools_to_registry
 
@@ -65,6 +81,10 @@ __all__ = [
     "HallucinatedArgRule", "LoopRule", "RedundantCallRule", "default_rules",
     # Provenance
     "build_provenance", "ProvenanceGraph", "SourceType",
+    # Reliability
+    "FaultInjector", "FaultType", "TargetedInjection", "RandomInjection", "apply_fault",
+    "wilson_interval", "bootstrap_mean_ci",
+    "aggregate_runs", "lint_runs", "ReproductionReport", "FindingReproduction",
     # Adapters
     "from_openai_messages", "openai_tools_to_registry",
     # Reporting

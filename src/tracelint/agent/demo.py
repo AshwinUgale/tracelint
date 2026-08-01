@@ -142,3 +142,21 @@ def run_loop_demo() -> tuple[Trace, AgentToolset]:
     )
     trace = agent.run("Check order 0000.", run_id="demo-loop")
     return trace, toolset
+
+
+def run_faulted_demo(fault: Any = None, *, seed: int = 0) -> tuple[Trace, AgentToolset]:
+    """Run the clean scenario but inject a fault on the first ``get_order_status`` call.
+
+    The scripted agent then proceeds as if the lookup had succeeded — the injected error is exactly
+    the kind of failure the linter should surface. ``fault`` defaults to a hard error (HTTP 500).
+    """
+    from tracelint.injection import FaultInjector, FaultType, TargetedInjection
+
+    fault = fault or FaultType.ERROR
+    toolset = build_demo_toolset()
+    injector = FaultInjector(toolset, TargetedInjection(fault, tool="get_order_status"), seed=seed)
+    agent = ReActAgent(
+        ScriptedLLM(_clean_script()), injector, system="You are an order-support agent."
+    )
+    trace = agent.run(DEMO_TASK, run_id="demo-faulted")
+    return trace, toolset

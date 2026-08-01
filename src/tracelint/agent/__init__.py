@@ -12,6 +12,7 @@ from tracelint.agent.demo import (
     DEMO_TASK,
     build_demo_toolset,
     run_demo,
+    run_faulted_demo,
     run_ignored_error_demo,
     run_loop_demo,
 )
@@ -35,5 +36,6 @@ __all__ = [
     "run_demo",
     "run_ignored_error_demo",
     "run_loop_demo",
+    "run_faulted_demo",
     "DEMO_TASK",
 ]
