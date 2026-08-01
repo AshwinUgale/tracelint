@@ -11,13 +11,14 @@ from __future__ import annotations
 from tracelint.agent.demo import (
     DEMO_TASK,
     build_demo_toolset,
+    build_recovery_task,
     run_demo,
     run_faulted_demo,
     run_ignored_error_demo,
     run_loop_demo,
 )
 from tracelint.agent.react import LLM, FinalAnswer, Proposal, ReActAgent, ToolInvocation
-from tracelint.agent.scripted import ScriptedLLM, final, tool
+from tracelint.agent.scripted import PolicyLLM, ScriptedLLM, final, tool
 from tracelint.agent.tools import AgentTool, AgentToolset, ToolError
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "ToolInvocation",
     "FinalAnswer",
     "ScriptedLLM",
+    "PolicyLLM",
     "tool",
     "final",
     "AgentTool",
@@ -37,5 +39,6 @@ __all__ = [
     "run_ignored_error_demo",
     "run_loop_demo",
     "run_faulted_demo",
+    "build_recovery_task",
     "DEMO_TASK",
 ]

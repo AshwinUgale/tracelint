@@ -99,3 +99,21 @@ def test_check_rules_subset_selects_r1(tmp_path):
     tp = _write_trace(tmp_path, trace)
     tt = _write_tools(tmp_path, toolset)
     assert main(["check", tp, "--tools", tt, "--rules", "R1", "--quiet"]) == 2
+
+
+def test_scorecard_demo_robust(capsys):
+    code = main(["scorecard", "--demo", "--faults", "error", "--runs", "2"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "recovery scorecard" in out and "correctness recovery" in out
+    assert "error" in out
+
+
+def test_scorecard_demo_buggy_shows_low_recovery(capsys):
+    main(["scorecard", "--demo", "--buggy", "--faults", "error"])
+    out = capsys.readouterr().out
+    assert "0/1" in out or "rate=0.00" in out
+
+
+def test_scorecard_unknown_fault_is_input_error():
+    assert main(["scorecard", "--demo", "--faults", "meltdown"]) == 3

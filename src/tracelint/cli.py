@@ -56,6 +56,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check.add_argument("--quiet", action="store_true", help="suppress the text report")
     check.set_defaults(func=_cmd_check)
+
+    sc = sub.add_parser(
+        "scorecard", help="measure per-fault recovery on the built-in demo task"
+    )
+    sc.add_argument(
+        "--demo", action="store_true", help="run the built-in order-cancellation recovery task"
+    )
+    sc.add_argument(
+        "--buggy", action="store_true", help="use the error-ignoring agent (for contrast)"
+    )
+    sc.add_argument(
+        "--faults", type=_csv, metavar="timeout,error,...",
+        help="fault types to inject (default: timeout,error,rate_limit)",
+    )
+    sc.add_argument("--runs", type=int, default=1, help="runs per fault (default 1)")
+    sc.set_defaults(func=_cmd_scorecard)
     return parser
 
 
@@ -83,6 +99,23 @@ def _cmd_check(args: argparse.Namespace) -> int:
             print(render_report(report, include_candidates=args.include_candidates))
 
     return EXIT_HARD_DEFECT if any(r.has_hard_defect for r in reports) else EXIT_OK
+
+
+def _cmd_scorecard(args: argparse.Namespace) -> int:
+    if not args.demo:
+        raise ValueError(
+            "scorecard currently supports only --demo (external agents are future work)"
+        )
+    from tracelint.agent import build_recovery_task
+    from tracelint.injection import FaultType
+    from tracelint.scorecard import render_scorecard, run_scorecard
+
+    fault_names = args.faults or ["timeout", "error", "rate_limit"]
+    faults = [FaultType(name) for name in fault_names]  # ValueError → exit 3 on a bad name
+    task = build_recovery_task(buggy=args.buggy)
+    scorecard = run_scorecard(task, faults, runs=max(1, args.runs))
+    print(render_scorecard(scorecard))
+    return EXIT_OK
 
 
 def main(argv: Sequence[str] | None = None) -> int:

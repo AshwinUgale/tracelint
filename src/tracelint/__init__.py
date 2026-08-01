@@ -62,6 +62,20 @@ from tracelint.nondeterminism import (
     lint_runs,
 )
 
+# --- Recovery scorecard -------------------------------------------------------------
+from tracelint.scorecard import (
+    FaultRecovery,
+    Scorecard,
+    Task,
+    all_of,
+    final_answer_contains,
+    final_answer_not_claims,
+    render_scorecard,
+    run_scorecard,
+    state_check,
+    tool_called,
+)
+
 # --- Adapters -----------------------------------------------------------------------
 from tracelint.adapters import from_openai_messages, openai_tools_to_registry
 
@@ -85,6 +99,9 @@ __all__ = [
     "FaultInjector", "FaultType", "TargetedInjection", "RandomInjection", "apply_fault",
     "wilson_interval", "bootstrap_mean_ci",
     "aggregate_runs", "lint_runs", "ReproductionReport", "FindingReproduction",
+    # Scorecard
+    "Task", "Scorecard", "FaultRecovery", "run_scorecard", "render_scorecard",
+    "tool_called", "final_answer_contains", "final_answer_not_claims", "state_check", "all_of",
     # Adapters
     "from_openai_messages", "openai_tools_to_registry",
     # Reporting

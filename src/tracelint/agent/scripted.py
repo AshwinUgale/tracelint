@@ -7,10 +7,26 @@ a schema-violating call, an ignored error, a loop) with no model, no network, an
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from tracelint.agent.react import FinalAnswer, Proposal, ToolInvocation
 from tracelint.trace import Step
+
+
+class PolicyLLM:
+    """A deterministic *reactive* backend: a policy function of the steps so far → a proposal.
+
+    Unlike :class:`ScriptedLLM` (which replays a fixed sequence), a policy can branch on what it
+    observed — e.g. stop safely when a tool returned an error — which is what makes recovery
+    behaviour measurable without a real, nondeterministic model.
+    """
+
+    def __init__(self, policy: Callable[[list[Step]], Proposal]) -> None:
+        self.policy = policy
+
+    def propose(self, steps: list[Step], tools: list[dict[str, Any]]) -> Proposal:
+        return self.policy(steps)
 
 
 class ScriptedLLM:
