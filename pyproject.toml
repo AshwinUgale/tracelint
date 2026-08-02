@@ -55,8 +55,9 @@ packages = ["src/tracelint"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-# Run the suite from a source checkout without an editable install.
-pythonpath = ["src"]
+# Run the suite from a source checkout without an editable install. "." puts the repo root on
+# the path so tests can import the runnable `examples/` package.
+pythonpath = ["src", "."]
 
 [tool.ruff]
 line-length = 100
