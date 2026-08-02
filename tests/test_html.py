@@ -21,9 +21,13 @@ def _report():
 def test_html_is_self_contained():
     html = render_html(title="t", reports=[_report()])
     assert html.startswith("<!doctype html>")
-    # No external resources or scripts.
-    assert "http://" not in html and "https://" not in html
-    assert "<script" not in html.lower()
+    # No external resources are LOADED (a plain hyperlink to the repo is fine).
+    lower = html.lower()
+    assert "<script" not in lower
+    assert "<link " not in lower
+    assert "src=" not in lower
+    assert "@import" not in lower
+    assert "url(http" not in lower
     assert "<style>" in html  # CSS is inlined
 
 
