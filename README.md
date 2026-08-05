@@ -92,8 +92,11 @@ A trace is a JSON object (`.json`, or `.jsonl` for many):
 }
 ```
 
-An OpenAI adapter (`tracelint.adapters.from_openai_messages`) normalizes OpenAI chat message lists
-into this schema; more adapters are future work.
+Adapters normalize provider/framework formats into this schema: `from_openai_messages` (OpenAI
+chat message lists) and `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's
+observations — native `tool` observations, span-based tools, or OpenAI-style `tool_calls` in
+generations). See `examples/langfuse_cookbook.py` to lint the traces you already collect in
+Langfuse and write findings back as scores. More adapters are future work.
 
 ## Recovery scorecard
 

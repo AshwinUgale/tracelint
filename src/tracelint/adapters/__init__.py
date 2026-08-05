@@ -8,6 +8,12 @@ built-in ReAct agent emits; more adapters (Anthropic, OpenInference/OTel spans) 
 
 from __future__ import annotations
 
+from tracelint.adapters.langfuse import from_langfuse_trace, observed_tool_names
 from tracelint.adapters.openai import from_openai_messages, openai_tools_to_registry
 
-__all__ = ["from_openai_messages", "openai_tools_to_registry"]
+__all__ = [
+    "from_openai_messages",
+    "openai_tools_to_registry",
+    "from_langfuse_trace",
+    "observed_tool_names",
+]
