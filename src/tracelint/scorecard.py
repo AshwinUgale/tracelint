@@ -55,6 +55,7 @@ class Task:
 
 # --- Oracle builders (deterministic; no judge) -----------------------------------------
 
+
 def tool_called(name: str, args: dict | None = None) -> Oracle:
     """The run called ``name`` (optionally with arguments matching ``args``)."""
 
@@ -95,6 +96,7 @@ def all_of(*oracles: Oracle) -> Oracle:
 
 
 # --- Results ---------------------------------------------------------------------------
+
 
 @dataclass
 class FaultRecovery:

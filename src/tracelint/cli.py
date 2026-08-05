@@ -63,9 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     demo.add_argument("--runs", type=int, default=3, help="scorecard runs per fault (default 3)")
     demo.set_defaults(func=_cmd_demo)
 
-    sc = sub.add_parser(
-        "scorecard", help="measure per-fault recovery on the built-in demo task"
-    )
+    sc = sub.add_parser("scorecard", help="measure per-fault recovery on the built-in demo task")
     sc.add_argument(
         "--demo", action="store_true", help="run the built-in order-cancellation recovery task"
     )
@@ -73,7 +71,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--buggy", action="store_true", help="use the error-ignoring agent (for contrast)"
     )
     sc.add_argument(
-        "--faults", type=_csv, metavar="timeout,error,...",
+        "--faults",
+        type=_csv,
+        metavar="timeout,error,...",
         help="fault types to inject (default: timeout,error,rate_limit)",
     )
     sc.add_argument("--runs", type=int, default=1, help="runs per fault (default 1)")

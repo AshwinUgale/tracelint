@@ -222,6 +222,40 @@ def test_observed_tool_names_lists_recognized_tools():
     ]
 
 
+def test_real_v4_positional_args_and_snake_case_error():
+    # Shapes verified against a real Langfuse v4 fetched trace: @observe records positional args
+    # as {"args": [{...}], "kwargs": {}}, and the error text is snake_case `status_message`.
+    obs = {
+        "id": "o1",
+        "type": "TOOL",
+        "name": "lookup_order",
+        "input": {"args": [{"order_id": "Z999"}], "kwargs": {}},
+        "output": None,
+        "level": "ERROR",
+        "status_message": "order not found",
+    }
+    trace = from_langfuse_trace({"id": "t", "observations": [obs]})
+    call = trace.tool_calls()[0]
+    assert call.args == {"order_id": "Z999"}  # unwrapped from args[0], not the empty kwargs
+    result = trace.result_for(call)
+    assert result.status is ResultStatus.ERROR
+    assert result.error == "order not found"  # read from snake_case status_message
+
+
+def test_real_v4_observe_root_input_seeds_user_message():
+    # The @observe root span's input is {"args": [task], "kwargs": {}}; the task must become the
+    # user turn (so provenance/R3 sees what the user asked).
+    trace = from_langfuse_trace(
+        {
+            "id": "t",
+            "input": {"args": ["Refund order Z999."], "kwargs": {}},
+            "observations": [],
+        }
+    )
+    users = [s for s in trace.steps if isinstance(s, Message) and s.role is Role.USER]
+    assert users and users[0].content == "Refund order Z999."
+
+
 def test_end_to_end_schema_violation_from_langfuse_trace():
     registry = ToolRegistry.from_dict(
         {

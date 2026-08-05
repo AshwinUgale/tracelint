@@ -63,11 +63,20 @@ def _as_dict(trace: Any) -> dict[str, Any]:
 
 def _unwrap_kwargs(d: dict[str, Any]) -> dict[str, Any]:
     """Langfuse ``@observe`` records a wrapped function's inputs as ``{"args": [...],
-    "kwargs": {...}}``. When exactly that shape is present, the tool's real arguments live in
-    ``kwargs`` — unwrap them. Bounded to that exact shape so nothing else is second-guessed.
+    "kwargs": {...}}``. The tool's real arguments live in ``kwargs`` (keyword call) or, when the
+    tool is called positionally with a single dict (``func({...})``), in ``args[0]`` — verified
+    against a real v4 trace where the arg dict landed in ``args[0]`` with an empty ``kwargs``.
+    Bounded to that exact shape so nothing else is second-guessed.
     """
-    if set(d.keys()) <= {"args", "kwargs"} and isinstance(d.get("kwargs"), dict):
-        return dict(d["kwargs"])
+    if set(d.keys()) <= {"args", "kwargs"}:
+        kwargs = d.get("kwargs")
+        if isinstance(kwargs, dict) and kwargs:
+            return dict(kwargs)
+        args = d.get("args")
+        if isinstance(args, list) and len(args) == 1 and isinstance(args[0], dict):
+            return dict(args[0])
+        if isinstance(kwargs, dict):
+            return dict(kwargs)
     return d
 
 
@@ -123,6 +132,8 @@ def _is_tool_observation(obs: dict[str, Any], known_names: set[str]) -> bool:
 def _result_signals(obs: dict[str, Any]) -> tuple[ResultStatus, str | None, int | None]:
     """Extract ``(status, error, http_status)`` from a tool obs — structured signals only."""
     level = str(obs.get("level") or "").upper()
+    # The fetched SDK shape is snake_case (status_message); the public API is camelCase.
+    status_message = obs.get("statusMessage") or obs.get("status_message")
     out = obs.get("output")
     error: str | None = None
     http: int | None = None
@@ -137,11 +148,11 @@ def _result_signals(obs: dict[str, Any]) -> tuple[ResultStatus, str | None, int 
             status_field = out["status"]
 
     if level == "ERROR":
-        return ResultStatus.ERROR, error or (obs.get("statusMessage") or None), http
+        return ResultStatus.ERROR, error or (status_message or None), http
     if error is not None:
         return ResultStatus.ERROR, error, http
     if isinstance(http, int) and http >= 400:
-        return ResultStatus.ERROR, obs.get("statusMessage"), http
+        return ResultStatus.ERROR, status_message, http
     if status_field is not None:
         parsed = ResultStatus.parse(status_field)
         if parsed is not ResultStatus.UNKNOWN:
@@ -190,6 +201,14 @@ def _seed_messages(trace_input: Any) -> list[Step]:
         return [Message(Role.USER, trace_input)] if trace_input else []
     if isinstance(trace_input, dict) and isinstance(trace_input.get("messages"), list):
         return _seed_messages(trace_input["messages"])
+    # @observe root captures the entry function's call as {"args": [task], "kwargs": {...}};
+    # surface the string task as the user turn so provenance (R3) sees what the user asked.
+    if isinstance(trace_input, dict) and set(trace_input.keys()) <= {"args", "kwargs"}:
+        values = list(trace_input.get("args") or [])
+        kwargs = trace_input.get("kwargs")
+        if isinstance(kwargs, dict):
+            values += list(kwargs.values())
+        return [Message(Role.USER, v) for v in values if isinstance(v, str) and v]
     steps: list[Step] = []
     if isinstance(trace_input, list):
         for m in trace_input:

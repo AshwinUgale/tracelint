@@ -16,6 +16,7 @@ from tracelint.rules import default_rules, lint_trace
 
 # --- a stub OpenAI client that returns scripted chat-completions responses -------------
 
+
 def _tool_call(cid, name, arguments):
     return SimpleNamespace(id=cid, function=SimpleNamespace(name=name, arguments=arguments))
 
@@ -49,14 +50,16 @@ def test_clean_real_run_lints_clean():
     script = [
         _resp(tool_calls=[_tool_call("c1", "lookup_order", '{"order_id": "A100"}')]),
         _resp(tool_calls=[_tool_call("c2", "check_refund_eligibility", '{"order_id": "A100"}')]),
-        _resp(tool_calls=[
-            _tool_call("c3", "issue_refund", '{"order_id": "A100", "amount": 49.99}')
-        ]),
+        _resp(
+            tool_calls=[_tool_call("c3", "issue_refund", '{"order_id": "A100", "amount": 49.99}')]
+        ),
         _resp(content="Refunded $49.99 for order A100."),
     ]
     trace, toolset = run_with_llm(_llm(script), "Refund my order A100 for the full amount.")
     assert [c.name for c in trace.tool_calls()] == [
-        "lookup_order", "check_refund_eligibility", "issue_refund"
+        "lookup_order",
+        "check_refund_eligibility",
+        "issue_refund",
     ]
     report = lint_trace(trace, default_rules(), toolset.to_registry())
     assert report.exit_code == 0  # amount 49.99 came from the lookup → derivable, no R3
@@ -66,9 +69,9 @@ def test_invented_refund_amount_is_a_hard_defect():
     # The model issues a refund for an amount that appears nowhere (the schema marks it 'provided').
     script = [
         _resp(tool_calls=[_tool_call("c1", "lookup_order", '{"order_id": "A100"}')]),
-        _resp(tool_calls=[
-            _tool_call("c2", "issue_refund", '{"order_id": "A100", "amount": 999.99}')
-        ]),
+        _resp(
+            tool_calls=[_tool_call("c2", "issue_refund", '{"order_id": "A100", "amount": 999.99}')]
+        ),
         _resp(content="Refunded."),
     ]
     trace, toolset = run_with_llm(_llm(script), "Refund order A100.")

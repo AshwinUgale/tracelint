@@ -24,6 +24,7 @@ def _r2b(steps, registry=None):
 
 # --- R2a: event detection --------------------------------------------------------------
 
+
 def test_structured_status_error_is_hard_event():
     steps = [
         ToolCall("c1", "reserve", {}),
@@ -84,6 +85,7 @@ def test_r2a_suppressed_without_results():
 
 
 # --- R2b: mishandling ------------------------------------------------------------------
+
 
 def _side_effecting_registry() -> ToolRegistry:
     return ToolRegistry(

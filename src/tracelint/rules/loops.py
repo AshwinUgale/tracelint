@@ -76,11 +76,15 @@ class LoopRule(Rule):
         while i < n:
             j = i
             sig = (infos[i].call.name, infos[i].args_key, infos[i].rclass)
-            while j + 1 < n and (
-                infos[j + 1].call.name,
-                infos[j + 1].args_key,
-                infos[j + 1].rclass,
-            ) == sig:
+            while (
+                j + 1 < n
+                and (
+                    infos[j + 1].call.name,
+                    infos[j + 1].args_key,
+                    infos[j + 1].rclass,
+                )
+                == sig
+            ):
                 j += 1
             run_len = j - i + 1
             if run_len >= LOOP_THRESHOLD and not self._is_legit_poll(infos, i, j, registry):

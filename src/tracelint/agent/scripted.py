@@ -45,8 +45,13 @@ class ScriptedLLM:
         return proposal
 
 
-def tool(name: str, args: dict[str, Any] | None = None, *, call_id: str | None = None,
-         thought: str | None = None) -> ToolInvocation:
+def tool(
+    name: str,
+    args: dict[str, Any] | None = None,
+    *,
+    call_id: str | None = None,
+    thought: str | None = None,
+) -> ToolInvocation:
     """Terse helper for building scripts: ``tool("cancel_order", {"order_id": "4521"})``."""
     return ToolInvocation(name=name, args=args or {}, call_id=call_id, thought=thought)
 

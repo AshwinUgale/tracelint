@@ -29,8 +29,16 @@ WAITING_STATES = {"pending", "in_progress", "queued", "running", "processing", "
 
 # Argument keys that vary run-to-run and must not make two identical calls look different.
 VOLATILE_ARG_KEYS = {
-    "timestamp", "ts", "time", "request_id", "requestid", "nonce",
-    "idempotency_key", "trace_id", "traceid", "span_id",
+    "timestamp",
+    "ts",
+    "time",
+    "request_id",
+    "requestid",
+    "nonce",
+    "idempotency_key",
+    "trace_id",
+    "traceid",
+    "span_id",
 }
 
 _EMPTY_TEXT_RE = re.compile(r"^\s*(no results?|not found|none found|0 results?)\s*$", re.IGNORECASE)
