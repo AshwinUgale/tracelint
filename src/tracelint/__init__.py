@@ -77,7 +77,12 @@ from tracelint.scorecard import (
 )
 
 # --- Adapters -----------------------------------------------------------------------
-from tracelint.adapters import from_openai_messages, openai_tools_to_registry
+from tracelint.adapters import (
+    from_langfuse_trace,
+    from_openai_messages,
+    observed_tool_names,
+    openai_tools_to_registry,
+)
 
 # --- Reporting ----------------------------------------------------------------------
 from tracelint.report import (
@@ -111,6 +116,7 @@ __all__ = [
     "tool_called", "final_answer_contains", "final_answer_not_claims", "state_check", "all_of",
     # Adapters
     "from_openai_messages", "openai_tools_to_registry",
+    "from_langfuse_trace", "observed_tool_names",
     # Reporting
     "render_report", "render_reports", "render_html", "write_json", "write_html", "read_json",
 ]
