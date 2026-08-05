@@ -45,3 +45,21 @@ python examples/langfuse_cookbook.py --trace-id <id> --tools-file tools.json --p
 Bring your tool JSON schemas as a `tools.json` (`ToolRegistry`) — that is what R1 validates
 against and what upgrades R3 to a hard defect; Langfuse traces rarely carry schemas themselves.
 The offline path is exercised by `tests/test_langfuse_cookbook_example.py` with no key.
+
+## `langfuse_generate_and_lint.py` — validate the adapter on a *real* Langfuse trace
+
+The strongest check: a real GPT model drives the refund agent, the Langfuse SDK captures the run
+(generations via the OpenAI drop-in, tool executions as observations) exactly as it would for any
+app, and tracelint reads that real trace back — no hand-built fixture. It also **dumps the raw
+fetched trace** so the adapter can be validated against the actual bytes Langfuse returns.
+
+```bash
+pip install "tracelint[real-agent,langfuse]"
+export OPENAI_API_KEY=sk-...
+export LANGFUSE_PUBLIC_KEY=pk-...   # and LANGFUSE_SECRET_KEY (LANGFUSE_HOST if self-hosted)
+python examples/langfuse_generate_and_lint.py --task "Refund order Z999." --dump real_trace.json
+```
+
+Cost is negligible (free Langfuse tier + a few cents of gpt-4o-mini). The instrumentation logic is
+tested offline with a fake client in `tests/test_langfuse_generate_example.py`; it targets the
+Langfuse Python SDK v3+.

@@ -77,9 +77,7 @@ def test_json_round_trip_preserves_structure():
     restored = Trace.from_json(trace.to_json())
     assert restored.run_id == trace.run_id
     assert restored.final == trace.final
-    assert [type(s).__name__ for s in restored.steps] == [
-        type(s).__name__ for s in trace.steps
-    ]
+    assert [type(s).__name__ for s in restored.steps] == [type(s).__name__ for s in trace.steps]
     call = restored.tool_calls()[1]
     assert call.name == "cancel_order" and call.args == {"order_id": "4521"}
 

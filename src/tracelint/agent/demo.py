@@ -86,8 +86,11 @@ DEMO_TASK = "Cancel order 4521 if it hasn't shipped yet."
 def _clean_script() -> list:
     return [
         tool("get_order_status", {"order_id": "4521"}, thought="First, check whether it shipped."),
-        tool("cancel_order", {"order_id": "4521", "reason": "not_shipped"},
-             thought="It hasn't shipped, so cancel it."),
+        tool(
+            "cancel_order",
+            {"order_id": "4521", "reason": "not_shipped"},
+            thought="It hasn't shipped, so cancel it.",
+        ),
         final("Order 4521 has not shipped, so I've cancelled it (cancellation pending)."),
     ]
 
@@ -107,8 +110,11 @@ def _ignored_error_script() -> list:
     # (another 404), and still claims success — the "proceeded on a failed call" story.
     return [
         tool("get_order_status", {"order_id": "0000"}, thought="Check the order first."),
-        tool("cancel_order", {"order_id": "0000", "reason": "customer_request"},
-             thought="Go ahead and cancel it."),
+        tool(
+            "cancel_order",
+            {"order_id": "0000", "reason": "customer_request"},
+            thought="Go ahead and cancel it.",
+        ),
         final("Done — I've cancelled your order."),
     ]
 

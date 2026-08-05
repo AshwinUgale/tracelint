@@ -37,9 +37,7 @@ def test_baseline_that_fails_the_oracle_blocks_measurement():
     task = Task(
         name="broken",
         build_toolset=build_demo_toolset,
-        build_agent=lambda ts: ReActAgent(
-            PolicyLLM(lambda steps: final("done")), ts
-        ),
+        build_agent=lambda ts: ReActAgent(PolicyLLM(lambda steps: final("done")), ts),
         task_text="do nothing",
         oracle=tool_called("a_tool_never_called"),
     )
@@ -57,9 +55,11 @@ def test_behavioral_mode_when_no_oracle_is_labeled_weaker():
         build_toolset=build_demo_toolset,
         build_agent=lambda ts: ReActAgent(
             PolicyLLM(
-                lambda steps: tool("get_order_status", {"order_id": "4521"})
-                if not [s for s in steps if getattr(s, "name", None) == "get_order_status"]
-                else final("Order cancelled.")
+                lambda steps: (
+                    tool("get_order_status", {"order_id": "4521"})
+                    if not [s for s in steps if getattr(s, "name", None) == "get_order_status"]
+                    else final("Order cancelled.")
+                )
             ),
             ts,
         ),
@@ -77,9 +77,11 @@ def test_oracle_builders():
     trace_ctx = RunContext(
         trace=ReActAgent(
             PolicyLLM(
-                lambda steps: tool("cancel_order", {"order_id": "4521", "reason": "not_shipped"})
-                if not [s for s in steps if getattr(s, "name", None) == "cancel_order"]
-                else final("All set — nothing pending.")
+                lambda steps: (
+                    tool("cancel_order", {"order_id": "4521", "reason": "not_shipped"})
+                    if not [s for s in steps if getattr(s, "name", None) == "cancel_order"]
+                    else final("All set — nothing pending.")
+                )
             ),
             toolset,
         ).run("t"),

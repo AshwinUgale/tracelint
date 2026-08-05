@@ -10,8 +10,11 @@ def _report():
         "run-1",
         [
             Finding(
-                "R1", "schema_violation", ConfidenceTier.HARD_DEFECT,
-                "bad call", evidence={"step_indices": [1]},
+                "R1",
+                "schema_violation",
+                ConfidenceTier.HARD_DEFECT,
+                "bad call",
+                evidence={"step_indices": [1]},
             ),
             Finding.suppressed("R3", "hallucinated_arg", "no schema"),
         ],

@@ -28,6 +28,7 @@ def _call_result(cid, name, args, content, status=ResultStatus.OK):
 
 # --- R4: loops -------------------------------------------------------------------------
 
+
 def test_three_identical_noprogress_calls_is_a_loop():
     steps = []
     for i in range(3):
@@ -81,6 +82,7 @@ def test_r4_suppressed_below_threshold():
 
 # --- R5: redundant calls ---------------------------------------------------------------
 
+
 def test_repeated_identical_call_with_work_between_is_redundant():
     steps = _call_result("c0", "get_profile", {"user": 9}, {"name": "A"})
     steps += _call_result("c1", "get_settings", {"user": 9}, {"theme": "dark"})
@@ -120,6 +122,7 @@ def test_r5_suppressed_with_one_call():
 
 
 # --- end to end ------------------------------------------------------------------------
+
 
 def test_end_to_end_loop_demo():
     from tracelint.agent import run_loop_demo

@@ -169,11 +169,15 @@ code{background:var(--surface2);padding:.08rem .38rem;border-radius:5px;font-siz
 
 _TIER_META = {
     ConfidenceTier.HARD_DEFECT: (
-        "hard_defect", "--defect", "structurally-provable defect; fails CI"
+        "hard_defect",
+        "--defect",
+        "structurally-provable defect; fails CI",
     ),
     ConfidenceTier.HARD_EVENT: ("hard_event", "--event", "a real event (e.g. a tool error)"),
     ConfidenceTier.CANDIDATE: (
-        "candidate", "--cand", "heuristic signal for review; never fails CI"
+        "candidate",
+        "--cand",
+        "heuristic signal for review; never fails CI",
     ),
 }
 
@@ -246,8 +250,10 @@ def _hero(title, validation, scorecards, reports) -> str:
                 continue
             avg = sum(r.rate for r in sc.results) / len(sc.results)
             good = "good" if avg >= 0.5 else "bad"
-            label = "robust agent recovery" if "robust" in sc.task else (
-                "buggy agent recovery" if "buggy" in sc.task else f"{_esc(sc.task)} recovery"
+            label = (
+                "robust agent recovery"
+                if "robust" in sc.task
+                else ("buggy agent recovery" if "buggy" in sc.task else f"{_esc(sc.task)} recovery")
             )
             tiles.append(_tile(f"{avg * 100:.0f}%", label, good))
     if reports is not None and validation is None:
@@ -279,9 +285,7 @@ def _validation_section(validation: list[tuple]) -> str:
     rows = []
     for case, report, ok in validation:
         verdict = (
-            '<span class="verdict ok">PASS</span>'
-            if ok
-            else '<span class="verdict no">FAIL</span>'
+            '<span class="verdict ok">PASS</span>' if ok else '<span class="verdict no">FAIL</span>'
         )
         rows.append(
             f"<tr><td>{verdict}</td>"

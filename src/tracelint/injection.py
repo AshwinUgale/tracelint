@@ -58,7 +58,10 @@ def apply_fault(fault: FaultType, call: ToolCall, original: ToolResult | None = 
         return ToolResult(cid, "request timed out", status=ResultStatus.ERROR, error="timeout")
     if fault is FaultType.ERROR:
         return ToolResult(
-            cid, "internal server error", status=ResultStatus.ERROR, error="server_error",
+            cid,
+            "internal server error",
+            status=ResultStatus.ERROR,
+            error="server_error",
             http_status=500,
         )
     if fault is FaultType.RATE_LIMIT:

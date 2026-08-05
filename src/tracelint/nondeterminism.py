@@ -28,9 +28,7 @@ _VOLATILE_EVIDENCE = {"step_indices", "call_id", "consumed_values"}
 def finding_key(finding: Finding) -> str:
     """A stable, position-independent identity for matching a finding across runs."""
     evidence = {k: v for k, v in finding.evidence.items() if k not in _VOLATILE_EVIDENCE}
-    return json.dumps(
-        [finding.rule, finding.finding_type, evidence], sort_keys=True, default=str
-    )
+    return json.dumps([finding.rule, finding.finding_type, evidence], sort_keys=True, default=str)
 
 
 @dataclass
