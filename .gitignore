@@ -21,3 +21,5 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+
+real_trace.json

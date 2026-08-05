@@ -144,7 +144,16 @@ def _cmd_demo(args: argparse.Namespace) -> int:
         print()
 
     if args.html_out:
-        html = render_html(title="tracelint demo", validation=results, scorecards=scorecards)
+        from tracelint.agent.demo import run_ignored_error_demo
+
+        wtrace, wtools = run_ignored_error_demo()
+        wreport = lint_trace(wtrace, default_rules(), wtools.to_registry())
+        html = render_html(
+            title="tracelint demo",
+            validation=results,
+            scorecards=scorecards,
+            worked=[(wtrace, wreport)],
+        )
         write_html(args.html_out, html)
         print(f"wrote {args.html_out}")
 

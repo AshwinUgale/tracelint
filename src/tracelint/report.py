@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from tracelint.findings import ConfidenceTier, Finding, LintReport
+from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult
 
 
 def _location(finding: Finding) -> str:
@@ -99,11 +100,11 @@ _CSS = """
     --track:#242938; --shadow:none;
   }
 }
-*{box-sizing:border-box;} html{-webkit-text-size-adjust:100%;} body{margin:0;}
-.wrap{max-width:1000px;margin:0 auto;padding:2.5rem 1.25rem 5rem;
+*{box-sizing:border-box;} html{-webkit-text-size-adjust:100%;}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);
   font:15px/1.6 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
-    Helvetica,Arial,sans-serif;
-  background:var(--bg);color:var(--fg);}
+    Helvetica,Arial,sans-serif;}
+.wrap{max-width:1000px;margin:0 auto;padding:2.5rem 1.25rem 5rem;}
 a{color:var(--accent);text-decoration:none;} a:hover{text-decoration:underline;}
 .hero{margin-bottom:2rem;}
 .wordmark{display:inline-flex;align-items:center;gap:.55rem;font-weight:800;font-size:1.7rem;
@@ -165,6 +166,30 @@ code{background:var(--surface2);padding:.08rem .38rem;border-radius:5px;font-siz
 .ci{color:var(--muted);font-size:.72rem;font-weight:400;}
 .footer{margin-top:3rem;padding-top:1.25rem;border-top:1px solid var(--line);color:var(--muted);
   font-size:.82rem;}
+.explain{display:grid;grid-template-columns:1.35fr 1fr;gap:1rem;margin:.3rem 0 0;}
+@media(max-width:760px){.explain{grid-template-columns:1fr;}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:1.1rem 1.2rem;}
+.panel h3{margin:0 0 .55rem;font-size:.9rem;}
+.rule{display:grid;grid-template-columns:2.7rem 1fr auto;gap:.15rem .6rem;
+  padding:.5rem 0;border-top:1px solid var(--line);align-items:baseline;}
+.rule:first-of-type{border-top:none;padding-top:.1rem;}
+.rule .rid{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-weight:700;font-size:.82rem;}
+.rule .rd{font-size:.86rem;} .rule .rd b{font-weight:650;}
+.rule .rd span{color:var(--muted);}
+.tierrow{padding:.5rem 0;border-top:1px solid var(--line);}
+.tierrow:first-of-type{border-top:none;padding-top:.1rem;}
+.tierrow .td{color:var(--muted);font-size:.85rem;margin-top:.25rem;}
+.tl{list-style:none;padding:0;margin:.15rem 0 0;}
+.tl li{display:grid;grid-template-columns:5.2rem 1fr;gap:.7rem;padding:.32rem 0;
+  align-items:baseline;border-top:1px dashed var(--line);}
+.tl li:first-child{border-top:none;}
+.tl .lm{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.72rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.03em;}
+.tl .lc{font-size:.88rem;} .tl .lc.err{color:var(--defect);} .tl .lc.good{color:var(--cand);}
+.task{color:var(--muted);font-size:.85rem;margin:0 0 .7rem;}
+.task b{color:var(--fg);font-weight:600;}
 """
 
 _TIER_META = {
@@ -206,15 +231,170 @@ def _legend() -> str:
     return f'<div class="legend">{keys}</div>'
 
 
+_RULES = (
+    (
+        "R1",
+        "Schema violation",
+        "a tool call's arguments don't match the tool's JSON Schema",
+        ConfidenceTier.HARD_DEFECT,
+    ),
+    (
+        "R2a",
+        "Tool error",
+        "a tool returned a structured error (e.g. HTTP status >= 400)",
+        ConfidenceTier.HARD_EVENT,
+    ),
+    (
+        "R2b",
+        "Error consumed",
+        "a value from an errored result is reused by a later side-effecting call",
+        ConfidenceTier.HARD_DEFECT,
+    ),
+    (
+        "R3",
+        "Hallucinated argument",
+        "an argument value isn't derivable from anything in the trace",
+        ConfidenceTier.CANDIDATE,
+    ),
+    (
+        "R4",
+        "Loop",
+        "the same call repeats with no progress (retries and polls excluded)",
+        ConfidenceTier.CANDIDATE,
+    ),
+    (
+        "R5",
+        "Redundant call",
+        "an identical call and result with no state change between",
+        ConfidenceTier.CANDIDATE,
+    ),
+    (
+        "R6",
+        "Malformed arguments",
+        "the emitted tool-call arguments aren't valid JSON",
+        ConfidenceTier.HARD_DEFECT,
+    ),
+    (
+        "R7",
+        "Unknown tool",
+        "a tool was called that isn't in the declared toolset",
+        ConfidenceTier.CANDIDATE,
+    ),
+)
+
+_TIERS = (
+    (ConfidenceTier.HARD_DEFECT, "Structurally provable from the trace itself. Fails CI (exit 2)."),
+    (
+        ConfidenceTier.HARD_EVENT,
+        "A real, observed event (e.g. a tool returned an error). Reported; does not fail CI.",
+    ),
+    (
+        ConfidenceTier.CANDIDATE,
+        "A heuristic signal shown with its evidence for review. Never fails CI on its own.",
+    ),
+)
+
+
+def _explainer() -> str:
+    rules = "".join(
+        f"<div class='rule'><span class='rid'>{_esc(rid)}</span>"
+        f"<span class='rd'><b>{_esc(name)}</b> <span>&mdash; {_esc(desc)}</span></span>"
+        f"{_chip(tier, tier.value)}</div>"
+        for rid, name, desc, tier in _RULES
+    )
+    tiers = "".join(
+        f"<div class='tierrow'>{_chip(tier, tier.value)}<div class='td'>{_esc(desc)}</div></div>"
+        for tier, desc in _TIERS
+    )
+    return (
+        "<h2>What tracelint checks</h2>"
+        "<p class='section-note'>tracelint reads a finished agent trace and flags "
+        "<b>structural</b> defects, each with the exact step as evidence &mdash; no second model "
+        "judges the trace. Every finding carries a confidence tier that decides whether it fails "
+        "CI.</p>"
+        "<div class='explain'>"
+        f"<div class='panel'><h3>Eight deterministic rules</h3>{rules}</div>"
+        f"<div class='panel'><h3>Three confidence tiers</h3>{tiers}"
+        "<p class='td' style='margin-top:.7rem'>In the tables below, the <b>Findings</b> column "
+        "shows the rules that fired (coloured chips) plus how many checks were <i>suppressed</i> "
+        "because the trace lacked a field they needed &mdash; a suppression is never a clean "
+        "pass.</p></div>"
+        "</div>"
+    )
+
+
+def _step_line(step: object) -> str:
+    if isinstance(step, Message):
+        return (
+            f"<li><span class='lm'>{_esc(step.role.value)}</span>"
+            f"<span class='lc'>{_esc(step.content or '')}</span></li>"
+        )
+    if isinstance(step, ToolCall):
+        args = ", ".join(f"{k}={v!r}" for k, v in (step.args or {}).items())
+        return (
+            "<li><span class='lm'>tool &rarr;</span>"
+            f"<span class='lc'><code>{_esc(step.name)}</code>({_esc(args)})</span></li>"
+        )
+    if isinstance(step, ToolResult):
+        is_err = step.status is ResultStatus.ERROR
+        cls = "err" if is_err else ("good" if step.status is ResultStatus.OK else "")
+        detail = step.error or step.content
+        return (
+            f"<li><span class='lm'>{'error' if is_err else 'result'}</span>"
+            f"<span class='lc {cls}'>{_esc(str(detail))}</span></li>"
+        )
+    return ""
+
+
+def _worked_section(examples: list[tuple]) -> str:
+    blocks = [
+        "<h2>Worked example &mdash; a real agent run</h2>",
+        "<p class='section-note'>One agent trajectory linted end to end: the steps the agent "
+        "actually took, then exactly what tracelint found and the step it points to &mdash; the "
+        "same output as <code>tracelint check your-trace.json</code>.</p>",
+    ]
+    for trace, report in examples:
+        first_user = next(
+            (s.content for s in trace.steps if isinstance(s, Message) and s.role is Role.USER),
+            "",
+        )
+        steps = "".join(_step_line(s) for s in trace.steps)
+        blocks.append(
+            f"<div class='panel'><p class='task'>Task: <b>{_esc(first_user)}</b> &middot; "
+            f"<span class='mono'>exit {report.exit_code}</span></p>"
+            f"<ol class='tl'>{steps}</ol></div>"
+        )
+        rows = "".join(
+            f"<tr><td>{_chip(f.tier, f.tier.value)}</td>"
+            f"<td><code>{_esc(f.rule)}</code> {_esc(f.finding_type)}</td>"
+            f"<td>{_esc(f.summary)}</td>"
+            f"<td class='mono'>{', '.join(str(i) for i in f.step_indices) or '&mdash;'}</td></tr>"
+            for f in report.active_findings
+        )
+        if rows:
+            blocks.append(
+                "<div class='card' style='margin-top:1rem'><table><thead><tr><th>Tier</th>"
+                "<th>Rule</th><th>Finding</th><th>Steps</th></tr></thead>"
+                f"<tbody>{rows}</tbody></table></div>"
+            )
+        blocks.append(_legend())
+    return "".join(blocks)
+
+
 def render_html(
     *,
     title: str = "tracelint report",
     reports: list[LintReport] | None = None,
     validation: list[tuple] | None = None,
     scorecards: list | None = None,
+    worked: list[tuple] | None = None,
 ) -> str:
     """Render a single self-contained HTML page (inline CSS, no scripts, no external resources)."""
     body: list[str] = [_hero(title, validation, scorecards, reports)]
+    if validation is not None or worked:
+        body.append(_explainer())
+    if worked:
+        body.append(_worked_section(worked))
     if validation is not None:
         body.append(_validation_section(validation))
     if scorecards:
