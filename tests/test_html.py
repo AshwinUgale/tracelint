@@ -21,6 +21,33 @@ def _report():
     )
 
 
+def test_html_explainer_and_worked_example():
+    from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult, Trace
+
+    trace = Trace(
+        run_id="w",
+        steps=[
+            Message(Role.USER, "cancel order 5 when not shipped"),
+            ToolCall(call_id="c1", name="get_order_status", args={"order_id": "5"}),
+            ToolResult(call_id="c1", content="boom", status=ResultStatus.ERROR, http_status=500),
+        ],
+        final="cancelled",
+    )
+    html = render_html(title="demo", worked=[(trace, _report())])
+    # explainer (rules + tiers) renders whenever there is a worked example or validation suite
+    assert "What tracelint checks" in html
+    assert "Eight deterministic rules" in html and "Three confidence tiers" in html
+    # the worked example renders the actual trace steps and the task
+    assert "Worked example" in html
+    assert "cancel order 5 when not shipped" in html
+    assert "get_order_status" in html
+
+
+def test_html_full_viewport_background():
+    html = render_html(reports=[_report()])
+    assert "html,body{margin:0;min-height:100%;background:var(--bg)" in html
+
+
 def test_html_is_self_contained():
     html = render_html(title="t", reports=[_report()])
     assert html.startswith("<!doctype html>")

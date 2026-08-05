@@ -55,6 +55,8 @@ Heuristic candidates never fail CI on their own; suppressions are disclosed but 
 | R3 | hallucinated argument — value not derivable from provenance | `candidate`; `hard_defect` if the field is annotated `provided` |
 | R4 | loop — N identical no-progress calls (polls/retries excluded) | `candidate` |
 | R5 | redundant call — identical call + identical result, no mutation between | `candidate` |
+| R6 | malformed arguments — the emitted tool-call arguments are not valid JSON | `hard_defect` |
+| R7 | unknown tool — a call to a tool absent from the declared toolset (possible hallucinated tool) | `candidate` |
 
 `hard_event` and `hard_defect` are orthogonal to the finding kind: a tool-error event is a
 `hard_event` from a structured status field but a `candidate` from an exception-like string in
@@ -93,10 +95,11 @@ A trace is a JSON object (`.json`, or `.jsonl` for many):
 ```
 
 Adapters normalize provider/framework formats into this schema: `from_openai_messages` (OpenAI
-chat message lists) and `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's
-observations — native `tool` observations, span-based tools, or OpenAI-style `tool_calls` in
-generations). See `examples/langfuse_cookbook.py` to lint the traces you already collect in
-Langfuse and write findings back as scores. More adapters are future work.
+chat message lists), `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's
+observations), and `from_otel_spans` (**OpenTelemetry / [OpenInference](https://github.com/Arize-ai/openinference)**
+spans — the universal standard, so it reaches Arize Phoenix, OpenLLMetry, Langfuse-via-OTel, and
+datasets like TRAIL, not just one vendor). See `examples/langfuse_cookbook.py` to lint the traces
+you already collect in Langfuse and write findings back as scores. More adapters are future work.
 
 ## Recovery scorecard
 

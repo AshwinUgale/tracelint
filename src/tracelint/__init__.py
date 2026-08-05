@@ -35,10 +35,12 @@ from tracelint.rules import (
     ErrorHandlingRule,
     HallucinatedArgRule,
     LoopRule,
+    MalformedArgumentsRule,
     RedundantCallRule,
     Rule,
     SchemaViolationRule,
     ToolErrorEventRule,
+    UnknownToolRule,
     default_rules,
     lint_trace,
 )
@@ -80,6 +82,7 @@ from tracelint.scorecard import (
 from tracelint.adapters import (
     from_langfuse_trace,
     from_openai_messages,
+    from_otel_spans,
     observed_tool_names,
     openai_tools_to_registry,
 )
@@ -123,6 +126,8 @@ __all__ = [
     "HallucinatedArgRule",
     "LoopRule",
     "RedundantCallRule",
+    "MalformedArgumentsRule",
+    "UnknownToolRule",
     "default_rules",
     # Provenance
     "build_provenance",
@@ -156,6 +161,7 @@ __all__ = [
     "openai_tools_to_registry",
     "from_langfuse_trace",
     "observed_tool_names",
+    "from_otel_spans",
     # Reporting
     "render_report",
     "render_reports",

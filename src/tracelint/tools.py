@@ -111,6 +111,10 @@ class ToolRegistry:
     def add(self, spec: ToolSpec) -> None:
         self._tools[spec.name] = spec
 
+    def names(self) -> list[str]:
+        """The declared tool names (the ground truth R7 compares called tools against)."""
+        return list(self._tools)
+
     def get(self, name: str) -> ToolSpec | None:
         return self._tools.get(name)
 

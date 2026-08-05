@@ -141,7 +141,10 @@ def validation_cases() -> list[ValidationCase]:
                     ToolResult("c2", {"sent": True}, status=ResultStatus.OK),
                 ],
             ),
-            _reg(ToolSpec("send_itinerary", metadata=ToolMetadata(side_effecting=True))),
+            _reg(
+                ToolSpec("reserve_flight"),
+                ToolSpec("send_itinerary", metadata=ToolMetadata(side_effecting=True)),
+            ),
             "R2b hard_defect",
             _has("R2b", ConfidenceTier.HARD_DEFECT),
         )
@@ -163,7 +166,7 @@ def validation_cases() -> list[ValidationCase]:
             "planted",
             "An argument absent from provenance, with no schema annotation → candidate.",
             travel,
-            _reg(ToolSpec("send_itinerary")),
+            _reg(ToolSpec("reserve_flight"), ToolSpec("send_itinerary")),
             "R3 candidate (not hard)",
             _and(_has("R3", ConfidenceTier.CANDIDATE), _no_hard_defect()),
         )
@@ -177,6 +180,7 @@ def validation_cases() -> list[ValidationCase]:
             "The same absent argument, but the schema declares the field 'provided' → hard_defect.",
             travel,
             _reg(
+                ToolSpec("reserve_flight"),
                 ToolSpec(
                     "send_itinerary",
                     schema={
@@ -185,7 +189,7 @@ def validation_cases() -> list[ValidationCase]:
                             "confirmation_id": {"type": "string", "x-value-origin": "provided"}
                         },
                     },
-                )
+                ),
             ),
             "R3 hard_defect",
             _has("R3", ConfidenceTier.HARD_DEFECT),
@@ -309,6 +313,44 @@ def validation_cases() -> list[ValidationCase]:
             ),
             "no R3",
             _no_rule("R3"),
+        )
+    )
+
+    # R6 — malformed arguments (planted): the model emitted a truncated, invalid-JSON call.
+    cases.append(
+        ValidationCase(
+            "r6_malformed_arguments",
+            "planted",
+            "A tool call whose emitted arguments are not valid JSON (a broken function call).",
+            build_trace(
+                "v-r6",
+                [
+                    Message(Role.USER, "cancel order 4521"),
+                    ToolCall("c1", "cancel_order", {}, raw_text='{"order_id": "45'),
+                ],
+            ),
+            _reg(ToolSpec("cancel_order")),
+            "R6 hard_defect",
+            _has("R6", ConfidenceTier.HARD_DEFECT),
+        )
+    )
+
+    # R7 — unknown tool (planted): the agent calls a tool absent from the declared toolset.
+    cases.append(
+        ValidationCase(
+            "r7_unknown_tool",
+            "planted",
+            "The agent calls a tool that isn't in the declared toolset (a likely hallucination).",
+            build_trace(
+                "v-r7",
+                [
+                    Message(Role.USER, "refund order 4521"),
+                    ToolCall("c1", "teleport_order", {"order_id": "4521"}),
+                ],
+            ),
+            _reg(ToolSpec("cancel_order")),
+            "R7 candidate (not hard)",
+            _and(_has("R7", ConfidenceTier.CANDIDATE), _no_hard_defect()),
         )
     )
 
