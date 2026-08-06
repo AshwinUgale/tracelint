@@ -444,10 +444,10 @@ def _hero(title, validation, scorecards, reports) -> str:
     return (
         '<div class="hero"><h1 class="wordmark"><span class="dot"></span>'
         f"{_esc(title)}</h1>"
-        '<p class="tagline"><b>ESLint for AI agents.</b> A deterministic, judge-free static '
-        "analyzer that runs on the traces your agent already produces. Hard defects fail CI; "
-        "events and candidates are shown for review, never asserted — no second model ever "
-        "judges the trace.</p>"
+        '<p class="tagline"><b>A linter for agent runs.</b> It reads the execution trace — what '
+        "your agent actually did — and flags structural bugs deterministically. Hard defects "
+        "fail CI; events and candidates are shown for review, never asserted — no second model "
+        "ever judges the trace.</p>"
         '<div class="meta"><span class="pill"><code>pip install tracelint</code></span>'
         '<span class="pill">judge-free</span><span class="pill">deterministic</span>'
         "</div></div>" + tiles_html

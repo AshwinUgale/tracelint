@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracelint"
-version = "0.2.0"
-description = "Deterministic, judge-free static analyzer for tool-calling agent execution traces."
+version = "0.2.1"
+description = "A linter for agent runs — reads the execution trace and flags structural bugs, deterministically."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

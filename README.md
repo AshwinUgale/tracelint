@@ -1,8 +1,9 @@
 # tracelint
 
-> **ESLint for AI agents.** A deterministic, judge-free static analyzer that runs on the execution
-> traces your agent already produces — and fails your build on structural defects, with the exact
-> evidence. No second model ever judges the trace.
+> **A linter for agent runs** — it reads the execution trace of a tool-calling agent (what it
+> *actually did*) and flags structural bugs deterministically, with the exact evidence and a CI
+> exit code. It runs *after* the run, on the trace — not on your code — and no second model ever
+> judges it.
 
 `tracelint` reads a tool-calling agent's trace and reports structural defects — schema-violating
 tool calls, ignored tool errors, hallucinated arguments, loops, and redundant calls — each with the
