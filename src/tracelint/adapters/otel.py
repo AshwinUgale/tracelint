@@ -16,18 +16,20 @@ instead of one vendor.
   has no TOOL spans — the OpenAI-style ``tool_calls`` embedded in
   ``llm.output_messages.*.message.tool_calls.*`` (so a call is never counted twice).
 
-**Two serializations are accepted** for a span's attributes: a *flat dict* with dotted keys
-(Arize Phoenix / most JSON exports) and the raw *OTLP* attribute list (``[{"key","value":{...}}]``).
-Both normalize to the same flat map before parsing.
+**Export shapes accepted** (normalized before parsing): a *flat dict* of dotted keys (Arize
+Phoenix / most JSON exports); the raw *OTLP* attribute list (``[{"key","value":{...}}]``); and the
+**Patronus / TRAIL** envelope — attributes under ``span_attributes``, the name under ``span_name``,
+a span *tree* nested via ``child_spans`` (flattened here), ``timestamp`` for ordering, and tool
+arguments wrapped as ``{"args": [...], "kwargs": {...}}`` (unwrapped to the real arg dict).
 
 **Faithful, not clever** (the same discipline as the other adapters): an error is recorded only
 from a *structured* signal (OTel ERROR status, an exception event, or a status/error field in the
 output) — never guessed from free text. Missing fields cause the relevant rules to *suppress*, not
 to run on partial data.
 
-*Targets the OpenInference spec; validate against a real Phoenix/TRAIL export before relying on a
-specific field — real exports vary, as the Langfuse adapter's snake_case/positional-args quirks
-showed.*
+*Validated on real TRAIL traces (Patronus, MIT): tracelint reads them and deterministically
+localizes tool errors, malformed calls, and excessive-retry loops — the fields above were derived
+from actual TRAIL/GAIA spans, not just the spec.*
 """
 
 from __future__ import annotations
@@ -55,7 +57,8 @@ def _otlp_value(v: Any) -> Any:
 
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
     """Return a span's attributes as a flat ``{dotted_key: value}`` map (flat-dict or OTLP list)."""
-    raw = span.get("attributes", span.get("attribute", {}))
+    # ``span_attributes`` is the Patronus/TRAIL envelope; ``attributes`` is standard OTLP/Phoenix.
+    raw = span.get("span_attributes") or span.get("attributes") or span.get("attribute") or {}
     if isinstance(raw, dict):
         return raw
     flat: dict[str, Any] = {}
@@ -88,8 +91,48 @@ def _span_id(span: dict[str, Any]) -> str:
 
 def _start_key(span: dict[str, Any]) -> str:
     return str(
-        _get(span, "start_time", "startTime", "startTimeUnixNano", "start_time_unix_nano") or ""
+        _get(
+            span,
+            "start_time",
+            "startTime",
+            "startTimeUnixNano",
+            "start_time_unix_nano",
+            "timestamp",
+        )
+        or ""
     )
+
+
+def _flatten_spans(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Flatten a span tree — real exports (Patronus / TRAIL) nest children under ``child_spans``."""
+    out: list[dict[str, Any]] = []
+    for s in spans:
+        if isinstance(s, dict):
+            out.append(s)
+            out.extend(_flatten_spans(s.get("child_spans") or []))
+    return out
+
+
+def _unwrap_call_input(value: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap a wrapped tool input (``{"args": [...], "kwargs": {...}}``) into a flat arg dict.
+
+    Real OpenInference exports (smolagents/Patronus in TRAIL) record a tool's arguments as
+    positional ``args`` + keyword ``kwargs`` (with occasional framework keys like
+    ``sanitize_inputs_outputs``). The real argument dict is ``kwargs`` merged with any positional
+    dict; anything else is returned unchanged.
+    """
+    if "kwargs" not in value and "args" not in value:
+        return value
+    merged: dict[str, Any] = {}
+    args = value.get("args")
+    if isinstance(args, list):
+        for a in args:
+            if isinstance(a, dict):
+                merged.update(a)
+    kwargs = value.get("kwargs")
+    if isinstance(kwargs, dict):
+        merged.update(kwargs)
+    return merged
 
 
 def _parse_value(raw: Any) -> tuple[Any, str | None]:
@@ -107,7 +150,10 @@ def _parse_value(raw: Any) -> tuple[Any, str | None]:
 def _args_from(raw: Any) -> tuple[dict[str, Any], str | None]:
     value, raw_text = _parse_value(raw)
     if isinstance(value, dict):
-        return value, None
+        unwrapped = _unwrap_call_input(value)
+        if unwrapped:
+            return unwrapped, None
+        return {}, raw if isinstance(raw, str) else None
     return {}, raw_text if isinstance(raw_text, str) else (
         str(value) if value is not None else None
     )
@@ -172,7 +218,7 @@ def _collect_messages(attrs: dict[str, Any], prefix: str) -> list[dict[str, Any]
 def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -> Trace:
     """Normalize a list of OpenInference/OTel spans into a canonical :class:`Trace`."""
     ordered = sorted(
-        (s for s in spans if isinstance(s, dict)),
+        _flatten_spans(spans),
         key=lambda s: (_start_key(s), _span_id(s)),
     )
     parsed = [(s, _attrs(s)) for s in ordered]
@@ -184,7 +230,7 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
 
         if kind == "TOOL":
             call_id = _span_id(span) or f"span-{len(steps)}"
-            name = str(attrs.get("tool.name") or span.get("name") or "")
+            name = str(attrs.get("tool.name") or span.get("span_name") or span.get("name") or "")
             args, raw_text = _args_from(attrs.get("input.value"))
             steps.append(ToolCall(call_id=call_id, name=name, args=args, raw_text=raw_text))
             is_err, err_msg = _is_error_span(span, attrs)

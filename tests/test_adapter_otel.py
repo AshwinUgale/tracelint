@@ -142,6 +142,45 @@ def test_non_tool_spans_are_skipped():
     assert from_otel_spans([span]).tool_calls() == []
 
 
+def test_trail_patronus_envelope_real_shape():
+    # Verified against a real TRAIL (Patronus/smolagents) trace: attributes live under
+    # `span_attributes`, spans nest via `child_spans`, the name is `span_name`, args are wrapped
+    # as {"args": [], "kwargs": {...}}, and status_code is "Error".
+    root = {
+        "span_id": "root",
+        "span_name": "main",
+        "timestamp": "2025-03-19T16:48:04Z",
+        "span_kind": "Internal",
+        "span_attributes": {},
+        "child_spans": [
+            {
+                "span_id": "tool1",
+                "span_name": "TextInspectorTool",
+                "timestamp": "2025-03-19T16:48:05Z",
+                "status_code": "Error",
+                "status_message": "FileConversionException: Could not convert 'words_alpha.txt'",
+                "span_attributes": {
+                    "openinference.span.kind": "TOOL",
+                    "tool.name": "inspect_file_as_text",
+                    "input.value": (
+                        '{"args": [], "sanitize_inputs_outputs": false, '
+                        '"kwargs": {"file_path": "words_alpha.txt", "question": ""}}'
+                    ),
+                },
+            }
+        ],
+    }
+    trace = from_otel_spans([root])
+    call = trace.tool_calls()[0]
+    assert call.name == "inspect_file_as_text"
+    assert call.args == {"file_path": "words_alpha.txt", "question": ""}  # unwrapped from kwargs
+    result = trace.result_for(call)
+    assert result.status is ResultStatus.ERROR
+    assert "FileConversionException" in (result.error or "")
+    report = lint_trace(trace, default_rules(), ToolRegistry())
+    assert any(f.rule == "R2a" for f in report.active_findings)  # real tool error localized
+
+
 def test_end_to_end_lint_from_otel():
     registry = ToolRegistry.from_dict(
         {

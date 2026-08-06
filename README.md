@@ -1,10 +1,13 @@
 # tracelint
 
-**ESLint/pytest for what your agent actually did.** `tracelint` is a deterministic, judge-free
-static analyzer for the execution traces of tool-calling agents. It reads a trace and reports
-structural defects — schema-violating tool calls, ignored tool errors, hallucinated arguments,
-loops, and redundant calls — each with the exact trace lines as evidence, and returns a CI exit
-code. It also ships a fault injector and a per-fault recovery scorecard.
+> **ESLint for AI agents.** A deterministic, judge-free static analyzer that runs on the execution
+> traces your agent already produces — and fails your build on structural defects, with the exact
+> evidence. No second model ever judges the trace.
+
+`tracelint` reads a tool-calling agent's trace and reports structural defects — schema-violating
+tool calls, ignored tool errors, hallucinated arguments, loops, and redundant calls — each with the
+exact trace lines as evidence, and returns a CI exit code. It also ships a fault injector and a
+per-fault recovery scorecard.
 
 Model-as-judge detection of these defects is unreliable (published trace-error benchmarks show low
 localization accuracy). Many of these defects are *structurally decidable* and need no judge — that
@@ -94,12 +97,21 @@ A trace is a JSON object (`.json`, or `.jsonl` for many):
 }
 ```
 
-Adapters normalize provider/framework formats into this schema: `from_openai_messages` (OpenAI
-chat message lists), `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's
-observations), and `from_otel_spans` (**OpenTelemetry / [OpenInference](https://github.com/Arize-ai/openinference)**
-spans — the universal standard, so it reaches Arize Phoenix, OpenLLMetry, Langfuse-via-OTel, and
-datasets like TRAIL, not just one vendor). See `examples/langfuse_cookbook.py` to lint the traces
-you already collect in Langfuse and write findings back as scores. More adapters are future work.
+The rules run against **one canonical trace schema**; a thin **adapter** translates each source's
+format into it, so the rules never change. Built in: `from_openai_messages` (OpenAI chat message
+lists), `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's observations), and
+`from_otel_spans` (**OpenTelemetry / [OpenInference](https://github.com/Arize-ai/openinference)** —
+the universal standard, so it reaches Arize Phoenix, OpenLLMetry, Langfuse-via-OTel, and datasets
+like TRAIL, not just one vendor). See `examples/langfuse_cookbook.py` to lint the traces you
+already collect in Langfuse and write findings back as scores.
+
+**On real traces:** the adapters are validated against live data, not just the spec —
+`from_langfuse_trace` on real Langfuse v4 runs, and `from_otel_spans` on real
+[TRAIL](https://huggingface.co/datasets/PatronusAI/TRAIL) benchmark traces, where tracelint
+deterministically localized real tool errors, a malformed tool call, and excessive-retry loops
+with no model in the loop. Real exports vary, so a new source may need a small adapter tweak — and
+when a field a rule needs is absent, that rule **suppresses** (says so) rather than guessing, so an
+unhandled quirk degrades safely instead of producing a wrong result. More adapters are future work.
 
 ## Recovery scorecard
 
