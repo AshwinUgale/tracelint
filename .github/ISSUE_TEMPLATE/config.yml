@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Live demo report & docs
+    url: https://ashwinugale.github.io/tracelint/
+    about: The constructed validation suite, the recovery scorecard, and how to read a finding.

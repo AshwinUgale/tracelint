@@ -1,0 +1,26 @@
+name: Feature request / idea
+description: Suggest a lint rule, trace adapter, injected fault, or improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem / use case
+      description: What agent defect or workflow does tracelint not catch/support yet?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed idea
+      description: A new deterministic lint rule? a trace adapter? an injected fault? Rough is fine.
+  - type: checkboxes
+    id: kind
+    attributes:
+      label: Kind (optional)
+      options:
+        - label: New lint rule (deterministic detector)
+        - label: New trace adapter (OpenInference / LangSmith / …)
+        - label: New injected fault + recovery scoring
+        - label: CLI / report / UX
+        - label: Docs / examples

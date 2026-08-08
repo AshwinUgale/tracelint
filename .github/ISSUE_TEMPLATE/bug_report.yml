@@ -1,0 +1,33 @@
+name: Bug report
+description: Something in tracelint is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for filing a bug! A small trace that reproduces it (ideally one you can share) helps most.
+  - type: input
+    id: version
+    attributes:
+      label: tracelint version
+      description: "`pip show tracelint` version, or the commit."
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran, what you expected, and what you got (paste the output).
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A tiny trace + the `tracelint check` command — false positive / false negative especially welcome.
+      render: shell
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "Python 3.12, Linux; adapter: otel"
