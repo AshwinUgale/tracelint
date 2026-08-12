@@ -1,5 +1,23 @@
 # Examples
 
+## `lint_openinference_phoenix.py` — lint OpenInference / OpenTelemetry spans
+
+Fully **offline and keyless**. Builds a small Arize Phoenix-shaped OpenInference span export for a
+flight-booking agent that makes two real mistakes (a schema-violating tool call and a declined
+payment), then lints it via `lint_otel_trace` — first schema-free, then with a `tools.json`-style
+registry so R1 proves the schema violation a hard defect and the process exits `2`.
+
+```bash
+python examples/lint_openinference_phoenix.py
+
+# The same thing at the command line, against any OpenInference export:
+tracelint check spans.json --format openinference --tools tools.json
+```
+
+Because it reads OpenInference (the OpenTelemetry semantic convention for AI spans), the same path
+reaches Arize Phoenix, OpenLLMetry, Langfuse-via-OTel, and datasets like TRAIL — one adapter, the
+whole ecosystem. It is exercised by `tests/test_openinference_example.py`.
+
 ## `real_agent.py` — lint a real OpenAI agent run
 
 A genuine GPT model drives a small refund-support toolset (some tools can error), and tracelint
