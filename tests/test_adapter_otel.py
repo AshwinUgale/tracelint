@@ -61,6 +61,71 @@ def test_phoenix_export_top_level_span_kind_is_recognized():
     assert any(f.rule == "R2a" for f in report.by_tier(ConfidenceTier.HARD_EVENT))
 
 
+def test_error_from_nested_otel_status_shapes():
+    """A real OTel export nests the status: the SDK's ReadableSpan.to_json emits
+    ``{"status": {"status_code": "ERROR"}}`` and OTLP-JSON emits ``{"code": "STATUS_CODE_ERROR"}``
+    or the numeric ``2``. Regression: read the status from those shapes, not only a flat
+    ``status_code`` — a real SDK-exported ERROR was missed when its output payload was clean."""
+    def tool(status):
+        return {
+            "span_id": "t1",
+            "name": "charge",
+            "start_time": "1",
+            "status": status,
+            "attributes": {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "charge",
+                "input.value": "{}",
+                "output.value": '{"receipt": "ok"}',  # clean payload: only the status signals error
+            },
+        }
+    shapes = (
+        {"status_code": "ERROR", "description": "boom"},  # OTel SDK ReadableSpan.to_json
+        {"code": "STATUS_CODE_ERROR"},  # OTLP-JSON string code
+        {"code": 2},  # OTLP numeric ERROR
+    )
+    for status in shapes:
+        result = from_otel_spans([tool(status)]).tool_results()[0]
+        assert result.status is ResultStatus.ERROR, status
+
+
+def test_input_messages_seed_user_turn_for_provenance():
+    """OpenInference records the user's request under llm.input_messages. Seeding it (from the
+    first LLM span only) gives provenance something to check against, so an argument the user
+    actually supplied is not falsely flagged as a hallucinated/underivable value (R3)."""
+    spans = [
+        {
+            "span_id": "l1",
+            "name": "llm",
+            "start_time": "1",
+            "attributes": {
+                "openinference.span.kind": "LLM",
+                "llm.input_messages.0.message.role": "user",
+                "llm.input_messages.0.message.content": "Cancel order A100.",
+                "llm.output_messages.0.message.role": "assistant",
+                "llm.output_messages.0.message.content": "Cancelling.",
+            },
+        },
+        {
+            "span_id": "t1",
+            "name": "cancel_order",
+            "start_time": "2",
+            "status_code": "OK",
+            "attributes": {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "cancel_order",
+                "input.value": '{"order_id": "A100"}',
+                "output.value": '{"ok": true}',
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    assert any(m.role.value == "user" and "A100" in m.content for m in trace.messages())
+    report = lint_trace(trace, default_rules())
+    # 'A100' came from the user turn, so R3 must not flag it as underivable.
+    assert not [f for f in report.active_findings if f.rule == "R3"]
+
+
 def test_phoenix_dataframe_record_shape_is_recognized():
     """The path a real Phoenix user takes — ``px.Client().get_spans_dataframe().to_dict("records")``
     — yields flat rows: required columns at top level and attributes as ``attributes.*`` columns

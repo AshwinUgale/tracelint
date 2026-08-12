@@ -8,6 +8,17 @@ additive features; the public API is not yet frozen).
 
 - _Nothing yet._
 
+## [0.3.3]
+
+- Fix: the OpenTelemetry/OpenInference adapter now seeds the opening user/system turn from
+  `llm.input_messages` (the OpenInference field holding what the model was asked). Without it,
+  provenance had no record of the user's request and reported every string argument as an
+  underivable value — a wall of false R3 candidates on real traces.
+- Fix: read the span status from the shapes a real export uses — the OTel SDK's nested
+  `{"status": {"status_code": "ERROR"}}` and OTLP-JSON's `{"code": "STATUS_CODE_ERROR"}` / numeric
+  `2` — not only a flat `status_code`. A real SDK-exported tool error was missed when its failure
+  wasn't also echoed in the output payload. Both found by linting genuinely SDK-exported spans.
+
 ## [0.3.2]
 
 - Fix: the OpenTelemetry/OpenInference adapter now reads the shape a real Phoenix user gets from

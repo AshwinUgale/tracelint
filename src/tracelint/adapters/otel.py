@@ -192,11 +192,31 @@ def _args_from(raw: Any) -> tuple[dict[str, Any], str | None]:
     )
 
 
+def _status_fields(span: dict[str, Any]) -> tuple[str, str | None]:
+    """The span's status code (upper-cased) and message across the shapes exports actually use.
+
+    A flat ``status_code`` string (Phoenix span export); a nested ``status`` object as the OTel SDK
+    serializes it via ``ReadableSpan.to_json`` (``{"status_code": "ERROR", "description": ...}``);
+    and OTLP-JSON (``{"code": "STATUS_CODE_ERROR"}`` or the numeric ``2``). Reading only the flat
+    string missed a real SDK-exported ERROR whose failure wasn't also echoed in the output payload.
+    """
+    code: Any = _get(span, "status_code", "statusCode")
+    message: Any = _get(span, "status_message", "statusMessage")
+    status = span.get("status")
+    if isinstance(status, dict):
+        code = code if code is not None else status.get("status_code", status.get("code"))
+        if message is None:
+            message = status.get("description", status.get("message"))
+    elif isinstance(status, str) and code is None:
+        code = status
+    return str(code if code is not None else "").upper(), (str(message) if message else None)
+
+
 def _is_error_span(span: dict[str, Any], attrs: dict[str, Any]) -> tuple[bool, str | None]:
-    status = str(_get(span, "status_code", "statusCode", "status.code", "status") or "").upper()
-    message = _get(span, "status_message", "statusMessage", "status.message")
-    if status == "ERROR":
-        return True, (str(message) if message else None)
+    status, message = _status_fields(span)
+    # "ERROR" covers the plain code and OTLP's "STATUS_CODE_ERROR"; "2" is OTLP's numeric ERROR.
+    if "ERROR" in status or status == "2":
+        return True, message
     for event in span.get("events", []) or []:
         if isinstance(event, dict) and str(event.get("name", "")).lower() == "exception":
             ev_attrs = event.get("attributes", {})
@@ -248,6 +268,35 @@ def _collect_messages(attrs: dict[str, Any], prefix: str) -> list[dict[str, Any]
     return [messages[i] for i in sorted(messages)]
 
 
+def _seed_input_messages(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> list[Message]:
+    """Leading user/system turns from the first LLM span's ``llm.input_messages``.
+
+    OpenInference records what the model was *asked* under ``llm.input_messages.*`` — the user's
+    request and any system prompt. Without these the trace has no record of what the agent
+    observed, so provenance (R3) reports every string argument as underivable: the user's own
+    question is in the trace, and dropping it manufactures false hallucination candidates.
+
+    Only the **first** LLM span is read: each later LLM call replays the entire prior conversation
+    in its input messages, so seeding from all of them would duplicate every turn. Assistant/tool
+    replay turns are skipped (they are emitted from their own spans); only the opening user/system
+    context is seeded, once, at the front so it precedes every tool call for provenance ordering.
+    """
+    for span, attrs in parsed:
+        if _span_kind(span, attrs) != "LLM":
+            continue
+        input_messages = _collect_messages(attrs, "llm.input_messages")
+        if not input_messages:
+            continue
+        seeded: list[Message] = []
+        for msg in input_messages:
+            role = str(msg.get("role") or "").lower()
+            content = msg.get("content")
+            if role in ("user", "system") and isinstance(content, str) and content:
+                seeded.append(Message(Role.USER if role == "user" else Role.SYSTEM, content))
+        return seeded
+    return []
+
+
 def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -> Trace:
     """Normalize a list of OpenInference/OTel spans into a canonical :class:`Trace`."""
     ordered = sorted(
@@ -258,6 +307,7 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
     has_tool_span = any(_span_kind(s, a) == "TOOL" for s, a in parsed)
 
     steps: list[Step] = []
+    steps.extend(_seed_input_messages(parsed))
     for span, attrs in parsed:
         kind = _span_kind(span, attrs)
 
