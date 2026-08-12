@@ -6,7 +6,11 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
-- _Nothing yet._
+- Fix: the OpenTelemetry/OpenInference adapter now recognizes Arize **Phoenix's own trace export**,
+  which records the span kind as a top-level `span_kind` field rather than the
+  `openinference.span.kind` attribute. Before this, a real Phoenix export was reduced to zero tool
+  calls and every rule silently suppressed. Found by running `check --format openinference` against
+  a real Phoenix trace.
 
 ## [0.3.0]
 

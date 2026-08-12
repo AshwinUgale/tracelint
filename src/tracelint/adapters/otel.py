@@ -42,6 +42,19 @@ from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolRes
 _SPAN_KIND = "openinference.span.kind"
 
 
+def _span_kind(span: dict[str, Any], attrs: dict[str, Any]) -> str:
+    """The OpenInference span kind (``TOOL`` / ``LLM`` / ...), normalized to upper case.
+
+    The instrumentation/OTLP path emits it as the ``openinference.span.kind`` *attribute*, but
+    Arize **Phoenix's own trace export** records it as a top-level ``span_kind`` field instead.
+    Accept both so a real Phoenix export lints the same as any other OpenInference source (without
+    this, a Phoenix trace recognizes zero tool spans and every rule silently suppresses).
+    """
+    return str(
+        attrs.get(_SPAN_KIND) or span.get("span_kind") or span.get("spanKind") or ""
+    ).upper()
+
+
 def _otlp_value(v: Any) -> Any:
     """Unwrap an OTLP typed attribute value (``{"stringValue": ...}``) to a plain Python value."""
     if not isinstance(v, dict):
@@ -222,11 +235,11 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
         key=lambda s: (_start_key(s), _span_id(s)),
     )
     parsed = [(s, _attrs(s)) for s in ordered]
-    has_tool_span = any(str(a.get(_SPAN_KIND) or "").upper() == "TOOL" for _s, a in parsed)
+    has_tool_span = any(_span_kind(s, a) == "TOOL" for s, a in parsed)
 
     steps: list[Step] = []
     for span, attrs in parsed:
-        kind = str(attrs.get(_SPAN_KIND) or "").upper()
+        kind = _span_kind(span, attrs)
 
         if kind == "TOOL":
             call_id = _span_id(span) or f"span-{len(steps)}"
