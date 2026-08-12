@@ -6,6 +6,10 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- _Nothing yet._
+
+## [0.3.2]
+
 - Fix: the OpenTelemetry/OpenInference adapter now reads the shape a real Phoenix user gets from
   `px.Client().get_spans_dataframe().to_dict("records")` — required columns at top level and
   attributes flattened into `attributes.*` columns. Before this, a dataframe-record span was
