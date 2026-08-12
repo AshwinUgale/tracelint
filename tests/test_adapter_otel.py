@@ -28,6 +28,39 @@ def _tool_span(sid, name, inp, out, *, status="OK", status_message=None, start="
     }
 
 
+def test_phoenix_export_top_level_span_kind_is_recognized():
+    """Arize Phoenix's own trace export puts the kind in a top-level ``span_kind`` field (not the
+    ``openinference.span.kind`` attribute). Regression: a real Phoenix export must be recognized,
+    not silently reduced to zero tool calls. Derived from a real Arize-ai/phoenix fixture."""
+    spans = [
+        {
+            "context": {"trace_id": "fixture-trace-1", "span_id": "s1"},
+            "name": "list_datasets",
+            "span_kind": "TOOL",  # top-level, the Phoenix export shape
+            "start_time": "2024-01-01T00:00:01Z",
+            "status_code": "OK",
+            "attributes": {"tool.name": "list_datasets", "input.value": "{}", "output.value": "[]"},
+        },
+        {
+            "context": {"trace_id": "fixture-trace-1", "span_id": "s2"},
+            "name": "add_spans",
+            "span_kind": "TOOL",
+            "start_time": "2024-01-01T00:00:02Z",
+            "status_code": "ERROR",
+            "status_message": "GraphQL error",
+            "attributes": {"tool.name": "add_spans", "input.value": "{}", "output.value": "{}"},
+        },
+    ]
+    trace = from_otel_spans(spans)
+    assert [c.name for c in trace.tool_calls()] == ["list_datasets", "add_spans"]
+    assert trace.run_id == "fixture-trace-1"
+    # The errored Phoenix span is still read as a structured error (R2a's hard-event signal).
+    err = trace.tool_results()[1]
+    assert err.status is ResultStatus.ERROR
+    report = lint_trace(trace, default_rules())
+    assert any(f.rule == "R2a" for f in report.by_tier(ConfidenceTier.HARD_EVENT))
+
+
 def test_tool_span_becomes_paired_call_and_result():
     trace = from_otel_spans(
         [_tool_span("s1", "lookup_order", '{"order_id": "A100"}', '{"amount": 49.99}')]
