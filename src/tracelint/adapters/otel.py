@@ -68,17 +68,37 @@ def _otlp_value(v: Any) -> Any:
     return v
 
 
+_ATTR_PREFIX = "attributes."
+
+
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
-    """Return a span's attributes as a flat ``{dotted_key: value}`` map (flat-dict or OTLP list)."""
-    # ``span_attributes`` is the Patronus/TRAIL envelope; ``attributes`` is standard OTLP/Phoenix.
+    """Return a span's attributes as a flat ``{dotted_key: value}`` map.
+
+    Handles the three shapes a real export uses: a nested ``attributes`` dict of dotted keys
+    (standard OTLP/Phoenix span JSON) or the ``span_attributes`` envelope (Patronus/TRAIL); an OTLP
+    attribute *list* (``[{"key","value":{...}}]``); and — the shape a Phoenix user actually gets
+    from ``px.Client().get_spans_dataframe().to_dict("records")`` — the attributes flattened into
+    top-level columns prefixed ``attributes.`` (e.g. ``attributes.tool.name``), which we collect
+    with the prefix stripped. Without this last case a dataframe-record span is recognized by kind
+    but read with empty args and no output.
+    """
     raw = span.get("span_attributes") or span.get("attributes") or span.get("attribute") or {}
-    if isinstance(raw, dict):
-        return raw
     flat: dict[str, Any] = {}
-    if isinstance(raw, list):  # OTLP: [{"key": "...", "value": {"stringValue": "..."}}, ...]
+    if isinstance(raw, dict):
+        flat = dict(raw)
+    elif isinstance(raw, list):  # OTLP: [{"key": "...", "value": {"stringValue": "..."}}, ...]
         for item in raw:
             if isinstance(item, dict) and "key" in item:
                 flat[item["key"]] = _otlp_value(item.get("value"))
+
+    # Phoenix dataframe-record shape: attribute columns as top-level "attributes.*" keys.
+    for key, value in span.items():
+        if not (isinstance(key, str) and key.startswith(_ATTR_PREFIX)):
+            continue
+        stripped = key[len(_ATTR_PREFIX) :]
+        if not stripped or value is None or (isinstance(value, float) and value != value):
+            continue  # skip the empty tail and NaN/None (json_normalize fills absent cells)
+        flat.setdefault(stripped, value)
     return flat
 
 

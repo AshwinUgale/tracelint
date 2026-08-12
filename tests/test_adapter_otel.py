@@ -61,6 +61,45 @@ def test_phoenix_export_top_level_span_kind_is_recognized():
     assert any(f.rule == "R2a" for f in report.by_tier(ConfidenceTier.HARD_EVENT))
 
 
+def test_phoenix_dataframe_record_shape_is_recognized():
+    """The path a real Phoenix user takes — ``px.Client().get_spans_dataframe().to_dict("records")``
+    — yields flat rows: required columns at top level and attributes as ``attributes.*`` columns
+    (Phoenix's ATTRIBUTE_PREFIX). Regression: read args/output from those prefixed columns, not
+    just a nested ``attributes`` dict, so a record span isn't recognized with empty args."""
+    records = [
+        {
+            "name": "lookup_order",
+            "span_kind": "TOOL",
+            "start_time": "2024-01-01T00:00:01Z",
+            "status_code": "OK",
+            "context.span_id": "s1",
+            "context.trace_id": "df-trace-1",
+            "attributes.tool.name": "lookup_order",
+            "attributes.input.value": '{"order_id": "A100"}',
+            "attributes.output.value": '{"amount": 49.99}',
+        },
+        {
+            "name": "charge_card",
+            "span_kind": "TOOL",
+            "start_time": "2024-01-01T00:00:02Z",
+            "status_code": "ERROR",
+            "status_message": "gateway 402",
+            "context.span_id": "s2",
+            "context.trace_id": "df-trace-1",
+            "attributes.tool.name": "charge_card",
+            "attributes.input.value": '{"amount": 49.99}',
+            "attributes.output.value": '{"error": "declined"}',
+        },
+    ]
+    trace = from_otel_spans(records)
+    call = trace.tool_calls()[0]
+    assert call.name == "lookup_order"
+    assert call.args == {"order_id": "A100"}  # read from the "attributes.input.value" column
+    assert trace.result_for(call).content == {"amount": 49.99}
+    assert trace.run_id == "df-trace-1"
+    assert trace.tool_results()[1].status is ResultStatus.ERROR
+
+
 def test_tool_span_becomes_paired_call_and_result():
     trace = from_otel_spans(
         [_tool_span("s1", "lookup_order", '{"order_id": "A100"}', '{"amount": 49.99}')]
