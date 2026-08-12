@@ -140,6 +140,19 @@ print(report.exit_code)           # 0 or 2
 See `examples/lint_openinference_phoenix.py` for an offline, keyless end-to-end run (Phoenix-shaped
 spans → findings, with and without a tool registry).
 
+Straight from a running [Arize Phoenix](https://phoenix.arize.com) instance:
+
+```python
+import phoenix as px
+from tracelint import lint_otel_trace
+
+spans = px.Client().get_spans_dataframe().to_dict("records")
+print(lint_otel_trace(spans).exit_code)
+```
+
+Both Phoenix shapes are handled: the span-export JSON (top-level `span_kind`) and the
+`get_spans_dataframe()` records (attributes as `attributes.*` columns).
+
 ## Recovery scorecard
 
 Measure how an agent behaves under injected faults, scored against deterministic success oracles:
