@@ -114,6 +114,32 @@ with no model in the loop. Real exports vary, so a new source may need a small a
 when a field a rule needs is absent, that rule **suppresses** (says so) rather than guessing, so an
 unhandled quirk degrades safely instead of producing a wrong result. More adapters are future work.
 
+## Lint the traces you already collect
+
+`check` reads native tracelint JSON by default, but `--format` points it straight at the traces
+your stack already emits — no manual schema conversion:
+
+```bash
+tracelint check spans.json    --format openinference   # OTel/OpenInference: Phoenix, OTLP, TRAIL
+tracelint check messages.json --format openai          # an OpenAI chat message list
+tracelint check trace.json    --format langfuse        # a Langfuse trace export
+```
+
+Most rules need no tool schemas, so this works keyless; add `--tools tools.json` to light up the
+schema-dependent rules (R1, and R3's high-confidence tier). A multi-trace input (a `.jsonl` file, a
+JSON array, or an OTLP export carrying several `trace_id`s) fans out to one report each. From the
+library, the same one-liner:
+
+```python
+from tracelint import lint_otel_trace
+
+report = lint_otel_trace(spans)   # spans: your OpenInference span export (a list of dicts)
+print(report.exit_code)           # 0 or 2
+```
+
+See `examples/lint_openinference_phoenix.py` for an offline, keyless end-to-end run (Phoenix-shaped
+spans → findings, with and without a tool registry).
+
 ## Recovery scorecard
 
 Measure how an agent behaves under injected faults, scored against deterministic success oracles:
