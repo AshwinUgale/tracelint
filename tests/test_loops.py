@@ -103,6 +103,30 @@ def test_side_effecting_call_between_is_not_redundant():
     assert _r5(steps, registry).active_findings == []
 
 
+def test_undeclared_between_tool_is_disclosed_not_silently_assumed_inert():
+    # get_settings is unknown to the registry: its side-effect status is unverifiable, so R5 still
+    # surfaces the candidate (result is byte-identical) but discloses the undeclared tool.
+    steps = _call_result("c0", "get_profile", {"user": 9}, {"name": "A"})
+    steps += _call_result("c1", "get_settings", {"user": 9}, {"theme": "dark"})
+    steps += _call_result("c2", "get_profile", {"user": 9}, {"name": "A"})
+    f = _r5(steps).active_findings[0]
+    assert f.evidence["undeclared_between"] == ["get_settings"]
+    assert "unverified" in f.summary and "get_settings" in f.summary
+
+
+def test_declared_safe_between_tool_is_not_flagged_as_undeclared():
+    # get_settings is declared (side_effecting=False): known safe, so no "unverified" disclosure.
+    steps = _call_result("c0", "get_profile", {"user": 9}, {"name": "A"})
+    steps += _call_result("c1", "get_settings", {"user": 9}, {"theme": "dark"})
+    steps += _call_result("c2", "get_profile", {"user": 9}, {"name": "A"})
+    registry = ToolRegistry(
+        {"get_settings": ToolSpec("get_settings", metadata=ToolMetadata(side_effecting=False))}
+    )
+    f = _r5(steps, registry).active_findings[0]
+    assert f.evidence["undeclared_between"] == []
+    assert "unverified" not in f.summary
+
+
 def test_pagination_differs_by_args_not_flagged():
     steps = _call_result("c0", "list", {"page": 1}, {"items": [1]})
     steps += _call_result("c1", "list", {"page": 2}, {"items": [2]})

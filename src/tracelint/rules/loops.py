@@ -14,6 +14,9 @@ its metadata is trusted, and a run in a waiting state that *eventually advances*
 **identical result** (fingerprint) as an earlier one, with real work in between (so it is not a
 loop) and no side-effecting call between them (which could have changed the data, justifying a
 re-fetch). Pagination differs by args and is not flagged; a refresh is legitimate → candidate.
+Side-effect status is read from tool metadata, never guessed from a name; a tool *absent* from the
+registry has an unverifiable side-effect status, so the finding still surfaces (the result is
+byte-identical) but **discloses** the undeclared tool rather than silently assuming it inert.
 """
 
 from __future__ import annotations
@@ -154,8 +157,12 @@ class RedundantCallRule(Rule):
             if pos - prev == 1:
                 continue  # adjacent identical calls are loop territory (R4), not redundancy
             if self._mutating_between(infos, prev, pos, registry):
-                continue  # a side-effecting call between may have changed the data
-            findings.append(self._redundant_finding(infos[prev], info))
+                continue  # a *declared* side-effecting call between may have changed the data
+            # A tool absent from the registry could be a side effect we can't see. We still surface
+            # the candidate (the result is byte-identical, so no mutation is the likely reading),
+            # but disclose the unverified premise rather than silently assuming the tool is inert.
+            undeclared = self._undeclared_between(infos, prev, pos, registry)
+            findings.append(self._redundant_finding(infos[prev], info, undeclared))
             seen[info.fingerprint] = pos  # chain to the most recent occurrence
         return findings
 
@@ -168,18 +175,41 @@ class RedundantCallRule(Rule):
                 return True
         return False
 
-    def _redundant_finding(self, first: _CallInfo, again: _CallInfo) -> Finding:
+    def _undeclared_between(
+        self, infos: list[_CallInfo], prev: int, pos: int, registry: ToolRegistry
+    ) -> list[str]:
+        """Names of in-between tools unknown to the registry — their side-effect status is
+        unverifiable, so ``no mutation between`` cannot be asserted for them."""
+        unknown = {
+            mid.call.name
+            for mid in infos[prev + 1 : pos]
+            if registry.get(mid.call.name) is None
+        }
+        return sorted(unknown)
+
+    def _redundant_finding(
+        self, first: _CallInfo, again: _CallInfo, undeclared: list[str]
+    ) -> Finding:
+        note = (
+            ""
+            if not undeclared
+            else (
+                f" (unverified: undeclared tool(s) {', '.join(repr(u) for u in undeclared)} ran "
+                "between — declare their side_effecting status to rule out a mutation)"
+            )
+        )
         return Finding(
             rule=self.id,
             finding_type=self.finding_type,
             tier=ConfidenceTier.CANDIDATE,
             summary=(
                 f"{again.call.name!r} repeats an earlier identical call (same arguments and "
-                f"result) with no mutating call in between"
+                f"result) with no mutating call in between" + note
             ),
             evidence={
                 "step_indices": [first.call.index, again.call.index],
                 "tool": again.call.name,
+                "undeclared_between": undeclared,
             },
             possible_false_positive=True,
         )
