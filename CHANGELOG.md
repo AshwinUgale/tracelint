@@ -8,6 +8,12 @@ additive features; the public API is not yet frozen).
 
 - _Nothing yet._
 
+## [0.4.1]
+
+- CI on-ramp: a composite **GitHub Action** (`uses: AshwinUgale/tracelint@v0.4.1`) and a
+  **pre-commit hook** (`.pre-commit-hooks.yaml`), plus an "Add to CI" guide in the README, so a
+  build can gate on `tracelint check` in a few lines. No library changes.
+
 ## [0.4.0]
 
 - Feature: tools can declare `metadata.failure_when` — a JSON-pointer failure predicate

@@ -175,6 +175,53 @@ print(lint_otel_trace(spans).exit_code)
 Both Phoenix shapes are handled: the span-export JSON (top-level `span_kind`) and the
 `get_spans_dataframe()` records (attributes as `attributes.*` columns).
 
+## Add to CI
+
+`tracelint check` returns exit `2` on a structurally-provable defect, so it gates a build directly.
+Point it at the traces your agent test job already produces — a defect fails the job; heuristic
+candidates never do.
+
+**GitHub Actions** — the ready-made action:
+
+```yaml
+name: lint-agent-traces
+on: [push, pull_request]
+jobs:
+  tracelint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ... your step that runs the agent and writes traces to ./traces ...
+      - uses: AshwinUgale/tracelint@v0.4.1
+        with:
+          traces: "traces/*.jsonl"
+          format: "openinference"     # or native / openai / langfuse
+          tools: "tools.json"          # optional — lights up R1, R3, R2 predicates
+```
+
+**Any CI, without the action** — it's one pip install and one command:
+
+```bash
+pip install tracelint
+tracelint check traces/*.jsonl --format openinference --tools tools.json
+```
+
+**pre-commit** — lint only the trace files a commit touches:
+
+```yaml
+repos:
+  - repo: https://github.com/AshwinUgale/tracelint
+    rev: v0.4.1
+    hooks:
+      - id: tracelint
+        files: ^traces/.*\.jsonl$
+        args: ["--format", "openinference", "--tools", "tools.json"]
+```
+
+Traces have to come from somewhere: tracelint lints artifacts, it doesn't run your agent. The usual
+shape is a test job that exercises the agent, captures its trace (OpenInference/OTel, OpenAI, or
+Langfuse), and then runs `tracelint check` on that file.
+
 ## Recovery scorecard
 
 Measure how an agent behaves under injected faults, scored against deterministic success oracles:
