@@ -6,6 +6,10 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- _Nothing yet._
+
+## [0.4.0]
+
 - Feature: tools can declare `metadata.failure_when` — a JSON-pointer failure predicate
   (`{"pointer": "/status", "in": ["declined", "failed"]}`) — so a domain failure returned as a
   transport success (HTTP 200 with `{"status": "declined"}`) is caught structurally by R2, feeding
