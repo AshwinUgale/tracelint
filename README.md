@@ -98,6 +98,28 @@ A trace is a JSON object (`.json`, or `.jsonl` for many):
 }
 ```
 
+A tool can also declare **what failure looks like** in its result, so a domain failure returned as
+a transport success (HTTP 200 carrying `{"status": "declined"}`) is caught structurally instead of
+slipping through:
+
+```json
+{
+  "tools": {
+    "charge_card": {
+      "metadata": {
+        "side_effecting": true,
+        "failure_when": {"pointer": "/status", "in": ["declined", "failed"]}
+      }
+    }
+  }
+}
+```
+
+`failure_when` is a JSON Pointer into the result plus a match (`in` / `equals` / `exists`); a match
+is a structured error for R2 (feeding R2a and, on reuse into a side-effecting call, R2b). A
+side-effecting tool with **no** `failure_when` and an unclassifiable result is *suppressed with a
+reason* — never counted as a clean pass.
+
 The rules run against **one canonical trace schema**; a thin **adapter** translates each source's
 format into it, so the rules never change. Built in: `from_openai_messages` (OpenAI chat message
 lists), `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's observations), and

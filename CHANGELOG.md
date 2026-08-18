@@ -6,7 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
-- _Nothing yet._
+- Feature: tools can declare `metadata.failure_when` — a JSON-pointer failure predicate
+  (`{"pointer": "/status", "in": ["declined", "failed"]}`) — so a domain failure returned as a
+  transport success (HTTP 200 with `{"status": "declined"}`) is caught structurally by R2, feeding
+  R2a (hard event) and R2b (hard defect on reuse into a side-effecting call). A side-effecting tool
+  with no predicate and an unclassifiable result is now **suppressed with a reason** instead of
+  passing silently. Raised in review.
+- R5 now discloses when a tool absent from the registry ran between two identical calls (its
+  side-effect status is unverifiable) rather than silently assuming it was inert.
 
 ## [0.3.3]
 
