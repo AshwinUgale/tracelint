@@ -13,18 +13,36 @@ the decision structural (deterministic, no guessing) rather than pushing it onto
     {"pointer": "/status", "in": ["declined", "failed"]}     # failure iff /status ∈ {...}
     {"pointer": "/ok", "equals": false}                       # failure iff /ok == false
     {"pointer": "/error_code", "exists": true}                # failure iff /error_code is present
+    {"pointer": "", "contains": "Error:"}                     # free text contains a substring
+    {"pointer": "", "matches": "^(Error|Failed)\\b"}          # free text matches a regex
 
-The pointer is an RFC 6901 JSON Pointer into the result content. A predicate with a pointer but no
-condition defaults to ``exists`` (present ⇒ failure). This is the same "declare per-tool semantics"
-model as ``metadata.side_effecting`` and per-field ``x-value-origin`` — never inferred from a name.
+The pointer is an RFC 6901 JSON Pointer into the result content (``""`` is the whole result). A
+predicate with a non-empty pointer and no condition defaults to ``exists`` (present ⇒ failure). The
+``contains`` / ``matches`` modes exist for tools that report failure as **free text** — the many MCP
+tools that return a plain ``"Error: ..."`` string over a 200 with no error status; ``matches`` is a
+regular expression, ``contains`` a substring, both tested against the string form of the value. This
+is the same "declare per-tool semantics" model as ``metadata.side_effecting`` and per-field
+``x-value-origin`` — never inferred from a name. The declaration lives in the *operator's*
+``tools.json``, so it works for third-party tools whose authors declare nothing.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
 _UNSET = object()  # distinguishes "equals not configured" from "equals: null"
+
+
+def _as_text(value: Any) -> str:
+    """String form of a resolved value for ``contains`` / ``matches`` (JSON for containers)."""
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    return json.dumps(value, sort_keys=True, default=str)
 
 
 def resolve_pointer(content: Any, pointer: str) -> tuple[Any, bool]:
@@ -66,23 +84,46 @@ class FailurePredicate:
     pointer: str
     in_values: tuple[Any, ...] = ()
     equals: Any = _UNSET
+    contains: str | None = None
+    pattern: str | None = None  # the JSON ``matches`` key — a regular expression
     exists: bool = False
+
+    def _has_explicit_condition(self) -> bool:
+        return bool(
+            self.in_values
+            or self.equals is not _UNSET
+            or self.contains is not None
+            or self.pattern is not None
+        )
 
     @classmethod
     def from_dict(cls, data: Any) -> FailurePredicate | None:
-        if not isinstance(data, dict):
-            return None
+        if not isinstance(data, dict) or "pointer" not in data:
+            return None  # pointer is required (may be "" for the whole result)
         pointer = data.get("pointer")
-        if not isinstance(pointer, str) or not pointer:
+        if not isinstance(pointer, str):
             return None
         raw_in = data.get("in")
         in_values = tuple(raw_in) if isinstance(raw_in, list) else ()
         equals = data["equals"] if "equals" in data else _UNSET
+        contains = data["contains"] if isinstance(data.get("contains"), str) else None
+        pattern = data["matches"] if isinstance(data.get("matches"), str) else None
         exists = bool(data.get("exists", False))
-        # A pointer with no stated condition means "failure iff this path is present".
-        if not in_values and equals is _UNSET and not exists:
-            exists = True
-        return cls(pointer=pointer, in_values=in_values, equals=equals, exists=exists)
+        pred = cls(
+            pointer=pointer,
+            in_values=in_values,
+            equals=equals,
+            contains=contains,
+            pattern=pattern,
+            exists=exists,
+        )
+        if not (pred._has_explicit_condition() or exists):
+            # A *non-empty* pointer with no condition means "failure iff this path is present".
+            # An empty pointer with nothing to test is meaningless — reject it.
+            if not pointer:
+                return None
+            pred = cls(pointer=pointer, exists=True)
+        return pred
 
     def matches(self, content: Any) -> bool:
         """True iff ``content`` satisfies this failure predicate."""
@@ -93,9 +134,21 @@ class FailurePredicate:
             return True
         if self.equals is not _UNSET and value == self.equals:
             return True
-        return bool(self.exists and not self.in_values and self.equals is _UNSET)
+        if self.contains is not None and self.contains in _as_text(value):
+            return True
+        if self.pattern is not None:
+            try:
+                if re.search(self.pattern, _as_text(value)):
+                    return True
+            except re.error:
+                pass  # a malformed pattern never matches (config error, fails safe)
+        # ``exists`` fires only when it is the sole condition (pointer present ⇒ failure).
+        return bool(self.exists and not self._has_explicit_condition())
 
     def describe(self, content: Any) -> str:
         """A short evidence string naming the matched path and value."""
         value, _ = resolve_pointer(content, self.pointer)
-        return f"{self.pointer}={value!r}"
+        text = repr(value)
+        if len(text) > 120:
+            text = text[:117] + "..."
+        return f"{self.pointer or '(result)'}={text}"

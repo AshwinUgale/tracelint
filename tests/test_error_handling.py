@@ -127,6 +127,30 @@ def test_exception_text_in_unknown_result_is_candidate():
     assert f.evidence["signal"] == "exception_text"
 
 
+def test_failed_text_in_unknown_result_is_candidate():
+    # "Failed to ..." is a common tool error string; the heuristic now catches it (candidate).
+    steps = [
+        ToolCall("c1", "call_api", {}),
+        ToolResult("c1", "Failed to connect to upstream", status=ResultStatus.UNKNOWN),
+    ]
+    f = _r2a(steps).active_findings[0]
+    assert f.tier is ConfidenceTier.CANDIDATE
+    assert f.evidence["signal"] == "exception_text"
+
+
+def test_free_text_error_via_contains_predicate_is_hard_event():
+    # The MCP case: a tool reports failure as a plain "Error: ..." string over an unknown status.
+    # A declared contains/matches predicate turns that into a structural hard event.
+    steps = [
+        ToolCall("c1", "mcp_tool", {}),
+        ToolResult("c1", "Error: upstream returned 500", status=ResultStatus.UNKNOWN),
+    ]
+    reg = _reg("mcp_tool", failure_when={"pointer": "", "contains": "Error:"})
+    f = _r2a(steps, reg).active_findings[0]
+    assert f.tier is ConfidenceTier.HARD_EVENT
+    assert f.evidence["signal"] == "failure_predicate"
+
+
 def test_empty_result_is_candidate():
     steps = [ToolCall("c1", "search", {}), ToolResult("c1", [], status=ResultStatus.UNKNOWN)]
     f = _r2a(steps).active_findings[0]

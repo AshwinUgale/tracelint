@@ -8,6 +8,16 @@ additive features; the public API is not yet frozen).
 
 - _Nothing yet._
 
+## [0.4.2]
+
+- `metadata.failure_when` gains `contains` (substring) and `matches` (regex) modes, and `pointer`
+  may be `""` (the whole result) — so a tool that reports failure as **free text** (the common MCP
+  `"Error: ..."` string over a 200) can declare that contract structurally, not just tools with a
+  `/status` field. The declaration lives in the operator's `tools.json`, so it works for
+  third-party tools whose authors declare nothing.
+- R2a's exception-text heuristic now also matches `failed` / `failure` (not just `error` /
+  `exception` / tracebacks / HTTP 4xx-5xx), still at the candidate tier. Both raised in review.
+
 ## [0.4.1]
 
 - CI on-ramp: a composite **GitHub Action** (`uses: AshwinUgale/tracelint@v0.4.1`) and a
