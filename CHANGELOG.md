@@ -6,7 +6,13 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
-- _Nothing yet._
+- Fix (found by linting real Phoenix agent traces): the OpenInference adapter no longer crashes on
+  `get_spans_dataframe()` records whose `events` cell is a numpy array (`array or []` raised "truth
+  value is ambiguous").
+- Fix (same): tool arguments serialized as a Python `str(dict)`/`repr` (single-quoted keys, common
+  in real instrumentation) are now parsed via `literal_eval` instead of being reported as **malformed
+  arguments (R6, a hard_defect)**. This was a false CI-failing finding on every such call — and the
+  unparsed empty args also faked identical calls, producing false R4 loops. Both classes are gone.
 
 ## [0.4.2]
 
