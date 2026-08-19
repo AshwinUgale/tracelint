@@ -126,6 +126,85 @@ def test_input_messages_seed_user_turn_for_provenance():
     assert not [f for f in report.active_findings if f.rule == "R3"]
 
 
+def test_genai_semconv_execute_tool_span_is_recognized():
+    """OTel GenAI semconv (OpenLLMetry / Traceloop) identifies a tool span by
+    gen_ai.operation.name == 'execute_tool', with gen_ai.tool.name and plain input/output — not
+    openinference.span.kind / tool.name / input.value. The one event-list reader handles both."""
+    import json as _json
+
+    spans = [
+        {
+            "span_id": "s1",
+            "name": "get_weather",
+            "start_time": "1",
+            "status_code": "OK",
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "get_weather",
+                "gen_ai.tool.call.id": "1234",
+                "input": _json.dumps({"city": "Paris"}),
+                "output": _json.dumps({"report": "rainy"}),
+            },
+        },
+        {
+            "span_id": "s2",
+            "name": "charge",
+            "start_time": "2",
+            "status": {"status_code": "ERROR"},
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "charge",
+                "input": _json.dumps({"amount": 5}),
+                "output": _json.dumps({"error": "declined"}),
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    call = trace.tool_calls()[0]
+    assert call.name == "get_weather" and call.args == {"city": "Paris"}
+    assert trace.result_for(call).content == {"report": "rainy"}
+    # the errored tool is read via the nested OTel status + output error field
+    assert trace.tool_results()[1].status is ResultStatus.ERROR
+    report = lint_trace(trace, default_rules())
+    assert any(f.rule == "R2a" for f in report.by_tier(ConfidenceTier.HARD_EVENT))
+
+
+def test_genai_input_messages_seed_user_turn():
+    """GenAI records the request under gen_ai.input.messages (JSON string, role/parts format).
+    Seeding it gives provenance the user's turn, same as OpenInference's llm.input_messages."""
+    import json as _json
+
+    spans = [
+        {
+            "span_id": "s0",
+            "name": "chat",
+            "start_time": "1",
+            "attributes": {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.input.messages": _json.dumps(
+                    [{"role": "user", "parts": [{"type": "text", "content": "Cancel order A100."}]}]
+                ),
+            },
+        },
+        {
+            "span_id": "s1",
+            "name": "cancel_order",
+            "start_time": "2",
+            "status_code": "OK",
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "cancel_order",
+                "input": _json.dumps({"order_id": "A100"}),
+                "output": _json.dumps({"ok": True}),
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    assert any(m.role.value == "user" and "A100" in m.content for m in trace.messages())
+    # 'A100' came from the user turn, so R3 must not flag it.
+    assert not [f for f in lint_trace(trace, default_rules()).active_findings if f.rule == "R3"]
+
+
 def test_python_repr_tool_args_are_parsed_not_malformed():
     """Some instrumentations serialize a tool's arguments with str(dict)/repr (single-quoted keys),
     which isn't valid JSON but is a well-formed argument object — not a malformed call. Regression

@@ -42,18 +42,44 @@ from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolRes
 
 _SPAN_KIND = "openinference.span.kind"
 
+# OTel GenAI semantic convention (OpenLLMetry / Traceloop / the OTel GenAI standard) identifies a
+# span by its *operation*, not an openinference.span.kind attribute. Map it to the same vocabulary
+# so one event-list reader covers both conventions.
+_GENAI_OP = "gen_ai.operation.name"
+_GENAI_TOOL_OPS = {"execute_tool", "invoke_tool"}
+_GENAI_LLM_OPS = {"chat", "text_completion", "completion", "generate_content"}
+
 
 def _span_kind(span: dict[str, Any], attrs: dict[str, Any]) -> str:
-    """The OpenInference span kind (``TOOL`` / ``LLM`` / ...), normalized to upper case.
+    """The span kind (``TOOL`` / ``LLM`` / ...), normalized to upper case, across conventions.
 
-    The instrumentation/OTLP path emits it as the ``openinference.span.kind`` *attribute*, but
-    Arize **Phoenix's own trace export** records it as a top-level ``span_kind`` field instead.
-    Accept both so a real Phoenix export lints the same as any other OpenInference source (without
-    this, a Phoenix trace recognizes zero tool spans and every rule silently suppresses).
+    Reads, in order: the ``openinference.span.kind`` *attribute* (instrumentation/OTLP path); a
+    top-level ``span_kind`` field (**Arize Phoenix's own trace export**); and the OTel **GenAI**
+    convention's ``gen_ai.operation.name`` (``execute_tool`` → TOOL, ``chat`` → LLM). Without the
+    first two a Phoenix trace recognizes zero tool spans; without the third, a GenAI/OpenLLMetry
+    trace does — in both cases every rule then silently suppresses.
     """
-    return str(
-        attrs.get(_SPAN_KIND) or span.get("span_kind") or span.get("spanKind") or ""
-    ).upper()
+    explicit = str(attrs.get(_SPAN_KIND) or span.get("span_kind") or span.get("spanKind") or "")
+    if explicit:
+        return explicit.upper()
+    op = str(attrs.get(_GENAI_OP) or "").lower()
+    if op in _GENAI_TOOL_OPS:
+        return "TOOL"
+    if op in _GENAI_LLM_OPS:
+        return "LLM"
+    if op == "invoke_agent":
+        return "AGENT"
+    return ""
+
+
+def _input_value(attrs: dict[str, Any]) -> Any:
+    """The tool/LLM input: OpenInference ``input.value`` or GenAI's plain ``input``."""
+    return attrs.get("input.value") if "input.value" in attrs else attrs.get("input")
+
+
+def _output_value(attrs: dict[str, Any]) -> Any:
+    """The tool/LLM output: OpenInference ``output.value`` or GenAI's plain ``output``."""
+    return attrs.get("output.value") if "output.value" in attrs else attrs.get("output")
 
 
 def _otlp_value(v: Any) -> Any:
@@ -241,7 +267,7 @@ def _is_error_span(span: dict[str, Any], attrs: dict[str, Any]) -> tuple[bool, s
             if isinstance(ev_attrs, list):
                 ev_attrs = {i.get("key"): _otlp_value(i.get("value")) for i in ev_attrs}
             return True, str(ev_attrs.get("exception.message") or "exception")
-    out = attrs.get("output.value")
+    out = _output_value(attrs)
     parsed, _ = _parse_value(out)
     if isinstance(parsed, dict):
         http = parsed.get("http_status", parsed.get("status_code"))
@@ -303,16 +329,51 @@ def _seed_input_messages(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) ->
         if _span_kind(span, attrs) != "LLM":
             continue
         input_messages = _collect_messages(attrs, "llm.input_messages")
-        if not input_messages:
-            continue
-        seeded: list[Message] = []
-        for msg in input_messages:
-            role = str(msg.get("role") or "").lower()
-            content = msg.get("content")
-            if role in ("user", "system") and isinstance(content, str) and content:
-                seeded.append(Message(Role.USER if role == "user" else Role.SYSTEM, content))
-        return seeded
+        if input_messages:
+            seeded: list[Message] = []
+            for msg in input_messages:
+                role = str(msg.get("role") or "").lower()
+                content = msg.get("content")
+                if role in ("user", "system") and isinstance(content, str) and content:
+                    seeded.append(Message(Role.USER if role == "user" else Role.SYSTEM, content))
+            return seeded
+        genai_seeded = _genai_input_seed(attrs)
+        if genai_seeded:
+            return genai_seeded
     return []
+
+
+def _genai_text(message: dict[str, Any]) -> str | None:
+    """Text of a GenAI message — a flat ``content`` string, or the ``text`` parts joined."""
+    if isinstance(message.get("content"), str):
+        return message["content"] or None
+    parts = message.get("parts")
+    if isinstance(parts, list):
+        texts = [
+            p["content"]
+            for p in parts
+            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("content"), str)
+        ]
+        return "\n".join(t for t in texts if t) or None
+    return None
+
+
+def _genai_input_seed(attrs: dict[str, Any]) -> list[Message]:
+    """Leading user/system turns from GenAI ``gen_ai.input.messages`` (JSON string, parts)."""
+    parsed, _ = _parse_value(attrs.get("gen_ai.input.messages"))
+    if not isinstance(parsed, list):
+        return []
+    seeded: list[Message] = []
+    for message in parsed:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").lower()
+        if role not in ("user", "system"):
+            continue
+        text = _genai_text(message)
+        if text:
+            seeded.append(Message(Role.USER if role == "user" else Role.SYSTEM, text))
+    return seeded
 
 
 def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -> Trace:
@@ -330,12 +391,22 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
         kind = _span_kind(span, attrs)
 
         if kind == "TOOL":
-            call_id = _span_id(span) or f"span-{len(steps)}"
-            name = str(attrs.get("tool.name") or span.get("span_name") or span.get("name") or "")
-            args, raw_text = _args_from(attrs.get("input.value"))
+            call_id = (
+                _span_id(span)
+                or str(attrs.get("gen_ai.tool.call.id") or "")
+                or f"span-{len(steps)}"
+            )
+            name = str(
+                attrs.get("tool.name")
+                or attrs.get("gen_ai.tool.name")
+                or span.get("span_name")
+                or span.get("name")
+                or ""
+            )
+            args, raw_text = _args_from(_input_value(attrs))
             steps.append(ToolCall(call_id=call_id, name=name, args=args, raw_text=raw_text))
             is_err, err_msg = _is_error_span(span, attrs)
-            content, _ = _parse_value(attrs.get("output.value"))
+            content, _ = _parse_value(_output_value(attrs))
             steps.append(
                 ToolResult(
                     call_id=call_id,
