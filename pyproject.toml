@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracelint"
-version = "0.4.2"
+version = "0.5.0"
 description = "A linter for agent runs — reads the execution trace and flags structural bugs, deterministically."
 readme = "README.md"
 requires-python = ">=3.10"

@@ -6,6 +6,10 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- _Nothing yet._
+
+## [0.5.0]
+
 - Fix (found by linting real Phoenix agent traces): the OpenInference adapter no longer crashes on
   `get_spans_dataframe()` records whose `events` cell is a numpy array (`array or []` raised "truth
   value is ambiguous").
@@ -18,6 +22,12 @@ additive features; the public API is not yet frozen).
   `gen_ai.operation.name` (`execute_tool` → tool call, `chat` → LLM), with `gen_ai.tool.name`,
   plain `input`/`output`, and provenance seeded from `gen_ai.input.messages`. One reader now covers
   most observability-platform exports, not just Arize/OpenInference.
+- The message-list reader (`from_openai_messages` / `--format openai`) now reads the common
+  real-world variants without a bespoke adapter: the **ShareGPT** `from`/`value` shape (with
+  `human`/`gpt` roles), a `role`+`text` shape (some trajectory dumps), and **typed-block content**
+  (`[{"type":"text","text":...}]`, the Anthropic / newer-OpenAI / SWE-bench form). Typed blocks are
+  flattened to text for messages and text tool-results, while a *structured* tool-result payload (a
+  dict or data list) is preserved so R2 / `failure_when` can still read it.
 
 ## [0.4.2]
 
