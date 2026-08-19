@@ -34,6 +34,7 @@ from actual TRAIL/GAIA spans, not just the spec.*
 
 from __future__ import annotations
 
+import ast
 import json
 from typing import Any
 
@@ -169,14 +170,28 @@ def _unwrap_call_input(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_value(raw: Any) -> tuple[Any, str | None]:
-    """Parse an OpenInference ``*.value`` (often a JSON string). Return ``(value, raw_text)``."""
+    """Parse an OpenInference ``*.value`` (often a JSON string). Return ``(value, raw_text)``.
+
+    Falls back to ``ast.literal_eval`` when JSON fails: several instrumentations serialize a tool's
+    arguments with Python's ``str(dict)`` / ``repr`` (single-quoted keys, ``True``/``None``), which
+    is not valid JSON but is a well-formed argument object — not a malformed call. ``literal_eval``
+    is safe (literals only, no code execution). Only when *both* fail is the value treated as
+    unparsed text (what R6 reads as a malformed argument).
+    """
     if raw is None or isinstance(raw, (dict, list, int, float, bool)):
         return raw, None
     if isinstance(raw, str):
         try:
             return json.loads(raw), None
         except (json.JSONDecodeError, ValueError):
+            pass
+        try:
+            parsed = ast.literal_eval(raw)
+        except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
             return raw, raw
+        if isinstance(parsed, (dict, list)):
+            return parsed, None
+        return raw, raw
     return raw, None
 
 
@@ -217,7 +232,10 @@ def _is_error_span(span: dict[str, Any], attrs: dict[str, Any]) -> tuple[bool, s
     # "ERROR" covers the plain code and OTLP's "STATUS_CODE_ERROR"; "2" is OTLP's numeric ERROR.
     if "ERROR" in status or status == "2":
         return True, message
-    for event in span.get("events", []) or []:
+    # ``events`` may be a numpy array (Phoenix get_spans_dataframe records), so avoid truthiness
+    # tests on it — ``array or []`` raises "truth value of an array is ambiguous".
+    events = span.get("events")
+    for event in events if events is not None else []:
         if isinstance(event, dict) and str(event.get("name", "")).lower() == "exception":
             ev_attrs = event.get("attributes", {})
             if isinstance(ev_attrs, list):

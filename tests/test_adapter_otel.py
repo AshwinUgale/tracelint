@@ -126,6 +126,57 @@ def test_input_messages_seed_user_turn_for_provenance():
     assert not [f for f in report.active_findings if f.rule == "R3"]
 
 
+def test_python_repr_tool_args_are_parsed_not_malformed():
+    """Some instrumentations serialize a tool's arguments with str(dict)/repr (single-quoted keys),
+    which isn't valid JSON but is a well-formed argument object — not a malformed call. Regression
+    (found on real Phoenix agent traces): parse via literal_eval so R6 doesn't fire a false
+    hard_defect on every such call."""
+    span = {
+        "span_id": "t1",
+        "name": "product_search",
+        "start_time": "1",
+        "status_code": "OK",
+        "attributes": {
+            "openinference.span.kind": "TOOL",
+            "tool.name": "product_search",
+            "input.value": "{'query': 'tablet', 'page_size': 5, 'in_stock': True}",
+            "output.value": "{}",
+        },
+    }
+    trace = from_otel_spans([span])
+    call = trace.tool_calls()[0]
+    assert call.args == {"query": "tablet", "page_size": 5, "in_stock": True}
+    assert call.raw_text is None
+    report = lint_trace(trace, default_rules())
+    assert not report.has_hard_defect
+    assert not [f for f in report.active_findings if f.rule == "R6"]
+
+
+def test_events_as_nonlist_does_not_crash_on_truthiness():
+    """Phoenix get_spans_dataframe records store ``events`` as a numpy array; ``array or []`` raises
+    'truth value of an array is ambiguous'. Regression: never boolean-test the events value."""
+
+    class _AmbiguousTruth(list):
+        def __bool__(self):
+            raise ValueError("truth value is ambiguous")
+
+    span = {
+        "span_id": "t1",
+        "name": "charge",
+        "start_time": "1",
+        "status_code": "OK",
+        "events": _AmbiguousTruth([{"name": "other"}]),
+        "attributes": {
+            "openinference.span.kind": "TOOL",
+            "tool.name": "charge",
+            "input.value": "{}",
+            "output.value": "{}",
+        },
+    }
+    trace = from_otel_spans([span])  # must not raise
+    assert trace.tool_calls()[0].name == "charge"
+
+
 def test_phoenix_dataframe_record_shape_is_recognized():
     """The path a real Phoenix user takes — ``px.Client().get_spans_dataframe().to_dict("records")``
     — yields flat rows: required columns at top level and attributes as ``attributes.*`` columns
