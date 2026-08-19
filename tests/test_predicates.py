@@ -43,10 +43,35 @@ def test_exists_predicate_and_default():
     assert default.matches({"error": "x"}) and not default.matches({"ok": 1})
 
 
+def test_contains_predicate_on_free_text():
+    # The MCP case: a bare "Error: ..." string result, matched against the whole content ("").
+    p = FailurePredicate.from_dict({"pointer": "", "contains": "Error:"})
+    assert p.matches("Error: upstream 500")
+    assert not p.matches("ok, done")
+
+
+def test_matches_regex_predicate():
+    p = FailurePredicate.from_dict({"pointer": "", "matches": r"^(Error|Failed)\b"})
+    assert p.matches("Failed to connect")
+    assert p.matches("Error: boom")
+    assert not p.matches("succeeded")
+
+
+def test_contains_on_nested_value_stringifies():
+    p = FailurePredicate.from_dict({"pointer": "/detail", "contains": "declined"})
+    assert p.matches({"detail": {"reason": "card declined"}})
+
+
+def test_malformed_regex_never_matches():
+    p = FailurePredicate.from_dict({"pointer": "", "matches": "("})  # invalid regex
+    assert not p.matches("Error: boom")  # fails safe, no crash
+
+
 def test_from_dict_rejects_malformed():
     assert FailurePredicate.from_dict(None) is None
-    assert FailurePredicate.from_dict({"in": ["x"]}) is None  # no pointer
+    assert FailurePredicate.from_dict({"in": ["x"]}) is None  # no pointer key
     assert FailurePredicate.from_dict("nope") is None
+    assert FailurePredicate.from_dict({"pointer": ""}) is None  # empty pointer, no condition
 
 
 def test_describe_names_path_and_value():

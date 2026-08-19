@@ -36,10 +36,12 @@ from tracelint.tools import ToolRegistry
 from tracelint.trace import ResultStatus, ToolResult, Trace
 from tracelint.valueutil import significant_values as _significant_values
 
-# Heuristic markers for an exception-like string in a free-form (unknown-status) result.
+# Heuristic markers for an exception-like string in a free-form (unknown-status) result. Kept
+# conservative — it only ever produces a *candidate* (possible false positive), so it favors the
+# forms that actually show up in tool error strings ("Error:", "Failed to ...", a traceback).
 _EXCEPTION_RE = re.compile(
     r"traceback \(most recent call last\)|\bexception\b|\b[A-Za-z]*Error\b|"
-    r"http\s*[45]\d\d|\berrno\b",
+    r"\bfail(?:ed|ure)\b|http\s*[45]\d\d|\berrno\b",
     re.IGNORECASE,
 )
 
