@@ -13,6 +13,11 @@ additive features; the public API is not yet frozen).
   in real instrumentation) are now parsed via `literal_eval` instead of being reported as **malformed
   arguments (R6, a hard_defect)**. This was a false CI-failing finding on every such call — and the
   unparsed empty args also faked identical calls, producing false R4 loops. Both classes are gone.
+- The OpenTelemetry event-list reader now understands **both** OTel conventions: OpenInference
+  *and* the OTel **GenAI** semantic convention (OpenLLMetry / Traceloop). A GenAI span is read via
+  `gen_ai.operation.name` (`execute_tool` → tool call, `chat` → LLM), with `gen_ai.tool.name`,
+  plain `input`/`output`, and provenance seeded from `gen_ai.input.messages`. One reader now covers
+  most observability-platform exports, not just Arize/OpenInference.
 
 ## [0.4.2]
 
