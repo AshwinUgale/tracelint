@@ -59,6 +59,7 @@ from tracelint.injection import (
     apply_fault,
 )
 from tracelint.stats import bootstrap_mean_ci, wilson_interval
+from tracelint.experiment import Condition, Experiment, render_experiment, run_experiment
 from tracelint.nondeterminism import (
     FindingReproduction,
     ReproductionReport,
@@ -156,6 +157,10 @@ __all__ = [
     "lint_runs",
     "ReproductionReport",
     "FindingReproduction",
+    "run_experiment",
+    "render_experiment",
+    "Experiment",
+    "Condition",
     # Scorecard
     "Task",
     "Scorecard",

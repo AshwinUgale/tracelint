@@ -6,7 +6,15 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
-- _Nothing yet._
+- Fault-injection experiment harness (`run_experiment` / `render_experiment`): runs an agent at
+  baseline and under injected faults, `runs` times each, and reports recovery rate,
+  incorrect-continuation rate (the agent claimed success while the oracle failed), and
+  tracelint-flagged rate — each with a Wilson interval. Unlike the scripted `scorecard --demo`, it's
+  built to run a *real* agent (see `examples/fault_experiment.py`) so the numbers are observed, not
+  authored.
+- New `DENIED` fault type: a transport success (HTTP 200, status OK) carrying a `{"status":
+  "declined"}` body — invisible to structured-error detection, flagged only when the tool declares a
+  `failure_when` predicate. The experiment prints the before/after across that declaration.
 
 ## [0.5.0]
 
