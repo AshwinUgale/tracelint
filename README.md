@@ -98,6 +98,28 @@ A trace is a JSON object (`.json`, or `.jsonl` for many):
 }
 ```
 
+A tool can also declare **what failure looks like** in its result, so a domain failure returned as
+a transport success (HTTP 200 carrying `{"status": "declined"}`) is caught structurally instead of
+slipping through:
+
+```json
+{
+  "tools": {
+    "charge_card": {
+      "metadata": {
+        "side_effecting": true,
+        "failure_when": {"pointer": "/status", "in": ["declined", "failed"]}
+      }
+    }
+  }
+}
+```
+
+`failure_when` is a JSON Pointer into the result plus a match (`in` / `equals` / `exists`); a match
+is a structured error for R2 (feeding R2a and, on reuse into a side-effecting call, R2b). A
+side-effecting tool with **no** `failure_when` and an unclassifiable result is *suppressed with a
+reason* — never counted as a clean pass.
+
 The rules run against **one canonical trace schema**; a thin **adapter** translates each source's
 format into it, so the rules never change. Built in: `from_openai_messages` (OpenAI chat message
 lists), `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's observations), and
@@ -113,6 +135,92 @@ deterministically localized real tool errors, a malformed tool call, and excessi
 with no model in the loop. Real exports vary, so a new source may need a small adapter tweak — and
 when a field a rule needs is absent, that rule **suppresses** (says so) rather than guessing, so an
 unhandled quirk degrades safely instead of producing a wrong result. More adapters are future work.
+
+## Lint the traces you already collect
+
+`check` reads native tracelint JSON by default, but `--format` points it straight at the traces
+your stack already emits — no manual schema conversion:
+
+```bash
+tracelint check spans.json    --format openinference   # OTel/OpenInference: Phoenix, OTLP, TRAIL
+tracelint check messages.json --format openai          # an OpenAI chat message list
+tracelint check trace.json    --format langfuse        # a Langfuse trace export
+```
+
+Most rules need no tool schemas, so this works keyless; add `--tools tools.json` to light up the
+schema-dependent rules (R1, and R3's high-confidence tier). A multi-trace input (a `.jsonl` file, a
+JSON array, or an OTLP export carrying several `trace_id`s) fans out to one report each. From the
+library, the same one-liner:
+
+```python
+from tracelint import lint_otel_trace
+
+report = lint_otel_trace(spans)   # spans: your OpenInference span export (a list of dicts)
+print(report.exit_code)           # 0 or 2
+```
+
+See `examples/lint_openinference_phoenix.py` for an offline, keyless end-to-end run (Phoenix-shaped
+spans → findings, with and without a tool registry).
+
+Straight from a running [Arize Phoenix](https://phoenix.arize.com) instance:
+
+```python
+import phoenix as px
+from tracelint import lint_otel_trace
+
+spans = px.Client().get_spans_dataframe().to_dict("records")
+print(lint_otel_trace(spans).exit_code)
+```
+
+Both Phoenix shapes are handled: the span-export JSON (top-level `span_kind`) and the
+`get_spans_dataframe()` records (attributes as `attributes.*` columns).
+
+## Add to CI
+
+`tracelint check` returns exit `2` on a structurally-provable defect, so it gates a build directly.
+Point it at the traces your agent test job already produces — a defect fails the job; heuristic
+candidates never do.
+
+**GitHub Actions** — the ready-made action:
+
+```yaml
+name: lint-agent-traces
+on: [push, pull_request]
+jobs:
+  tracelint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # ... your step that runs the agent and writes traces to ./traces ...
+      - uses: AshwinUgale/tracelint@v0.4.1
+        with:
+          traces: "traces/*.jsonl"
+          format: "openinference"     # or native / openai / langfuse
+          tools: "tools.json"          # optional — lights up R1, R3, R2 predicates
+```
+
+**Any CI, without the action** — it's one pip install and one command:
+
+```bash
+pip install tracelint
+tracelint check traces/*.jsonl --format openinference --tools tools.json
+```
+
+**pre-commit** — lint only the trace files a commit touches:
+
+```yaml
+repos:
+  - repo: https://github.com/AshwinUgale/tracelint
+    rev: v0.4.1
+    hooks:
+      - id: tracelint
+        files: ^traces/.*\.jsonl$
+        args: ["--format", "openinference", "--tools", "tools.json"]
+```
+
+Traces have to come from somewhere: tracelint lints artifacts, it doesn't run your agent. The usual
+shape is a test job that exercises the agent, captures its trace (OpenInference/OTel, OpenAI, or
+Langfuse), and then runs `tracelint check` on that file.
 
 ## Recovery scorecard
 
