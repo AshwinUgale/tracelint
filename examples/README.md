@@ -1,5 +1,43 @@
 # Examples
 
+## `fault_experiment.py` — run a real agent under injected faults
+
+The recovery scorecard's `--demo` uses scripted agents, so its numbers are *authored*. This points
+the same harness at a real GPT agent: baseline on the order-cancellation task, then a fault injected
+on the prerequisite lookup, and it measures what the model actually does — recovery rate,
+incorrect-continuation rate (claimed success while the oracle failed), and tracelint-flagged rate,
+each with a 95% Wilson interval.
+
+```bash
+pip install "tracelint[real-agent]"
+export OPENAI_API_KEY=sk-...
+python examples/fault_experiment.py --runs 20 --model gpt-4o-mini
+```
+
+The sharp case is `denied` — a lookup returning HTTP 200 with a `{"status": "declined"}` body. It's
+invisible to the oracle and to tracelint's structured-error detection; the run prints the table
+twice (with and without a declared `failure_when`) so you can see a declared contract is the only
+thing that flags it. The harness is covered deterministically by `tests/test_experiment.py` (scripted
+agents, no key).
+
+## `lint_openinference_phoenix.py` — lint OpenInference / OpenTelemetry spans
+
+Fully **offline and keyless**. Builds a small Arize Phoenix-shaped OpenInference span export for a
+flight-booking agent that makes two real mistakes (a schema-violating tool call and a declined
+payment), then lints it via `lint_otel_trace` — first schema-free, then with a `tools.json`-style
+registry so R1 proves the schema violation a hard defect and the process exits `2`.
+
+```bash
+python examples/lint_openinference_phoenix.py
+
+# The same thing at the command line, against any OpenInference export:
+tracelint check spans.json --format openinference --tools tools.json
+```
+
+Because it reads OpenInference (the OpenTelemetry semantic convention for AI spans), the same path
+reaches Arize Phoenix, OpenLLMetry, Langfuse-via-OTel, and datasets like TRAIL — one adapter, the
+whole ecosystem. It is exercised by `tests/test_openinference_example.py`.
+
 ## `real_agent.py` — lint a real OpenAI agent run
 
 A genuine GPT model drives a small refund-support toolset (some tools can error), and tracelint

@@ -13,6 +13,16 @@ from tracelint.trace import ResultStatus, ToolCall
 CALL = ToolCall("c1", "reserve", {"x": 1})
 
 
+def test_denied_fault_is_transport_success_carrying_domain_failure():
+    from tracelint.signatures import is_structured_error
+
+    result = apply_fault(FaultType.DENIED, CALL)
+    assert result.status is ResultStatus.OK and result.http_status is None
+    assert result.content == {"status": "declined", "reason": "insufficient_funds"}
+    # The whole point: it looks like success, so structured-error detection can't see it.
+    assert not is_structured_error(result)
+
+
 def test_each_fault_renders_correctly():
     assert apply_fault(FaultType.TIMEOUT, CALL).status is ResultStatus.ERROR
     err = apply_fault(FaultType.ERROR, CALL)

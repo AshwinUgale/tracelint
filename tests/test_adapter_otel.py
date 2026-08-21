@@ -28,6 +28,273 @@ def _tool_span(sid, name, inp, out, *, status="OK", status_message=None, start="
     }
 
 
+def test_phoenix_export_top_level_span_kind_is_recognized():
+    """Arize Phoenix's own trace export puts the kind in a top-level ``span_kind`` field (not the
+    ``openinference.span.kind`` attribute). Regression: a real Phoenix export must be recognized,
+    not silently reduced to zero tool calls. Derived from a real Arize-ai/phoenix fixture."""
+    spans = [
+        {
+            "context": {"trace_id": "fixture-trace-1", "span_id": "s1"},
+            "name": "list_datasets",
+            "span_kind": "TOOL",  # top-level, the Phoenix export shape
+            "start_time": "2024-01-01T00:00:01Z",
+            "status_code": "OK",
+            "attributes": {"tool.name": "list_datasets", "input.value": "{}", "output.value": "[]"},
+        },
+        {
+            "context": {"trace_id": "fixture-trace-1", "span_id": "s2"},
+            "name": "add_spans",
+            "span_kind": "TOOL",
+            "start_time": "2024-01-01T00:00:02Z",
+            "status_code": "ERROR",
+            "status_message": "GraphQL error",
+            "attributes": {"tool.name": "add_spans", "input.value": "{}", "output.value": "{}"},
+        },
+    ]
+    trace = from_otel_spans(spans)
+    assert [c.name for c in trace.tool_calls()] == ["list_datasets", "add_spans"]
+    assert trace.run_id == "fixture-trace-1"
+    # The errored Phoenix span is still read as a structured error (R2a's hard-event signal).
+    err = trace.tool_results()[1]
+    assert err.status is ResultStatus.ERROR
+    report = lint_trace(trace, default_rules())
+    assert any(f.rule == "R2a" for f in report.by_tier(ConfidenceTier.HARD_EVENT))
+
+
+def test_error_from_nested_otel_status_shapes():
+    """A real OTel export nests the status: the SDK's ReadableSpan.to_json emits
+    ``{"status": {"status_code": "ERROR"}}`` and OTLP-JSON emits ``{"code": "STATUS_CODE_ERROR"}``
+    or the numeric ``2``. Regression: read the status from those shapes, not only a flat
+    ``status_code`` — a real SDK-exported ERROR was missed when its output payload was clean."""
+    def tool(status):
+        return {
+            "span_id": "t1",
+            "name": "charge",
+            "start_time": "1",
+            "status": status,
+            "attributes": {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "charge",
+                "input.value": "{}",
+                "output.value": '{"receipt": "ok"}',  # clean payload: only the status signals error
+            },
+        }
+    shapes = (
+        {"status_code": "ERROR", "description": "boom"},  # OTel SDK ReadableSpan.to_json
+        {"code": "STATUS_CODE_ERROR"},  # OTLP-JSON string code
+        {"code": 2},  # OTLP numeric ERROR
+    )
+    for status in shapes:
+        result = from_otel_spans([tool(status)]).tool_results()[0]
+        assert result.status is ResultStatus.ERROR, status
+
+
+def test_input_messages_seed_user_turn_for_provenance():
+    """OpenInference records the user's request under llm.input_messages. Seeding it (from the
+    first LLM span only) gives provenance something to check against, so an argument the user
+    actually supplied is not falsely flagged as a hallucinated/underivable value (R3)."""
+    spans = [
+        {
+            "span_id": "l1",
+            "name": "llm",
+            "start_time": "1",
+            "attributes": {
+                "openinference.span.kind": "LLM",
+                "llm.input_messages.0.message.role": "user",
+                "llm.input_messages.0.message.content": "Cancel order A100.",
+                "llm.output_messages.0.message.role": "assistant",
+                "llm.output_messages.0.message.content": "Cancelling.",
+            },
+        },
+        {
+            "span_id": "t1",
+            "name": "cancel_order",
+            "start_time": "2",
+            "status_code": "OK",
+            "attributes": {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "cancel_order",
+                "input.value": '{"order_id": "A100"}',
+                "output.value": '{"ok": true}',
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    assert any(m.role.value == "user" and "A100" in m.content for m in trace.messages())
+    report = lint_trace(trace, default_rules())
+    # 'A100' came from the user turn, so R3 must not flag it as underivable.
+    assert not [f for f in report.active_findings if f.rule == "R3"]
+
+
+def test_genai_semconv_execute_tool_span_is_recognized():
+    """OTel GenAI semconv (OpenLLMetry / Traceloop) identifies a tool span by
+    gen_ai.operation.name == 'execute_tool', with gen_ai.tool.name and plain input/output — not
+    openinference.span.kind / tool.name / input.value. The one event-list reader handles both."""
+    import json as _json
+
+    spans = [
+        {
+            "span_id": "s1",
+            "name": "get_weather",
+            "start_time": "1",
+            "status_code": "OK",
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "get_weather",
+                "gen_ai.tool.call.id": "1234",
+                "input": _json.dumps({"city": "Paris"}),
+                "output": _json.dumps({"report": "rainy"}),
+            },
+        },
+        {
+            "span_id": "s2",
+            "name": "charge",
+            "start_time": "2",
+            "status": {"status_code": "ERROR"},
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "charge",
+                "input": _json.dumps({"amount": 5}),
+                "output": _json.dumps({"error": "declined"}),
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    call = trace.tool_calls()[0]
+    assert call.name == "get_weather" and call.args == {"city": "Paris"}
+    assert trace.result_for(call).content == {"report": "rainy"}
+    # the errored tool is read via the nested OTel status + output error field
+    assert trace.tool_results()[1].status is ResultStatus.ERROR
+    report = lint_trace(trace, default_rules())
+    assert any(f.rule == "R2a" for f in report.by_tier(ConfidenceTier.HARD_EVENT))
+
+
+def test_genai_input_messages_seed_user_turn():
+    """GenAI records the request under gen_ai.input.messages (JSON string, role/parts format).
+    Seeding it gives provenance the user's turn, same as OpenInference's llm.input_messages."""
+    import json as _json
+
+    spans = [
+        {
+            "span_id": "s0",
+            "name": "chat",
+            "start_time": "1",
+            "attributes": {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.input.messages": _json.dumps(
+                    [{"role": "user", "parts": [{"type": "text", "content": "Cancel order A100."}]}]
+                ),
+            },
+        },
+        {
+            "span_id": "s1",
+            "name": "cancel_order",
+            "start_time": "2",
+            "status_code": "OK",
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "cancel_order",
+                "input": _json.dumps({"order_id": "A100"}),
+                "output": _json.dumps({"ok": True}),
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    assert any(m.role.value == "user" and "A100" in m.content for m in trace.messages())
+    # 'A100' came from the user turn, so R3 must not flag it.
+    assert not [f for f in lint_trace(trace, default_rules()).active_findings if f.rule == "R3"]
+
+
+def test_python_repr_tool_args_are_parsed_not_malformed():
+    """Some instrumentations serialize a tool's arguments with str(dict)/repr (single-quoted keys),
+    which isn't valid JSON but is a well-formed argument object — not a malformed call. Regression
+    (found on real Phoenix agent traces): parse via literal_eval so R6 doesn't fire a false
+    hard_defect on every such call."""
+    span = {
+        "span_id": "t1",
+        "name": "product_search",
+        "start_time": "1",
+        "status_code": "OK",
+        "attributes": {
+            "openinference.span.kind": "TOOL",
+            "tool.name": "product_search",
+            "input.value": "{'query': 'tablet', 'page_size': 5, 'in_stock': True}",
+            "output.value": "{}",
+        },
+    }
+    trace = from_otel_spans([span])
+    call = trace.tool_calls()[0]
+    assert call.args == {"query": "tablet", "page_size": 5, "in_stock": True}
+    assert call.raw_text is None
+    report = lint_trace(trace, default_rules())
+    assert not report.has_hard_defect
+    assert not [f for f in report.active_findings if f.rule == "R6"]
+
+
+def test_events_as_nonlist_does_not_crash_on_truthiness():
+    """Phoenix get_spans_dataframe records store ``events`` as a numpy array; ``array or []`` raises
+    'truth value of an array is ambiguous'. Regression: never boolean-test the events value."""
+
+    class _AmbiguousTruth(list):
+        def __bool__(self):
+            raise ValueError("truth value is ambiguous")
+
+    span = {
+        "span_id": "t1",
+        "name": "charge",
+        "start_time": "1",
+        "status_code": "OK",
+        "events": _AmbiguousTruth([{"name": "other"}]),
+        "attributes": {
+            "openinference.span.kind": "TOOL",
+            "tool.name": "charge",
+            "input.value": "{}",
+            "output.value": "{}",
+        },
+    }
+    trace = from_otel_spans([span])  # must not raise
+    assert trace.tool_calls()[0].name == "charge"
+
+
+def test_phoenix_dataframe_record_shape_is_recognized():
+    """The path a real Phoenix user takes — ``px.Client().get_spans_dataframe().to_dict("records")``
+    — yields flat rows: required columns at top level and attributes as ``attributes.*`` columns
+    (Phoenix's ATTRIBUTE_PREFIX). Regression: read args/output from those prefixed columns, not
+    just a nested ``attributes`` dict, so a record span isn't recognized with empty args."""
+    records = [
+        {
+            "name": "lookup_order",
+            "span_kind": "TOOL",
+            "start_time": "2024-01-01T00:00:01Z",
+            "status_code": "OK",
+            "context.span_id": "s1",
+            "context.trace_id": "df-trace-1",
+            "attributes.tool.name": "lookup_order",
+            "attributes.input.value": '{"order_id": "A100"}',
+            "attributes.output.value": '{"amount": 49.99}',
+        },
+        {
+            "name": "charge_card",
+            "span_kind": "TOOL",
+            "start_time": "2024-01-01T00:00:02Z",
+            "status_code": "ERROR",
+            "status_message": "gateway 402",
+            "context.span_id": "s2",
+            "context.trace_id": "df-trace-1",
+            "attributes.tool.name": "charge_card",
+            "attributes.input.value": '{"amount": 49.99}',
+            "attributes.output.value": '{"error": "declined"}',
+        },
+    ]
+    trace = from_otel_spans(records)
+    call = trace.tool_calls()[0]
+    assert call.name == "lookup_order"
+    assert call.args == {"order_id": "A100"}  # read from the "attributes.input.value" column
+    assert trace.result_for(call).content == {"amount": 49.99}
+    assert trace.run_id == "df-trace-1"
+    assert trace.tool_results()[1].status is ResultStatus.ERROR
+
+
 def test_tool_span_becomes_paired_call_and_result():
     trace = from_otel_spans(
         [_tool_span("s1", "lookup_order", '{"order_id": "A100"}', '{"amount": 49.99}')]

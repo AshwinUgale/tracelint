@@ -1,0 +1,21 @@
+# pre-commit hook definitions — https://pre-commit.com
+#
+# Add to your repo's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/AshwinUgale/tracelint
+#       rev: v0.4.1
+#       hooks:
+#         - id: tracelint
+#           files: ^traces/.*\.jsonl$          # scope to your trace files
+#           args: ["--format", "openinference", "--tools", "tools.json"]
+#
+# pre-commit passes the changed, matching files as trailing arguments, so each commit lints only
+# the traces it touched. Exit 2 (a structural hard_defect) fails the commit.
+- id: tracelint
+  name: tracelint (agent trace linter)
+  description: "Deterministically lint agent execution traces for structural defects — no LLM judge."
+  entry: tracelint check
+  language: python
+  pass_filenames: true
+  files: '\.jsonl$'

@@ -35,6 +35,7 @@ class FaultType(str, Enum):
     EMPTY = "empty"  # valid-but-empty; silent
     TRUNCATED = "truncated"  # partial result; silent
     WRONG_SCHEMA = "wrong_schema"  # right status, wrong shape; silent
+    DENIED = "denied"  # transport success carrying a domain failure (HTTP 200 + status: declined)
 
 
 _NEEDS_ORIGINAL = {FaultType.TRUNCATED}
@@ -77,6 +78,12 @@ def apply_fault(fault: FaultType, call: ToolCall, original: ToolResult | None = 
         return ToolResult(cid, body, status=ResultStatus.OK)
     if fault is FaultType.WRONG_SCHEMA:
         return ToolResult(cid, {"unexpected_field": True}, status=ResultStatus.OK)
+    if fault is FaultType.DENIED:
+        # The hard case: transport succeeded (HTTP 200, status OK), but the *body* says it failed.
+        # Invisible to structured-error detection — only a declared failure_when predicate sees it.
+        return ToolResult(
+            cid, {"status": "declined", "reason": "insufficient_funds"}, status=ResultStatus.OK
+        )
     raise ValueError(f"unknown fault type {fault!r}")  # pragma: no cover
 
 

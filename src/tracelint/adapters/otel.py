@@ -34,12 +34,52 @@ from actual TRAIL/GAIA spans, not just the spec.*
 
 from __future__ import annotations
 
+import ast
 import json
 from typing import Any
 
 from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolResult, Trace
 
 _SPAN_KIND = "openinference.span.kind"
+
+# OTel GenAI semantic convention (OpenLLMetry / Traceloop / the OTel GenAI standard) identifies a
+# span by its *operation*, not an openinference.span.kind attribute. Map it to the same vocabulary
+# so one event-list reader covers both conventions.
+_GENAI_OP = "gen_ai.operation.name"
+_GENAI_TOOL_OPS = {"execute_tool", "invoke_tool"}
+_GENAI_LLM_OPS = {"chat", "text_completion", "completion", "generate_content"}
+
+
+def _span_kind(span: dict[str, Any], attrs: dict[str, Any]) -> str:
+    """The span kind (``TOOL`` / ``LLM`` / ...), normalized to upper case, across conventions.
+
+    Reads, in order: the ``openinference.span.kind`` *attribute* (instrumentation/OTLP path); a
+    top-level ``span_kind`` field (**Arize Phoenix's own trace export**); and the OTel **GenAI**
+    convention's ``gen_ai.operation.name`` (``execute_tool`` → TOOL, ``chat`` → LLM). Without the
+    first two a Phoenix trace recognizes zero tool spans; without the third, a GenAI/OpenLLMetry
+    trace does — in both cases every rule then silently suppresses.
+    """
+    explicit = str(attrs.get(_SPAN_KIND) or span.get("span_kind") or span.get("spanKind") or "")
+    if explicit:
+        return explicit.upper()
+    op = str(attrs.get(_GENAI_OP) or "").lower()
+    if op in _GENAI_TOOL_OPS:
+        return "TOOL"
+    if op in _GENAI_LLM_OPS:
+        return "LLM"
+    if op == "invoke_agent":
+        return "AGENT"
+    return ""
+
+
+def _input_value(attrs: dict[str, Any]) -> Any:
+    """The tool/LLM input: OpenInference ``input.value`` or GenAI's plain ``input``."""
+    return attrs.get("input.value") if "input.value" in attrs else attrs.get("input")
+
+
+def _output_value(attrs: dict[str, Any]) -> Any:
+    """The tool/LLM output: OpenInference ``output.value`` or GenAI's plain ``output``."""
+    return attrs.get("output.value") if "output.value" in attrs else attrs.get("output")
 
 
 def _otlp_value(v: Any) -> Any:
@@ -55,17 +95,37 @@ def _otlp_value(v: Any) -> Any:
     return v
 
 
+_ATTR_PREFIX = "attributes."
+
+
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
-    """Return a span's attributes as a flat ``{dotted_key: value}`` map (flat-dict or OTLP list)."""
-    # ``span_attributes`` is the Patronus/TRAIL envelope; ``attributes`` is standard OTLP/Phoenix.
+    """Return a span's attributes as a flat ``{dotted_key: value}`` map.
+
+    Handles the three shapes a real export uses: a nested ``attributes`` dict of dotted keys
+    (standard OTLP/Phoenix span JSON) or the ``span_attributes`` envelope (Patronus/TRAIL); an OTLP
+    attribute *list* (``[{"key","value":{...}}]``); and — the shape a Phoenix user actually gets
+    from ``px.Client().get_spans_dataframe().to_dict("records")`` — the attributes flattened into
+    top-level columns prefixed ``attributes.`` (e.g. ``attributes.tool.name``), which we collect
+    with the prefix stripped. Without this last case a dataframe-record span is recognized by kind
+    but read with empty args and no output.
+    """
     raw = span.get("span_attributes") or span.get("attributes") or span.get("attribute") or {}
-    if isinstance(raw, dict):
-        return raw
     flat: dict[str, Any] = {}
-    if isinstance(raw, list):  # OTLP: [{"key": "...", "value": {"stringValue": "..."}}, ...]
+    if isinstance(raw, dict):
+        flat = dict(raw)
+    elif isinstance(raw, list):  # OTLP: [{"key": "...", "value": {"stringValue": "..."}}, ...]
         for item in raw:
             if isinstance(item, dict) and "key" in item:
                 flat[item["key"]] = _otlp_value(item.get("value"))
+
+    # Phoenix dataframe-record shape: attribute columns as top-level "attributes.*" keys.
+    for key, value in span.items():
+        if not (isinstance(key, str) and key.startswith(_ATTR_PREFIX)):
+            continue
+        stripped = key[len(_ATTR_PREFIX) :]
+        if not stripped or value is None or (isinstance(value, float) and value != value):
+            continue  # skip the empty tail and NaN/None (json_normalize fills absent cells)
+        flat.setdefault(stripped, value)
     return flat
 
 
@@ -136,14 +196,28 @@ def _unwrap_call_input(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_value(raw: Any) -> tuple[Any, str | None]:
-    """Parse an OpenInference ``*.value`` (often a JSON string). Return ``(value, raw_text)``."""
+    """Parse an OpenInference ``*.value`` (often a JSON string). Return ``(value, raw_text)``.
+
+    Falls back to ``ast.literal_eval`` when JSON fails: several instrumentations serialize a tool's
+    arguments with Python's ``str(dict)`` / ``repr`` (single-quoted keys, ``True``/``None``), which
+    is not valid JSON but is a well-formed argument object — not a malformed call. ``literal_eval``
+    is safe (literals only, no code execution). Only when *both* fail is the value treated as
+    unparsed text (what R6 reads as a malformed argument).
+    """
     if raw is None or isinstance(raw, (dict, list, int, float, bool)):
         return raw, None
     if isinstance(raw, str):
         try:
             return json.loads(raw), None
         except (json.JSONDecodeError, ValueError):
+            pass
+        try:
+            parsed = ast.literal_eval(raw)
+        except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
             return raw, raw
+        if isinstance(parsed, (dict, list)):
+            return parsed, None
+        return raw, raw
     return raw, None
 
 
@@ -159,18 +233,41 @@ def _args_from(raw: Any) -> tuple[dict[str, Any], str | None]:
     )
 
 
+def _status_fields(span: dict[str, Any]) -> tuple[str, str | None]:
+    """The span's status code (upper-cased) and message across the shapes exports actually use.
+
+    A flat ``status_code`` string (Phoenix span export); a nested ``status`` object as the OTel SDK
+    serializes it via ``ReadableSpan.to_json`` (``{"status_code": "ERROR", "description": ...}``);
+    and OTLP-JSON (``{"code": "STATUS_CODE_ERROR"}`` or the numeric ``2``). Reading only the flat
+    string missed a real SDK-exported ERROR whose failure wasn't also echoed in the output payload.
+    """
+    code: Any = _get(span, "status_code", "statusCode")
+    message: Any = _get(span, "status_message", "statusMessage")
+    status = span.get("status")
+    if isinstance(status, dict):
+        code = code if code is not None else status.get("status_code", status.get("code"))
+        if message is None:
+            message = status.get("description", status.get("message"))
+    elif isinstance(status, str) and code is None:
+        code = status
+    return str(code if code is not None else "").upper(), (str(message) if message else None)
+
+
 def _is_error_span(span: dict[str, Any], attrs: dict[str, Any]) -> tuple[bool, str | None]:
-    status = str(_get(span, "status_code", "statusCode", "status.code", "status") or "").upper()
-    message = _get(span, "status_message", "statusMessage", "status.message")
-    if status == "ERROR":
-        return True, (str(message) if message else None)
-    for event in span.get("events", []) or []:
+    status, message = _status_fields(span)
+    # "ERROR" covers the plain code and OTLP's "STATUS_CODE_ERROR"; "2" is OTLP's numeric ERROR.
+    if "ERROR" in status or status == "2":
+        return True, message
+    # ``events`` may be a numpy array (Phoenix get_spans_dataframe records), so avoid truthiness
+    # tests on it — ``array or []`` raises "truth value of an array is ambiguous".
+    events = span.get("events")
+    for event in events if events is not None else []:
         if isinstance(event, dict) and str(event.get("name", "")).lower() == "exception":
             ev_attrs = event.get("attributes", {})
             if isinstance(ev_attrs, list):
                 ev_attrs = {i.get("key"): _otlp_value(i.get("value")) for i in ev_attrs}
             return True, str(ev_attrs.get("exception.message") or "exception")
-    out = attrs.get("output.value")
+    out = _output_value(attrs)
     parsed, _ = _parse_value(out)
     if isinstance(parsed, dict):
         http = parsed.get("http_status", parsed.get("status_code"))
@@ -215,6 +312,70 @@ def _collect_messages(attrs: dict[str, Any], prefix: str) -> list[dict[str, Any]
     return [messages[i] for i in sorted(messages)]
 
 
+def _seed_input_messages(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> list[Message]:
+    """Leading user/system turns from the first LLM span's ``llm.input_messages``.
+
+    OpenInference records what the model was *asked* under ``llm.input_messages.*`` — the user's
+    request and any system prompt. Without these the trace has no record of what the agent
+    observed, so provenance (R3) reports every string argument as underivable: the user's own
+    question is in the trace, and dropping it manufactures false hallucination candidates.
+
+    Only the **first** LLM span is read: each later LLM call replays the entire prior conversation
+    in its input messages, so seeding from all of them would duplicate every turn. Assistant/tool
+    replay turns are skipped (they are emitted from their own spans); only the opening user/system
+    context is seeded, once, at the front so it precedes every tool call for provenance ordering.
+    """
+    for span, attrs in parsed:
+        if _span_kind(span, attrs) != "LLM":
+            continue
+        input_messages = _collect_messages(attrs, "llm.input_messages")
+        if input_messages:
+            seeded: list[Message] = []
+            for msg in input_messages:
+                role = str(msg.get("role") or "").lower()
+                content = msg.get("content")
+                if role in ("user", "system") and isinstance(content, str) and content:
+                    seeded.append(Message(Role.USER if role == "user" else Role.SYSTEM, content))
+            return seeded
+        genai_seeded = _genai_input_seed(attrs)
+        if genai_seeded:
+            return genai_seeded
+    return []
+
+
+def _genai_text(message: dict[str, Any]) -> str | None:
+    """Text of a GenAI message — a flat ``content`` string, or the ``text`` parts joined."""
+    if isinstance(message.get("content"), str):
+        return message["content"] or None
+    parts = message.get("parts")
+    if isinstance(parts, list):
+        texts = [
+            p["content"]
+            for p in parts
+            if isinstance(p, dict) and p.get("type") == "text" and isinstance(p.get("content"), str)
+        ]
+        return "\n".join(t for t in texts if t) or None
+    return None
+
+
+def _genai_input_seed(attrs: dict[str, Any]) -> list[Message]:
+    """Leading user/system turns from GenAI ``gen_ai.input.messages`` (JSON string, parts)."""
+    parsed, _ = _parse_value(attrs.get("gen_ai.input.messages"))
+    if not isinstance(parsed, list):
+        return []
+    seeded: list[Message] = []
+    for message in parsed:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role") or "").lower()
+        if role not in ("user", "system"):
+            continue
+        text = _genai_text(message)
+        if text:
+            seeded.append(Message(Role.USER if role == "user" else Role.SYSTEM, text))
+    return seeded
+
+
 def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -> Trace:
     """Normalize a list of OpenInference/OTel spans into a canonical :class:`Trace`."""
     ordered = sorted(
@@ -222,19 +383,30 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
         key=lambda s: (_start_key(s), _span_id(s)),
     )
     parsed = [(s, _attrs(s)) for s in ordered]
-    has_tool_span = any(str(a.get(_SPAN_KIND) or "").upper() == "TOOL" for _s, a in parsed)
+    has_tool_span = any(_span_kind(s, a) == "TOOL" for s, a in parsed)
 
     steps: list[Step] = []
+    steps.extend(_seed_input_messages(parsed))
     for span, attrs in parsed:
-        kind = str(attrs.get(_SPAN_KIND) or "").upper()
+        kind = _span_kind(span, attrs)
 
         if kind == "TOOL":
-            call_id = _span_id(span) or f"span-{len(steps)}"
-            name = str(attrs.get("tool.name") or span.get("span_name") or span.get("name") or "")
-            args, raw_text = _args_from(attrs.get("input.value"))
+            call_id = (
+                _span_id(span)
+                or str(attrs.get("gen_ai.tool.call.id") or "")
+                or f"span-{len(steps)}"
+            )
+            name = str(
+                attrs.get("tool.name")
+                or attrs.get("gen_ai.tool.name")
+                or span.get("span_name")
+                or span.get("name")
+                or ""
+            )
+            args, raw_text = _args_from(_input_value(attrs))
             steps.append(ToolCall(call_id=call_id, name=name, args=args, raw_text=raw_text))
             is_err, err_msg = _is_error_span(span, attrs)
-            content, _ = _parse_value(attrs.get("output.value"))
+            content, _ = _parse_value(_output_value(attrs))
             steps.append(
                 ToolResult(
                     call_id=call_id,
