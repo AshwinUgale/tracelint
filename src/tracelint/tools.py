@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tracelint.predicates import FailurePredicate
+
 
 @dataclass(frozen=True)
 class ToolMetadata:
@@ -35,6 +37,9 @@ class ToolMetadata:
     polling: bool = False
     paginated: bool = False
     retryable_errors: tuple[str, ...] = ()
+    #: Declared domain-failure predicate — a result matching it is a structured error (R2), even
+    #: when the transport reported success. See :mod:`tracelint.predicates`.
+    failure_when: FailurePredicate | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> ToolMetadata:
@@ -46,6 +51,7 @@ class ToolMetadata:
             polling=bool(data.get("polling", False)),
             paginated=bool(data.get("paginated", False)),
             retryable_errors=tuple(data.get("retryable_errors", ()) or ()),
+            failure_when=FailurePredicate.from_dict(data.get("failure_when")),
         )
 
 

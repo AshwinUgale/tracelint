@@ -25,6 +25,76 @@ def _r2b(steps, registry=None):
 # --- R2a: event detection --------------------------------------------------------------
 
 
+def _reg(name, **meta):
+    return ToolRegistry({name: ToolSpec(name, metadata=ToolMetadata.from_dict(meta))})
+
+
+def test_declared_failure_predicate_is_hard_event():
+    # A decline arriving as transport success ({"status":"declined"}) is caught once declared.
+    steps = [
+        ToolCall("c1", "charge", {}),
+        ToolResult("c1", {"status": "declined"}, status=ResultStatus.UNKNOWN),
+    ]
+    reg = _reg("charge", failure_when={"pointer": "/status", "in": ["declined", "failed"]})
+    f = _r2a(steps, reg).active_findings[0]
+    assert f.tier is ConfidenceTier.HARD_EVENT
+    assert f.evidence["signal"] == "failure_predicate"
+    assert "declined" in f.evidence["matched"]
+
+
+def test_predicate_not_matched_is_clean():
+    steps = [
+        ToolCall("c1", "charge", {}),
+        ToolResult("c1", {"status": "approved"}, status=ResultStatus.OK),
+    ]
+    reg = _reg("charge", failure_when={"pointer": "/status", "in": ["declined"]})
+    assert _r2a(steps, reg).active_findings == []
+
+
+def test_side_effecting_without_predicate_is_suppressed_not_clean():
+    # Fail-closed: an unclassifiable side-effecting result with no predicate is disclosed.
+    steps = [
+        ToolCall("c1", "charge", {}),
+        ToolResult("c1", {"status": "declined"}, status=ResultStatus.UNKNOWN),
+    ]
+    report = _r2a(steps, _reg("charge", side_effecting=True))
+    assert report.active_findings == []
+    assert "cannot verify it did not fail" in report.suppressions[0].suppressed_reason
+
+
+def test_explicit_ok_side_effecting_is_trusted_no_suppression():
+    # An explicit OK is trusted — the suppression is only for unclassifiable (unknown) results.
+    steps = [
+        ToolCall("c1", "charge", {}),
+        ToolResult("c1", {"ok": True}, status=ResultStatus.OK),
+    ]
+    report = _r2a(steps, _reg("charge", side_effecting=True))
+    assert report.active_findings == [] and report.suppressions == []
+
+
+def test_predicate_failure_reused_into_side_effecting_is_hard_defect():
+    # R2b: a declared-failure value flowing into a later side-effecting call is a hard defect.
+    steps = [
+        ToolCall("c1", "charge", {}),
+        ToolResult("c1", {"status": "declined", "ref": "DECL9"}, status=ResultStatus.UNKNOWN),
+        ToolCall("c2", "send_receipt", {"ref": "DECL9"}),
+        ToolResult("c2", {"sent": True}, status=ResultStatus.OK),
+    ]
+    reg = ToolRegistry.from_dict(
+        {
+            "tools": {
+                "charge": {
+                    "metadata": {"failure_when": {"pointer": "/status", "equals": "declined"}}
+                },
+                "send_receipt": {"metadata": {"side_effecting": True}},
+            }
+        }
+    )
+    f = _r2b(steps, reg).active_findings[0]
+    assert f.tier is ConfidenceTier.HARD_DEFECT
+    assert f.finding_type == "error_mishandled"
+
+
 def test_structured_status_error_is_hard_event():
     steps = [
         ToolCall("c1", "reserve", {}),
@@ -55,6 +125,30 @@ def test_exception_text_in_unknown_result_is_candidate():
     assert f.tier is ConfidenceTier.CANDIDATE
     assert f.possible_false_positive is True
     assert f.evidence["signal"] == "exception_text"
+
+
+def test_failed_text_in_unknown_result_is_candidate():
+    # "Failed to ..." is a common tool error string; the heuristic now catches it (candidate).
+    steps = [
+        ToolCall("c1", "call_api", {}),
+        ToolResult("c1", "Failed to connect to upstream", status=ResultStatus.UNKNOWN),
+    ]
+    f = _r2a(steps).active_findings[0]
+    assert f.tier is ConfidenceTier.CANDIDATE
+    assert f.evidence["signal"] == "exception_text"
+
+
+def test_free_text_error_via_contains_predicate_is_hard_event():
+    # The MCP case: a tool reports failure as a plain "Error: ..." string over an unknown status.
+    # A declared contains/matches predicate turns that into a structural hard event.
+    steps = [
+        ToolCall("c1", "mcp_tool", {}),
+        ToolResult("c1", "Error: upstream returned 500", status=ResultStatus.UNKNOWN),
+    ]
+    reg = _reg("mcp_tool", failure_when={"pointer": "", "contains": "Error:"})
+    f = _r2a(steps, reg).active_findings[0]
+    assert f.tier is ConfidenceTier.HARD_EVENT
+    assert f.evidence["signal"] == "failure_predicate"
 
 
 def test_empty_result_is_candidate():

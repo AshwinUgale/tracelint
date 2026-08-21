@@ -36,10 +36,12 @@ from tracelint.tools import ToolRegistry
 from tracelint.trace import ResultStatus, ToolResult, Trace
 from tracelint.valueutil import significant_values as _significant_values
 
-# Heuristic markers for an exception-like string in a free-form (unknown-status) result.
+# Heuristic markers for an exception-like string in a free-form (unknown-status) result. Kept
+# conservative — it only ever produces a *candidate* (possible false positive), so it favors the
+# forms that actually show up in tool error strings ("Error:", "Failed to ...", a traceback).
 _EXCEPTION_RE = re.compile(
     r"traceback \(most recent call last\)|\bexception\b|\b[A-Za-z]*Error\b|"
-    r"http\s*[45]\d\d|\berrno\b",
+    r"\bfail(?:ed|ure)\b|http\s*[45]\d\d|\berrno\b",
     re.IGNORECASE,
 )
 
@@ -68,8 +70,25 @@ class ToolErrorEventRule(Rule):
         for result in trace.tool_results():
             call = trace.call_for(result)
             tool = call.name if call else "?"
+            meta = registry.metadata_for(tool) if call else None
+            predicate = meta.failure_when if meta else None
+
             if _is_structured_error(result):
                 findings.append(self._hard(result, tool))
+                continue
+            if predicate is not None and predicate.matches(result.content):
+                findings.append(self._hard_predicate(result, tool, predicate))
+                continue
+            # Fail-closed: a side-effecting action whose result we cannot classify (unknown status)
+            # and that declares no failure predicate is *unverifiable* — we must not count it as a
+            # clean pass. Disclose it as a suppression rather than assume success.
+            if (
+                meta is not None
+                and meta.side_effecting
+                and predicate is None
+                and result.status is not ResultStatus.OK
+            ):
+                findings.append(self._suppress_unverified(result, tool))
                 continue
             # Heuristics only on an unknown-status result — trust an explicit OK.
             if result.status is ResultStatus.OK:
@@ -80,6 +99,35 @@ class ToolErrorEventRule(Rule):
             elif _looks_empty(result.content):
                 findings.append(self._candidate(result, tool, "empty_result", ""))
         return findings
+
+    def _hard_predicate(self, result: ToolResult, tool: str, predicate: Any) -> Finding:
+        detail = predicate.describe(result.content)
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.HARD_EVENT,
+            summary=f"{tool!r} returned a declared failure ({detail})",
+            evidence={
+                "step_indices": [result.index],
+                "tool": tool,
+                "signal": "failure_predicate",
+                "matched": detail,
+            },
+        )
+
+    def _suppress_unverified(self, result: ToolResult, tool: str) -> Finding:
+        reason = (
+            f"side-effecting tool {tool!r} returned an unclassifiable result and declares no "
+            "failure_when predicate — cannot verify it did not fail"
+        )
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.CANDIDATE,
+            summary=f"rule {self.id} suppressed for {tool!r}: {reason}",
+            evidence={"step_indices": [result.index], "tool": tool},
+            suppressed_reason=reason,
+        )
 
     def _hard(self, result: ToolResult, tool: str) -> Finding:
         detail = (
@@ -132,9 +180,12 @@ class ErrorHandlingRule(Rule):
         findings: list[Finding] = []
         calls = trace.tool_calls()
         for result in trace.tool_results():
-            if not _is_structured_error(result):
-                continue
             errored_call = trace.call_for(result)
+            meta = registry.metadata_for(errored_call.name) if errored_call else None
+            predicate = meta.failure_when if meta else None
+            declared_failure = predicate is not None and predicate.matches(result.content)
+            if not (_is_structured_error(result) or declared_failure):
+                continue
             err_vals = _significant_values(result.content) | _significant_values(result.error or "")
 
             consumer = None

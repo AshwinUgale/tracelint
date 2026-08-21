@@ -6,7 +6,101 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
-- _Nothing yet._
+- Fault-injection experiment harness (`run_experiment` / `render_experiment`): runs an agent at
+  baseline and under injected faults, `runs` times each, and reports recovery rate,
+  incorrect-continuation rate (the agent claimed success while the oracle failed), and
+  tracelint-flagged rate — each with a Wilson interval. Unlike the scripted `scorecard --demo`, it's
+  built to run a *real* agent (see `examples/fault_experiment.py`) so the numbers are observed, not
+  authored.
+- New `DENIED` fault type: a transport success (HTTP 200, status OK) carrying a `{"status":
+  "declined"}` body — invisible to structured-error detection, flagged only when the tool declares a
+  `failure_when` predicate. The experiment prints the before/after across that declaration.
+
+## [0.5.0]
+
+- Fix (found by linting real Phoenix agent traces): the OpenInference adapter no longer crashes on
+  `get_spans_dataframe()` records whose `events` cell is a numpy array (`array or []` raised "truth
+  value is ambiguous").
+- Fix (same): tool arguments serialized as a Python `str(dict)`/`repr` (single-quoted keys, common
+  in real instrumentation) are now parsed via `literal_eval` instead of being reported as **malformed
+  arguments (R6, a hard_defect)**. This was a false CI-failing finding on every such call — and the
+  unparsed empty args also faked identical calls, producing false R4 loops. Both classes are gone.
+- The OpenTelemetry event-list reader now understands **both** OTel conventions: OpenInference
+  *and* the OTel **GenAI** semantic convention (OpenLLMetry / Traceloop). A GenAI span is read via
+  `gen_ai.operation.name` (`execute_tool` → tool call, `chat` → LLM), with `gen_ai.tool.name`,
+  plain `input`/`output`, and provenance seeded from `gen_ai.input.messages`. One reader now covers
+  most observability-platform exports, not just Arize/OpenInference.
+- The message-list reader (`from_openai_messages` / `--format openai`) now reads the common
+  real-world variants without a bespoke adapter: the **ShareGPT** `from`/`value` shape (with
+  `human`/`gpt` roles), a `role`+`text` shape (some trajectory dumps), and **typed-block content**
+  (`[{"type":"text","text":...}]`, the Anthropic / newer-OpenAI / SWE-bench form). Typed blocks are
+  flattened to text for messages and text tool-results, while a *structured* tool-result payload (a
+  dict or data list) is preserved so R2 / `failure_when` can still read it.
+
+## [0.4.2]
+
+- `metadata.failure_when` gains `contains` (substring) and `matches` (regex) modes, and `pointer`
+  may be `""` (the whole result) — so a tool that reports failure as **free text** (the common MCP
+  `"Error: ..."` string over a 200) can declare that contract structurally, not just tools with a
+  `/status` field. The declaration lives in the operator's `tools.json`, so it works for
+  third-party tools whose authors declare nothing.
+- R2a's exception-text heuristic now also matches `failed` / `failure` (not just `error` /
+  `exception` / tracebacks / HTTP 4xx-5xx), still at the candidate tier. Both raised in review.
+
+## [0.4.1]
+
+- CI on-ramp: a composite **GitHub Action** (`uses: AshwinUgale/tracelint@v0.4.1`) and a
+  **pre-commit hook** (`.pre-commit-hooks.yaml`), plus an "Add to CI" guide in the README, so a
+  build can gate on `tracelint check` in a few lines. No library changes.
+
+## [0.4.0]
+
+- Feature: tools can declare `metadata.failure_when` — a JSON-pointer failure predicate
+  (`{"pointer": "/status", "in": ["declined", "failed"]}`) — so a domain failure returned as a
+  transport success (HTTP 200 with `{"status": "declined"}`) is caught structurally by R2, feeding
+  R2a (hard event) and R2b (hard defect on reuse into a side-effecting call). A side-effecting tool
+  with no predicate and an unclassifiable result is now **suppressed with a reason** instead of
+  passing silently. Raised in review.
+- R5 now discloses when a tool absent from the registry ran between two identical calls (its
+  side-effect status is unverifiable) rather than silently assuming it was inert.
+
+## [0.3.3]
+
+- Fix: the OpenTelemetry/OpenInference adapter now seeds the opening user/system turn from
+  `llm.input_messages` (the OpenInference field holding what the model was asked). Without it,
+  provenance had no record of the user's request and reported every string argument as an
+  underivable value — a wall of false R3 candidates on real traces.
+- Fix: read the span status from the shapes a real export uses — the OTel SDK's nested
+  `{"status": {"status_code": "ERROR"}}` and OTLP-JSON's `{"code": "STATUS_CODE_ERROR"}` / numeric
+  `2` — not only a flat `status_code`. A real SDK-exported tool error was missed when its failure
+  wasn't also echoed in the output payload. Both found by linting genuinely SDK-exported spans.
+
+## [0.3.2]
+
+- Fix: the OpenTelemetry/OpenInference adapter now reads the shape a real Phoenix user gets from
+  `px.Client().get_spans_dataframe().to_dict("records")` — required columns at top level and
+  attributes flattened into `attributes.*` columns. Before this, a dataframe-record span was
+  recognized by kind but read with empty args and no output. Verified against a real Phoenix trace.
+
+## [0.3.1]
+
+- Fix: the OpenTelemetry/OpenInference adapter now recognizes Arize **Phoenix's own trace export**,
+  which records the span kind as a top-level `span_kind` field rather than the
+  `openinference.span.kind` attribute. Before this, a real Phoenix export was reduced to zero tool
+  calls and every rule silently suppressed. Found by running `check --format openinference` against
+  a real Phoenix trace.
+
+## [0.3.0]
+
+- `tracelint check --format {openinference,otel,openai,langfuse}` reads provider trace exports
+  directly — no manual conversion to the tracelint schema. Multi-trace inputs (`.jsonl`, a JSON
+  array, or an OTLP export with several `trace_id`s) fan out to one report each.
+- New public API: `load_source`, `lint_otel_trace`, `lint_openai_trace`, `lint_langfuse_trace`,
+  and `SUPPORTED_FORMATS`.
+- New keyless example `examples/lint_openinference_phoenix.py` — lint Arize Phoenix-shaped
+  OpenInference spans end to end.
+- `__version__` is now read from the installed package metadata, so it can no longer drift from
+  `pyproject.toml` (it previously reported `0.1.0`).
 
 ## [0.2.1]
 

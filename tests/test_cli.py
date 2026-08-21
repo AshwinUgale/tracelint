@@ -142,3 +142,60 @@ def test_check_writes_html(tmp_path):
     out = tmp_path / "report.html"
     main(["check", tp, "--tools", tt, "--html", str(out), "--quiet"])
     assert "hard_defect" in out.read_text(encoding="utf-8")
+
+
+def _write_openinference_spans(tmp_path, name="spans.json"):
+    """A Phoenix-shaped OpenInference export: book_flight is missing a required arg (R1)."""
+    spans = [
+        {
+            "span_id": "s1",
+            "trace_id": "oi-run",
+            "start_time": "2024-06-01T10:00:01Z",
+            "name": "book_flight",
+            "status_code": "OK",
+            "attributes": {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "book_flight",
+                "input.value": json.dumps({"flight_id": "AA100"}),
+                "output.value": json.dumps({"status": "error"}),
+            },
+        }
+    ]
+    p = tmp_path / name
+    p.write_text(json.dumps(spans), encoding="utf-8")
+    return str(p)
+
+
+def _write_flight_tools(tmp_path, name="flight_tools.json"):
+    schema = {
+        "type": "object",
+        "properties": {"flight_id": {"type": "string"}, "passenger": {"type": "string"}},
+        "required": ["flight_id", "passenger"],
+    }
+    p = tmp_path / name
+    p.write_text(json.dumps({"tools": {"book_flight": {"schema": schema}}}), encoding="utf-8")
+    return str(p)
+
+
+def test_check_openinference_format_with_tools_exits_two(tmp_path, capsys):
+    sp = _write_openinference_spans(tmp_path)
+    tt = _write_flight_tools(tmp_path)
+    code = main(["check", sp, "--format", "openinference", "--tools", tt])
+    assert code == 2
+    out = capsys.readouterr().out
+    assert "hard_defect" in out and "R1" in out
+
+
+def test_check_openinference_format_keyless_suppresses_and_passes(tmp_path, capsys):
+    # No --tools: R1 suppresses (disclosed), no hard defect from the spans alone → exit 0.
+    sp = _write_openinference_spans(tmp_path)
+    code = main(["check", sp, "--format", "openinference"])
+    assert code == 0
+    assert "suppressed" in capsys.readouterr().out
+
+
+def test_check_unknown_format_is_input_error(tmp_path):
+    sp = _write_openinference_spans(tmp_path)
+    # argparse rejects an out-of-choices --format with exit code 2 via SystemExit.
+    with pytest.raises(SystemExit):
+        main(["check", sp, "--format", "bogus"])

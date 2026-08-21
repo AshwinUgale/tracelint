@@ -10,6 +10,8 @@ The linter reads a trace and emits structured *findings*; it never calls a model
 
 # ruff: noqa: I001 — imports grouped by role (matching __all__), not alphabetically.
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
 # --- Canonical trace schema ---------------------------------------------------------
 from tracelint.trace import (
     Message,
@@ -57,6 +59,7 @@ from tracelint.injection import (
     apply_fault,
 )
 from tracelint.stats import bootstrap_mean_ci, wilson_interval
+from tracelint.experiment import Condition, Experiment, render_experiment, run_experiment
 from tracelint.nondeterminism import (
     FindingReproduction,
     ReproductionReport,
@@ -95,6 +98,15 @@ from tracelint.report import (
     render_reports,
     write_html,
     write_json,
+)
+
+# --- Source on-ramps: load a provider format and lint it ----------------------------
+from tracelint.sources import (
+    SUPPORTED_FORMATS,
+    lint_langfuse_trace,
+    lint_openai_trace,
+    lint_otel_trace,
+    load_source,
 )
 
 __all__ = [
@@ -145,6 +157,10 @@ __all__ = [
     "lint_runs",
     "ReproductionReport",
     "FindingReproduction",
+    "run_experiment",
+    "render_experiment",
+    "Experiment",
+    "Condition",
     # Scorecard
     "Task",
     "Scorecard",
@@ -169,6 +185,17 @@ __all__ = [
     "write_json",
     "write_html",
     "read_json",
+    # Source on-ramps
+    "load_source",
+    "lint_otel_trace",
+    "lint_openai_trace",
+    "lint_langfuse_trace",
+    "SUPPORTED_FORMATS",
 ]
 
-__version__ = "0.1.0"
+# The installed distribution is the single source of truth (keeps this in lockstep with
+# pyproject.toml). The fallback is only reached in a source checkout that isn't pip-installed.
+try:
+    __version__ = _pkg_version("tracelint")
+except PackageNotFoundError:  # pragma: no cover - exercised only in an uninstalled checkout
+    __version__ = "0.5.0"
