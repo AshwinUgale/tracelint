@@ -1,6 +1,7 @@
 """Command-line interface (spec §II.10).
 
     tracelint check ./trace.json --tools ./tools.json          # exit 2 on a hard_defect
+    tracelint check ./spans.json --format openinference        # lint OTel/OpenInference spans
     tracelint check ./traces/*.jsonl --rules R1 --json out.json --include-candidates
 
 ``check`` lints one or more traces and returns a CI-usable exit code:
@@ -23,8 +24,9 @@ from collections.abc import Sequence
 from tracelint.findings import EXIT_GATE, EXIT_HARD_DEFECT, EXIT_INPUT_ERROR, EXIT_OK
 from tracelint.report import render_report, reports_to_dict, write_json
 from tracelint.rules import lint_trace, rule_ids, select_rules
+from tracelint.sources import SUPPORTED_FORMATS, load_source
 from tracelint.tools import ToolRegistry
-from tracelint.trace import Trace, load_traces
+from tracelint.trace import Trace
 
 
 def _csv(value: str) -> list[str]:
@@ -42,6 +44,17 @@ def build_parser() -> argparse.ArgumentParser:
     check = sub.add_parser("check", help="lint one or more agent traces")
     check.add_argument("traces", nargs="+", help="trace file(s): .json / .jsonl / a JSON array")
     check.add_argument("--tools", help="tool schemas + metadata (JSON) — ground truth for rules")
+    check.add_argument(
+        "--format",
+        dest="fmt",
+        choices=list(SUPPORTED_FORMATS),
+        default="native",
+        help=(
+            "input format (default: native tracelint JSON). openinference/otel reads "
+            "OpenTelemetry/OpenInference spans (Phoenix, OTLP, TRAIL); openai reads a chat "
+            "message list; langfuse reads a Langfuse trace"
+        ),
+    )
     check.add_argument(
         "--rules",
         type=_csv,
@@ -93,7 +106,7 @@ def _cmd_check(args: argparse.Namespace) -> int:
 
     reports = []
     for path in args.traces:
-        traces: list[Trace] = load_traces(path)
+        traces: list[Trace] = load_source(path, args.fmt)
         for trace in traces:
             reports.append(lint_trace(trace, rules, registry))
 
