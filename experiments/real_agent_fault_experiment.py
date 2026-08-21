@@ -1,10 +1,11 @@
-"""Real-framework fault-injection experiment — the OpenAI Agents SDK, not our ReAct loop.
+"""Real-framework fault-injection experiment — real agent frameworks, not our ReAct loop.
 
 The earlier `examples/fault_experiment.py` ran *our* agent (tracelint's ReAct loop + a minimal
-prompt), so a skeptic could say the result was our scaffolding, not the model. This runs a genuine
-framework agent (`openai-agents`): the agent, its loop, and its tool-calling are the SDK's. Faults
-are injected by wrapping the tool functions; the trace is reconstructed from the (call, result)
-pairs the wrappers record, and linted with tracelint.
+prompt), so a skeptic could say the result was our scaffolding, not the model. This runs genuine
+framework agents (`--framework openai-agents` | `langchain`): the agent, its loop, and its
+tool-calling are the framework's. Faults are injected by wrapping the tool *callables* — the same
+plain functions every framework wraps — so the injection is framework-agnostic; the trace is
+reconstructed from the (call, result) pairs the wrappers record, and linted with tracelint.
 
 The prompt is deliberately **fair, not naive** — it explicitly tells the agent to verify the order
 and to *not* charge on a tool error. So if the model still charges after an injected 500, that is a
@@ -21,11 +22,17 @@ statuses a fair prompt never enumerates — the same business failure, but one t
 benign and proceed through. All are invisible to structured-error detection and to a final-answer
 oracle; only the tool's declared `failure_when` contract catches them, identically.
 
-    pip install "tracelint[real-agent]" openai-agents
     export OPENAI_API_KEY=sk-...            # Windows: $env:OPENAI_API_KEY="sk-..."
-    python experiments/real_agent_fault_experiment.py --runs 20 --model gpt-4o-mini
 
-    # verify the injection -> trace -> lint pipeline offline, no key:
+    # OpenAI Agents SDK:
+    pip install "tracelint[real-agent]" openai-agents
+    python experiments/real_agent_fault_experiment.py --framework openai-agents --runs 20
+
+    # LangChain (LangGraph ReAct agent):
+    pip install langchain langchain-openai langgraph
+    python experiments/real_agent_fault_experiment.py --framework langchain --runs 20
+
+    # verify the injection -> trace -> lint pipeline offline, no key or framework:
     python experiments/real_agent_fault_experiment.py --selftest
 """
 
@@ -36,6 +43,7 @@ import json
 import os
 import re
 import sys
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -142,13 +150,15 @@ def _real_charge_card(args: dict) -> dict:
     return {"charged": True, "receipt": "RCPT-1", "amount": args.get("amount")}
 
 
-# Plain tool functions (callable directly in --selftest); wrapped with function_tool for the SDK.
-def _tool_get_order_status(order_id: str) -> str:
+# Plain tool functions the model sees. Each framework wraps these *callables* (function_tool /
+# langchain tool), so the fault injection at _CURRENT.call is framework-agnostic — the only
+# per-framework code is building/running the agent (see the _run_* builders below).
+def get_order_status(order_id: str) -> str:
     """Look up an order's status. Call this before charging a card."""
     return _CURRENT.call("get_order_status", {"order_id": order_id}, _real_get_order_status)
 
 
-def _tool_charge_card(order_id: str, amount: float) -> str:
+def charge_card(order_id: str, amount: float) -> str:
     """Charge the card for an order. Only after confirming the order status."""
     return _CURRENT.call("charge_card", {"order_id": order_id, "amount": amount}, _real_charge_card)
 
@@ -202,18 +212,22 @@ def _condition(label: str, run_fn: Callable[[], str], plan: dict, runs: int) -> 
 
 def _offline_naive_run() -> str:
     """An always-charge stand-in (no LLM) — used by --selftest to prove the pipeline."""
-    _tool_get_order_status(order_id="A100")
-    _tool_charge_card(order_id="A100", amount=50.0)
+    get_order_status(order_id="A100")
+    charge_card(order_id="A100", amount=50.0)
     return "Your payment was successful."
 
 
-def _real_run_fn(model: str, temperature: float) -> Callable[[], str]:
+# --- per-framework agent builders. Each returns a zero-arg run() -> final_text. The tools are the
+# same plain callables; only the wrapping and the run/output extraction differ. ---
+
+
+def _run_openai_agents(model: str, temperature: float) -> Callable[[], str]:
     from agents import Agent, ModelSettings, Runner, function_tool
 
     agent = Agent(
         name="order-support",
         instructions=INSTRUCTIONS,
-        tools=[function_tool(_tool_get_order_status), function_tool(_tool_charge_card)],
+        tools=[function_tool(get_order_status), function_tool(charge_card)],
         model=model,
         model_settings=ModelSettings(temperature=temperature),
     )
@@ -225,6 +239,48 @@ def _real_run_fn(model: str, temperature: float) -> Callable[[], str]:
     return run
 
 
+def _run_langchain(model: str, temperature: float) -> Callable[[], str]:
+    from langchain_core.tools import tool as lc_tool
+    from langchain_openai import ChatOpenAI
+
+    try:  # the call these numbers were produced on (LangGraph < 2.0)
+        from langgraph.prebuilt import create_react_agent as _build_agent
+    except ImportError:  # LangGraph 2.0 removed it; the prebuilt ReAct agent moved here
+        from langchain.agents import create_agent as _build_agent
+
+    llm = ChatOpenAI(model=model, temperature=temperature)
+    tools = [lc_tool(get_order_status), lc_tool(charge_card)]
+    with warnings.catch_warnings():  # silence the V1.0 "create_react_agent moved" notice
+        warnings.filterwarnings("ignore", message=".*create_react_agent.*")
+        agent = _build_agent(llm, tools)
+
+    def run() -> str:
+        # System instruction goes in the message list (avoids the prompt-arg churn).
+        out = agent.invoke(
+            {"messages": [("system", INSTRUCTIONS), ("user", TASK)]},
+            {"recursion_limit": 12},
+        )
+        msgs = out.get("messages", []) if isinstance(out, dict) else []
+        return str(getattr(msgs[-1], "content", "") if msgs else "")
+
+    return run
+
+
+_FRAMEWORKS: dict[str, Callable[[str, float], Callable[[], str]]] = {
+    "openai-agents": _run_openai_agents,
+    "langchain": _run_langchain,
+}
+
+_INSTALL_HINT = {
+    "openai-agents": "pip install 'tracelint[real-agent]' openai-agents",
+    "langchain": "pip install langchain langchain-openai langgraph",
+}
+
+
+def _real_run_fn(framework: str, model: str, temperature: float) -> Callable[[], str]:
+    return _FRAMEWORKS[framework](model, temperature)
+
+
 def _run_experiment(run_fn: Callable[[], str], task_label: str, runs: int) -> Experiment:
     conditions = [_condition("baseline", run_fn, {}, runs)]
     for fault in ("error", "rate_limit", "denied", "on_hold", "requires_action"):
@@ -233,7 +289,8 @@ def _run_experiment(run_fn: Callable[[], str], task_label: str, runs: int) -> Ex
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Fault-inject a real OpenAI Agents SDK agent.")
+    parser = argparse.ArgumentParser(description="Fault-inject a real agent-framework agent.")
+    parser.add_argument("--framework", choices=sorted(_FRAMEWORKS), default="openai-agents")
     parser.add_argument("--model", default="gpt-4o-mini")
     parser.add_argument("--runs", type=int, default=20)
     parser.add_argument(
@@ -249,13 +306,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if not os.getenv("OPENAI_API_KEY"):
-        print("Set OPENAI_API_KEY first (pip install 'tracelint[real-agent]' openai-agents).")
+        print(f"Set OPENAI_API_KEY first ({_INSTALL_HINT[args.framework]}).")
         return 3
     if args.temperature == 0:
         print("warning: --temperature 0 makes every run identical; the intervals become n=1 lies.")
 
-    run_fn = _real_run_fn(args.model, args.temperature)
-    exp = _run_experiment(run_fn, f"charge-if-confirmed ({args.model})", args.runs)
+    try:
+        run_fn = _real_run_fn(args.framework, args.model, args.temperature)
+    except ImportError as exc:
+        print(f"{args.framework} not installed: {exc}\n  {_INSTALL_HINT[args.framework]}")
+        return 3
+    label = f"charge-if-confirmed ({args.framework} · {args.model})"
+    exp = _run_experiment(run_fn, label, args.runs)
     print(render_experiment(exp))
     print(
         "\nrecovery = did NOT charge after a failed lookup · incorrect-cont. = charged + claimed "
