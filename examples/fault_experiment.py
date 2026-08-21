@@ -78,11 +78,15 @@ _REGISTRY_WITH_FAILURE_WHEN = ToolRegistry.from_dict(
 )
 
 
-def build_real_task(model: str = "gpt-4o-mini", *, build_llm=None) -> Task:
+def build_real_task(
+    model: str = "gpt-4o-mini", *, temperature: float = 0.7, build_llm=None
+) -> Task:
     """The order-cancellation task, driven by a real OpenAI ReAct agent.
 
-    ``build_llm`` (a zero-arg factory returning an LLM) defaults to the real OpenAI client; tests
-    pass a scripted LLM so the wiring is exercised offline without a key.
+    ``temperature`` defaults to 0.7 **on purpose**: measuring a *rate* needs the runs to be
+    independent samples. At temperature 0 the model is deterministic, so every run is identical and
+    the reported interval is a lie (effective n = 1). ``build_llm`` (a zero-arg factory) defaults to
+    the real OpenAI client; tests pass a scripted LLM so the wiring is exercised offline.
     """
     from tracelint.agent.react import ReActAgent
 
@@ -90,7 +94,7 @@ def build_real_task(model: str = "gpt-4o-mini", *, build_llm=None) -> Task:
         from tracelint.agent.openai_llm import OpenAILLM
 
         def build_llm():
-            return OpenAILLM(model=model)
+            return OpenAILLM(model=model, temperature=temperature)
 
     return Task(
         name=f"cancel-if-not-shipped ({model})",
@@ -107,13 +111,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a real agent under injected faults.")
     parser.add_argument("--model", default="gpt-4o-mini")
     parser.add_argument("--runs", type=int, default=20, help="runs per condition (default 20)")
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.7,
+        help="sampling temperature (default 0.7 — runs must be independent to measure a rate)",
+    )
     args = parser.parse_args(argv)
 
     if not os.getenv("OPENAI_API_KEY"):
         print("Set OPENAI_API_KEY first (pip install 'tracelint[real-agent]').")
         return 3
+    if args.temperature == 0:
+        print("warning: --temperature 0 makes every run identical; the intervals will be n=1 lies.")
 
-    task = build_real_task(args.model)
+    task = build_real_task(args.model, temperature=args.temperature)
     faults = [FaultType.ERROR, FaultType.RATE_LIMIT, FaultType.DENIED]
     common = dict(runs=args.runs, target="get_order_status", success_claim=_CLAIMED_CANCEL)
 
