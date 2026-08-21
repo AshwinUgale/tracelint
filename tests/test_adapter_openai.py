@@ -21,6 +21,53 @@ def _assistant_call(call_id: str, name: str, arguments: str) -> dict:
     }
 
 
+def test_sharegpt_from_value_shape_is_read():
+    # ShareGPT uses `from`/`value` and human/gpt role names instead of role/content.
+    trace = from_openai_messages(
+        [
+            {"from": "human", "value": "find shoes"},
+            {
+                "from": "gpt",
+                "value": "searching",
+                "tool_calls": [{"id": "c1", "function": {"name": "search", "arguments": "{}"}}],
+            },
+        ]
+    )
+    assert [m.role.value for m in trace.messages()] == ["user", "assistant"]
+    assert trace.tool_calls()[0].name == "search"
+
+
+def test_typed_block_content_is_flattened_to_text():
+    # Anthropic / newer-OpenAI content is a list of typed blocks; flatten it for messages + tool
+    # results (this is the SWE-bench shape that previously needed a hand transform).
+    trace = from_openai_messages(
+        [
+            {"role": "user", "content": [{"type": "text", "text": "fix the bug"}]},
+            {"role": "tool", "tool_call_id": "c1", "content": [{"type": "text", "text": "boom"}]},
+        ]
+    )
+    assert trace.messages()[0].content == "fix the bug"
+    assert trace.tool_results()[0].content == "boom"
+
+
+def test_role_plus_text_shape_is_read():
+    trace = from_openai_messages([{"role": "user", "text": "cancel A100"}])
+    assert trace.messages()[0].content == "cancel A100"
+
+
+def test_structured_tool_result_dict_is_preserved_not_flattened():
+    # A structured tool result (a dict, or a data list) must stay intact so R2 / failure_when can
+    # read it — only *typed-block* content is flattened to text.
+    trace = from_openai_messages(
+        [{"role": "tool", "tool_call_id": "c1", "content": {"status": "declined"}}]
+    )
+    assert trace.tool_results()[0].content == {"status": "declined"}
+    data = from_openai_messages(
+        [{"role": "tool", "tool_call_id": "c2", "content": [{"id": 1}, {"id": 2}]}]
+    )
+    assert data.tool_results()[0].content == [{"id": 1}, {"id": 2}]
+
+
 def test_arguments_json_string_is_parsed_into_args():
     trace = from_openai_messages(
         [

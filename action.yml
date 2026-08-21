@@ -1,0 +1,68 @@
+name: "tracelint"
+description: "Lint agent execution traces for structural defects — deterministic, judge-free, with a CI exit code."
+author: "Ashwin Ugale"
+branding:
+  icon: "check-circle"
+  color: "purple"
+
+inputs:
+  traces:
+    description: "Trace file(s) to lint — a path or shell glob (.json / .jsonl)."
+    required: true
+  tools:
+    description: "Path to tools.json (schemas + metadata) for schema-dependent rules (R1, R3, R2 failure predicates)."
+    required: false
+    default: ""
+  format:
+    description: "Input format: native | openinference | otel | openai | langfuse."
+    required: false
+    default: "native"
+  rules:
+    description: "Comma-separated subset of rules to run (e.g. R1,R2a). Default: all."
+    required: false
+    default: ""
+  version:
+    description: "tracelint version to install (e.g. '0.4.0'). Default: the latest release on PyPI."
+    required: false
+    default: ""
+  args:
+    description: "Extra arguments passed through to `tracelint check` (e.g. --include-candidates)."
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install tracelint
+      shell: bash
+      env:
+        TL_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        spec="tracelint"
+        if [ -n "$TL_VERSION" ]; then spec="tracelint==$TL_VERSION"; fi
+        python3 -m pip install --quiet "$spec"
+        python3 -m tracelint.cli --version
+
+    - name: Run tracelint check
+      shell: bash
+      env:
+        TL_TRACES: ${{ inputs.traces }}
+        TL_TOOLS: ${{ inputs.tools }}
+        TL_FORMAT: ${{ inputs.format }}
+        TL_RULES: ${{ inputs.rules }}
+        TL_ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+        # Build the command as an array (no eval) — inputs arrive via env, never interpolated
+        # into the script text, so a value can't inject shell.
+        cmd=(python3 -m tracelint.cli check)
+        # `traces` may be a glob or a space-separated list: expand + word-split intentionally.
+        for t in $TL_TRACES; do cmd+=("$t"); done
+        if [ -n "$TL_TOOLS" ]; then cmd+=(--tools "$TL_TOOLS"); fi
+        if [ -n "$TL_FORMAT" ]; then cmd+=(--format "$TL_FORMAT"); fi
+        if [ -n "$TL_RULES" ]; then cmd+=(--rules "$TL_RULES"); fi
+        if [ -n "$TL_ARGS" ]; then cmd+=($TL_ARGS); fi
+        printf '+ %s\n' "${cmd[*]}"
+        # Exit 2 (a structural hard_defect) propagates and fails the job — the CI gate.
+        "${cmd[@]}"
