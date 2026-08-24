@@ -49,6 +49,28 @@ Design constraints, so it stays in character with the rest of the tool:
 The two shapes are one theme — *a side effect nobody confirmed* — and should probably ship as one
 rule.
 
+## Reporting & CI contract
+
+### Suppression accounting (monotonic baseline)
+
+Suppress-with-a-reason keeps the report honest, but suppressions *accumulate*. A team adds a
+schema-less tool, R1 suppresses it, CI stays green — and by month three half the rules are suppressed
+on every run. The report is still technically honest and practically empty; the false confidence
+suppression was meant to prevent walks back in through the door left open on purpose.
+
+The fix stays in character with the determinism rule: track the **suppressed count** as a number and
+fail when it **increases against a committed baseline** — not when it's nonzero, when it *grows*.
+That's a diff: no judgement, no second model. A new coverage gap in a PR has to be either closed or
+explicitly accepted by committing the new baseline, so suppression becomes budgeted, reviewable debt
+instead of a silent escape hatch.
+
+It's the hard-vs-candidate split one level up: the count rising is structurally provable; whether the
+new gap *matters* is the human call, made explicit on the record. The recovery path (fix, or
+accept-by-baseline) belongs next to the invariant so the assumption stays visible — every run
+re-checks it. The general shape is that any place the tool chooses *not* to look should be a number CI
+watches, not a footnote. (Raised in a review thread; the honest trigger to build it is a real suite
+watching its own suppressions grow, not the suggestion.)
+
 ## Exploratory
 
 ### Runtime enforcement (a different product, not a rule)
