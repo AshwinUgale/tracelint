@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "input format (default: native tracelint JSON). openinference/otel reads "
             "OpenTelemetry/OpenInference spans (Phoenix, OTLP, TRAIL); openai reads a chat "
-            "message list; langfuse reads a Langfuse trace"
+            "message list; langfuse reads a Langfuse trace; langsmith reads a LangSmith run"
         ),
     )
     check.add_argument(

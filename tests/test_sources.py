@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from tracelint import lint_otel_trace, load_source
+from tracelint import lint_langsmith_trace, lint_otel_trace, load_source
 from tracelint.findings import ConfidenceTier
 from tracelint.trace import ResultStatus
 
@@ -144,6 +144,27 @@ def test_langfuse_single_and_list(tmp_path):
     assert len(many) == 2
 
 
+def test_langsmith_single_and_list(tmp_path):
+    run = {
+        "id": "ls1",
+        "run_type": "chain",
+        "child_runs": [
+            {
+                "id": "tool-1",
+                "run_type": "tool",
+                "name": "search",
+                "inputs": {"q": "x"},
+                "outputs": {"status": "ok"},
+            }
+        ],
+    }
+    one = load_source(_write(tmp_path, run, "one.json"), "langsmith")
+    assert len(one) == 1 and one[0].run_id == "ls1"
+
+    many = load_source(_write(tmp_path, [run, run], "many.json"), "langsmith")
+    assert len(many) == 2
+
+
 # --- Errors + convenience wrapper ----------------------------------------------------
 
 
@@ -165,5 +186,19 @@ def test_lint_otel_trace_flags_tool_error():
         _tool_span("s1", "2024-01-01T00:00:01Z", "charge", {"amt": 5}, {"error": "no"}, error=True)
     ]
     report = lint_otel_trace(spans)
+    events = report.by_tier(ConfidenceTier.HARD_EVENT)
+    assert any(f.rule == "R2a" for f in events)
+
+
+def test_lint_langsmith_trace_flags_tool_error():
+    report = lint_langsmith_trace(
+        {
+            "id": "ls1",
+            "run_type": "tool",
+            "name": "search",
+            "inputs": {"q": "x"},
+            "outputs": {"error": "no"},
+        }
+    )
     events = report.by_tier(ConfidenceTier.HARD_EVENT)
     assert any(f.rule == "R2a" for f in events)

@@ -84,6 +84,7 @@ from tracelint.scorecard import (
 # --- Adapters -----------------------------------------------------------------------
 from tracelint.adapters import (
     from_langfuse_trace,
+    from_langsmith_run,
     from_openai_messages,
     from_otel_spans,
     observed_tool_names,
@@ -104,6 +105,7 @@ from tracelint.report import (
 from tracelint.sources import (
     SUPPORTED_FORMATS,
     lint_langfuse_trace,
+    lint_langsmith_trace,
     lint_openai_trace,
     lint_otel_trace,
     load_source,
@@ -176,6 +178,7 @@ __all__ = [
     "from_openai_messages",
     "openai_tools_to_registry",
     "from_langfuse_trace",
+    "from_langsmith_run",
     "observed_tool_names",
     "from_otel_spans",
     # Reporting
@@ -190,6 +193,7 @@ __all__ = [
     "lint_otel_trace",
     "lint_openai_trace",
     "lint_langfuse_trace",
+    "lint_langsmith_trace",
     "SUPPORTED_FORMATS",
 ]
 
