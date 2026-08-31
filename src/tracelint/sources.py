@@ -15,6 +15,7 @@ Supported ``--format`` values:
   OTLP ``resourceSpans``, or the Patronus/TRAIL envelope), via :func:`from_otel_spans`.
 - ``openai``                 an OpenAI chat-completions message list (or ``{"messages": [...]}``).
 - ``langfuse``               a Langfuse trace object (or a JSON array of them).
+- ``langsmith``              a LangSmith run tree (or a JSON array of them).
 
 Consistent with the rest of the tool, a loader never guesses beyond the shapes its adapter
 documents. Multi-trace inputs fan out to one :class:`Trace` each: a ``.jsonl`` file (one unit per
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from tracelint.adapters.langfuse import from_langfuse_trace
+from tracelint.adapters.langsmith import from_langsmith_run
 from tracelint.adapters.openai import from_openai_messages
 from tracelint.adapters.otel import from_otel_spans
 from tracelint.findings import LintReport
@@ -42,10 +44,11 @@ OPENINFERENCE = "openinference"
 OTEL = "otel"
 OPENAI = "openai"
 LANGFUSE = "langfuse"
+LANGSMITH = "langsmith"
 
 #: Every value accepted by ``load_source``/``tracelint check --format``. ``openinference`` and
 #: ``otel`` are aliases for the same OpenTelemetry/OpenInference reader.
-SUPPORTED_FORMATS: tuple[str, ...] = (NATIVE, OPENINFERENCE, OTEL, OPENAI, LANGFUSE)
+SUPPORTED_FORMATS: tuple[str, ...] = (NATIVE, OPENINFERENCE, OTEL, OPENAI, LANGFUSE, LANGSMITH)
 
 
 # --- One-call convenience linters ---------------------------------------------------
@@ -93,6 +96,18 @@ def lint_langfuse_trace(
     return lint_trace(canonical, rules or default_rules(), registry)
 
 
+def lint_langsmith_trace(
+    run: Any,
+    rules: list[Rule] | None = None,
+    registry: ToolRegistry | None = None,
+    *,
+    run_id: str | None = None,
+) -> LintReport:
+    """Lint a LangSmith run tree in one call."""
+    trace = from_langsmith_run(run, run_id=run_id)
+    return lint_trace(trace, rules or default_rules(), registry)
+
+
 # --- File loading + format dispatch -------------------------------------------------
 
 
@@ -111,9 +126,7 @@ def load_source(
     if fmt in (NATIVE, None):
         return load_traces(path)
     if fmt not in SUPPORTED_FORMATS:
-        raise ValueError(
-            f"unknown --format {fmt!r}; choose from {', '.join(SUPPORTED_FORMATS)}"
-        )
+        raise ValueError(f"unknown --format {fmt!r}; choose from {', '.join(SUPPORTED_FORMATS)}")
 
     p = Path(path)
     text = p.read_text(encoding="utf-8")
@@ -128,15 +141,15 @@ def load_source(
     return traces
 
 
-def _traces_from_doc(
-    doc: Any, fmt: str, *, tool_names: list[str] | set[str] | None
-) -> list[Trace]:
+def _traces_from_doc(doc: Any, fmt: str, *, tool_names: list[str] | set[str] | None) -> list[Trace]:
     if fmt in (OPENINFERENCE, OTEL):
         return _otel_traces(doc)
     if fmt == OPENAI:
         return _openai_traces(doc)
     if fmt == LANGFUSE:
         return _langfuse_traces(doc, tool_names=tool_names)
+    if fmt == LANGSMITH:
+        return _langsmith_traces(doc)
     raise ValueError(f"unknown --format {fmt!r}")  # pragma: no cover - guarded in load_source
 
 
@@ -251,4 +264,15 @@ def _langfuse_traces(doc: Any, *, tool_names: list[str] | set[str] | None) -> li
         return traces
     if isinstance(doc, dict):
         return [from_langfuse_trace(doc, tool_names=tool_names)]
+    return []
+
+
+def _langsmith_traces(doc: Any) -> list[Trace]:
+    if isinstance(doc, list):
+        traces: list[Trace] = []
+        for item in doc:
+            traces.extend(_langsmith_traces(item))
+        return traces
+    if isinstance(doc, dict):
+        return [from_langsmith_run(doc)]
     return []

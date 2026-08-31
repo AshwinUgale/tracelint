@@ -122,7 +122,8 @@ reason* — never counted as a clean pass.
 
 The rules run against **one canonical trace schema**; a thin **adapter** translates each source's
 format into it, so the rules never change. Built in: `from_openai_messages` (OpenAI chat message
-lists), `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's observations), and
+lists), `from_langfuse_trace` (a [Langfuse](https://langfuse.com) trace's observations),
+`from_langsmith_run` (a [LangSmith](https://www.langchain.com/langsmith) run tree), and
 `from_otel_spans` (**OpenTelemetry / [OpenInference](https://github.com/Arize-ai/openinference)** —
 the universal standard, so it reaches Arize Phoenix, OpenLLMetry, Langfuse-via-OTel, and datasets
 like TRAIL, not just one vendor). See `examples/langfuse_cookbook.py` to lint the traces you
@@ -145,6 +146,7 @@ your stack already emits — no manual schema conversion:
 tracelint check spans.json    --format openinference   # OTel/OpenInference: Phoenix, OTLP, TRAIL
 tracelint check messages.json --format openai          # an OpenAI chat message list
 tracelint check trace.json    --format langfuse        # a Langfuse trace export
+tracelint check run.json      --format langsmith       # a LangSmith run tree export
 ```
 
 Most rules need no tool schemas, so this works keyless; add `--tools tools.json` to light up the
