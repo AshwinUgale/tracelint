@@ -93,3 +93,40 @@ def test_missing_output_fails_closed_as_unknown_result():
     result = trace.tool_results()[0]
     assert result.content is None
     assert result.status is ResultStatus.UNKNOWN
+
+
+def test_execution_order_integers_sort_numerically():
+    # Runs whose only ordering signal is the integer execution_order must sort
+    # numerically (1, 2, 10), not lexically as strings ("1", "10", "2").
+    run = {
+        "id": "root",
+        "run_type": "chain",
+        "child_runs": [
+            {"id": "c10", "run_type": "tool", "name": "t10", "inputs": {}, "execution_order": 10},
+            {"id": "c2", "run_type": "tool", "name": "t2", "inputs": {}, "execution_order": 2},
+            {"id": "c1", "run_type": "tool", "name": "t1", "inputs": {}, "execution_order": 1},
+        ],
+    }
+    trace = from_langsmith_run(run)
+    assert [c.name for c in trace.tool_calls()] == ["t1", "t2", "t10"]
+
+
+def test_positional_tool_args_preserved_when_kwargs_empty():
+    # {"args": [...], "kwargs": {}} must not collapse the call's arguments to {}.
+    trace = from_langsmith_run(_tool_run("t", "do", {"args": ["Z999"], "kwargs": {}}))
+
+    call = trace.tool_calls()[0]
+    assert call.args != {}
+    assert call.args.get("args") == ["Z999"]
+
+
+def test_run_level_http_status_flags_error():
+    # A numeric HTTP status at the run level (no error field, no outputs dict) is an
+    # error signal, just like one inside outputs.
+    run = _tool_run("t", "do", {"q": "x"})
+    run["status_code"] = 500
+    trace = from_langsmith_run(run)
+
+    result = trace.tool_results()[0]
+    assert result.status is ResultStatus.ERROR
+    assert result.http_status == 500

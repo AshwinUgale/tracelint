@@ -50,6 +50,11 @@ def _unwrap_args(raw: dict[str, Any]) -> dict[str, Any]:
         args = raw.get("args")
         if isinstance(args, list) and len(args) == 1 and isinstance(args[0], dict):
             return dict(args[0])
+        if isinstance(args, list) and args:
+            # Positional-only args that don't flatten to a dict: preserve them under
+            # ``args`` rather than dropping the call's arguments to ``{}`` (which would
+            # make R1 false-positive a missing required field).
+            return {"args": list(args)}
         if isinstance(kwargs, dict):
             return dict(kwargs)
     if set(raw.keys()) == {"input"} and isinstance(raw["input"], dict):
@@ -102,6 +107,13 @@ def _result_signals(run: dict[str, Any]) -> tuple[ResultStatus, str | None, int 
 
     if error is not None:
         return ResultStatus.ERROR, str(error), http
+    run_http = _get(run, "http_status", "httpStatus", "status_code", "statusCode")
+    if isinstance(run_http, int):
+        # A numeric HTTP status at the run level is an error signal too (>= 400),
+        # mirroring the ``outputs`` branch; ``_status_from_text`` only reads words.
+        http = run_http
+        if run_http >= 400:
+            return ResultStatus.ERROR, None, http
     status = _status_from_text(_get(run, "status", "status_code", "statusCode"))
     return status, None, http
 
@@ -137,27 +149,34 @@ def _seed_messages(inputs: Any) -> list[Step]:
     return [Message(Role.USER, text)] if text else []
 
 
+def _order_key(run: dict[str, Any], idx: int) -> tuple[int, str, int]:
+    """A total order over sibling runs that is correct for each field's own type.
+
+    ``dotted_order`` and ISO ``start_time`` sort correctly as strings, but
+    ``execution_order`` is an integer: sorting it as a string puts ``"10"`` before
+    ``"2"``. Zero-pad the numeric case so lexical order matches numeric order, and
+    keep the original index as the final tie-breaker (stable).
+    """
+    dotted = _get(run, "dotted_order", "dottedOrder")
+    if dotted is not None:
+        return (0, str(dotted), idx)
+    start = _get(run, "start_time", "startTime")
+    if start is not None:
+        return (1, str(start), idx)
+    execn = _get(run, "execution_order", "executionOrder")
+    if isinstance(execn, bool):  # bool is an int subclass; not an ordering signal
+        execn = None
+    if isinstance(execn, int):
+        return (2, f"{execn:020d}", idx)
+    if execn is not None:
+        return (2, str(execn), idx)
+    return (3, "", idx)
+
+
 def _children(run: dict[str, Any]) -> list[dict[str, Any]]:
     raw = _get(run, "child_runs", "childRuns") or []
     children = [_as_dict(child) for child in raw]
-    keyed = sorted(
-        enumerate(children),
-        key=lambda item: (
-            str(
-                _get(
-                    item[1],
-                    "dotted_order",
-                    "dottedOrder",
-                    "start_time",
-                    "startTime",
-                    "execution_order",
-                    "executionOrder",
-                )
-                or ""
-            ),
-            item[0],
-        ),
-    )
+    keyed = sorted(enumerate(children), key=lambda item: _order_key(item[1], item[0]))
     return [child for _, child in keyed]
 
 
