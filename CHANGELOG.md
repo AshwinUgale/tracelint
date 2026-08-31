@@ -7,7 +7,9 @@ additive features; the public API is not yet frozen).
 ## [Unreleased]
 
 - LangSmith adapter: `from_langsmith_run` and `--format langsmith` normalize nested LangSmith run
-  trees into canonical traces, preserving structured tool errors for R2.
+  trees into canonical traces, preserving structured tool errors for R2. Robustness fixes:
+  integer `execution_order` now sorts numerically (not lexically), positional-only tool args are
+  preserved instead of dropped to `{}`, and a run-level numeric HTTP status is read as an error.
 - Fault-injection experiment harness (`run_experiment` / `render_experiment`): runs an agent at
   baseline and under injected faults, `runs` times each, and reports recovery rate,
   incorrect-continuation rate (the agent claimed success while the oracle failed), and
