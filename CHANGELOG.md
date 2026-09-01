@@ -6,6 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- `failure_when` is now tri-state (fixes #34). A declared value predicate distinguishes MATCH
+  (declared failure), NO_MATCH (field present, not a failure value — a clean pass), and UNKNOWN (the
+  pointed-to field is absent, so the predicate cannot be evaluated). On a side-effecting tool an
+  UNKNOWN result is disclosed as a suppression ("cannot verify it did not fail"), never a silent
+  clean pass — so an API that drops the field no longer sails through the contract written to catch
+  its failure. A new `"optional": true` predicate key opts a legitimately-absent field back into a
+  clean pass. `FailurePredicate.matches()` is unchanged (MATCH-only), so existing rules are not
+  affected.
 - LangSmith adapter: `from_langsmith_run` and `--format langsmith` normalize nested LangSmith run
   trees into canonical traces, preserving structured tool errors for R2. Robustness fixes:
   integer `execution_order` now sorts numerically (not lexically), positional-only tool args are

@@ -29,6 +29,7 @@ import re
 from typing import Any
 
 from tracelint.findings import ConfidenceTier, Finding
+from tracelint.predicates import PredicateResult
 from tracelint.rules.base import Rule
 from tracelint.signatures import is_structured_error as _is_structured_error
 from tracelint.signatures import looks_empty as _looks_empty
@@ -76,9 +77,17 @@ class ToolErrorEventRule(Rule):
             if _is_structured_error(result):
                 findings.append(self._hard(result, tool))
                 continue
-            if predicate is not None and predicate.matches(result.content):
-                findings.append(self._hard_predicate(result, tool, predicate))
-                continue
+            if predicate is not None:
+                verdict = predicate.evaluate(result.content)
+                if verdict is PredicateResult.MATCH:
+                    findings.append(self._hard_predicate(result, tool, predicate))
+                    continue
+                # A declared failure_when whose field is *absent* can't be evaluated. On a
+                # side-effecting tool that is not a clean pass — we cannot verify it did not fail —
+                # so disclose it as a suppression, regardless of transport status (which may be OK).
+                if verdict is PredicateResult.UNKNOWN and meta is not None and meta.side_effecting:
+                    findings.append(self._suppress_unverifiable_predicate(result, tool, predicate))
+                    continue
             # Fail-closed: a side-effecting action whose result we cannot classify (unknown status)
             # and that declares no failure predicate is *unverifiable* — we must not count it as a
             # clean pass. Disclose it as a suppression rather than assume success.
@@ -126,6 +135,27 @@ class ToolErrorEventRule(Rule):
             tier=ConfidenceTier.CANDIDATE,
             summary=f"rule {self.id} suppressed for {tool!r}: {reason}",
             evidence={"step_indices": [result.index], "tool": tool},
+            suppressed_reason=reason,
+        )
+
+    def _suppress_unverifiable_predicate(
+        self, result: ToolResult, tool: str, predicate: Any
+    ) -> Finding:
+        field = predicate.pointer or "(result)"
+        reason = (
+            f"declared failure_when field {field} absent on side-effecting tool {tool!r} — "
+            "cannot verify it did not fail"
+        )
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.CANDIDATE,
+            summary=f"rule {self.id} suppressed for {tool!r}: {reason}",
+            evidence={
+                "step_indices": [result.index],
+                "tool": tool,
+                "signal": "failure_predicate_unverifiable",
+            },
             suppressed_reason=reason,
         )
 
