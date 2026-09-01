@@ -6,6 +6,12 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- Tool Contracts: `ToolContract` presents a tool's declared metadata as one coherent view — `args`
+  (schema), `effects` (`side_effecting` / `idempotent` / …), `failure` (`failure_when`), and
+  `provenance` (`x-value-origin`) — via `registry.contract_for(name)` / `registry.contracts()`, with
+  `.describe()` and `.to_dict()`. Presentation only: no new keys and no behaviour change (it reads the
+  same `ToolSpec` the rules already use). `FailurePredicate.summary()` renders a failure contract
+  statically. See `docs/tool-contracts.md`.
 - Verification coverage: each report now carries a per-rule `coverage` — how many units a rule could
   actually evaluate vs. abstain on (e.g. `R1  1/2 tool calls`, `R2a  1/2 tool results`), shown in the
   text report and `to_dict()`. Rules opt in via `Rule.coverage()`; R1 (schema availability) and R2a
