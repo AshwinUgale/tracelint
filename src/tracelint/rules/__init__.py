@@ -12,6 +12,7 @@ from tracelint.rules.error_handling import ErrorHandlingRule, ToolErrorEventRule
 from tracelint.rules.hallucination import HallucinatedArgRule
 from tracelint.rules.loops import LoopRule, RedundantCallRule
 from tracelint.rules.schema_violation import SchemaViolationRule
+from tracelint.rules.side_effects import DuplicateSideEffectRule
 from tracelint.rules.tool_integrity import MalformedArgumentsRule, UnknownToolRule
 
 # Every implemented rule class, in run order. Each phase appends here.
@@ -24,6 +25,7 @@ _RULE_CLASSES: list[type[Rule]] = [
     RedundantCallRule,
     MalformedArgumentsRule,
     UnknownToolRule,
+    DuplicateSideEffectRule,
 ]
 
 
@@ -61,6 +63,7 @@ __all__ = [
     "RedundantCallRule",
     "MalformedArgumentsRule",
     "UnknownToolRule",
+    "DuplicateSideEffectRule",
     "default_rules",
     "select_rules",
     "rule_ids",

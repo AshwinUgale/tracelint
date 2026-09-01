@@ -6,6 +6,12 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- New rule **R8 — duplicate side effect**: flags a non-idempotent side-effecting tool called again
+  with equivalent arguments when the first call did **not** fail (the double-charge). `hard_event`
+  when the first call succeeded, `candidate` when its outcome is unknown; a repeat after a genuine
+  failure is a legitimate retry and is never flagged. Uses only the existing `side_effecting` /
+  `idempotent` metadata, and reports an *event*, so it never fails CI on its own.
+
 - Tool Contracts: `ToolContract` presents a tool's declared metadata as one coherent view — `args`
   (schema), `effects` (`side_effecting` / `idempotent` / …), `failure` (`failure_when`), and
   `provenance` (`x-value-origin`) — via `registry.contract_for(name)` / `registry.contracts()`, with
