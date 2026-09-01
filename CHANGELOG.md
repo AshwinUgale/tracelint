@@ -19,6 +19,11 @@ additive features; the public API is not yet frozen).
 - New `DENIED` fault type: a transport success (HTTP 200, status OK) carrying a `{"status":
   "declined"}` body — invisible to structured-error detection, flagged only when the tool declares a
   `failure_when` predicate. The experiment prints the before/after across that declaration.
+- Adapter conformance suite (`tests/conformance/`): per-adapter fixtures that pin *normalization*
+  only — raw provider payload → exact canonical steps, no rules — for OpenAI (standard chat +
+  ShareGPT), OTel/OpenInference (Phoenix top-level `span_kind` + GenAI `execute_tool` semconv),
+  Langfuse, and LangSmith. A regression guard against the trace-*misreading* bugs that are worse
+  than a missing rule.
 
 ## [0.5.0]
 
