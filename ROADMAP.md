@@ -16,10 +16,16 @@ encountering it on a real trace, not the suggestion itself.
 - **Adapter breadth** — the event-list reader now covers OpenInference *and* the OTel **GenAI**
   semconv (OpenLLMetry / Traceloop); the message-list reader now reads ShareGPT (`from`/`value`),
   `role`+`text`, and typed-block content.
+- **R8 — duplicate side effect** — a non-idempotent side-effecting tool called again with equivalent
+  arguments when the first call did **not** fail (the double-charge). `hard_event` when the first
+  succeeded, `candidate` when its outcome is unknown; a repeat after a genuine failure is a
+  legitimate retry and is never flagged. Uses only the existing `side_effecting` / `idempotent`
+  metadata. This is the *first* half of the side-effect story; unconfirmed side effect (below) is the
+  second, deferred until real usage justifies its new `confirmed_by` key.
 
 ## Candidate rules
 
-### R8 — unconfirmed side effect
+### Unconfirmed side effect (the second half of the side-effect story; takes the next free rule id)
 
 Today R2 catches *known* failures: a tool returned an error and the agent proceeded (R2a/R2b), or an
 errored value was reused in a later side-effecting call. It does **not** catch the case where the
