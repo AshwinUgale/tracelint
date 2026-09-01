@@ -31,9 +31,24 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 _UNSET = object()  # distinguishes "equals not configured" from "equals: null"
+
+
+class PredicateResult(Enum):
+    """Tri-state outcome of evaluating a failure predicate against a result.
+
+    The distinction is load-bearing: ``NO_MATCH`` means "evaluated — not a failure" (a clean pass),
+    while ``UNKNOWN`` means "could not evaluate" (the tested field is absent) — and must never be
+    silently collapsed into a clean pass. That mirrors tracelint's fail-closed stance:
+    couldn't-verify is not the same as verified-okay.
+    """
+
+    MATCH = "match"
+    NO_MATCH = "no_match"
+    UNKNOWN = "unknown"
 
 
 def _as_text(value: Any) -> str:
@@ -87,6 +102,7 @@ class FailurePredicate:
     contains: str | None = None
     pattern: str | None = None  # the JSON ``matches`` key — a regular expression
     exists: bool = False
+    optional: bool = False  # when true, an absent pointer is a clean NO_MATCH, not UNKNOWN
 
     def _has_explicit_condition(self) -> bool:
         return bool(
@@ -109,6 +125,7 @@ class FailurePredicate:
         contains = data["contains"] if isinstance(data.get("contains"), str) else None
         pattern = data["matches"] if isinstance(data.get("matches"), str) else None
         exists = bool(data.get("exists", False))
+        optional = bool(data.get("optional", False))
         pred = cls(
             pointer=pointer,
             in_values=in_values,
@@ -116,34 +133,52 @@ class FailurePredicate:
             contains=contains,
             pattern=pattern,
             exists=exists,
+            optional=optional,
         )
         if not (pred._has_explicit_condition() or exists):
             # A *non-empty* pointer with no condition means "failure iff this path is present".
             # An empty pointer with nothing to test is meaningless — reject it.
             if not pointer:
                 return None
-            pred = cls(pointer=pointer, exists=True)
+            pred = cls(pointer=pointer, exists=True, optional=optional)
         return pred
 
-    def matches(self, content: Any) -> bool:
-        """True iff ``content`` satisfies this failure predicate."""
+    def _is_pure_exists(self) -> bool:
+        """An existence check (pointer present ⇒ failure) with no value condition."""
+        return self.exists and not self._has_explicit_condition()
+
+    def evaluate(self, content: Any) -> PredicateResult:
+        """Tri-state: does ``content`` MATCH this failure predicate, NO_MATCH, or is it UNKNOWN?
+
+        ``UNKNOWN`` arises only when the pointed-to field is absent and the predicate needs its
+        value to decide (``in`` / ``equals`` / ``contains`` / ``matches``). A pure ``exists`` check
+        treats absence as a definite non-failure; an ``optional`` field treats absence as clean —
+        both are ``NO_MATCH``, never ``UNKNOWN``.
+        """
         value, found = resolve_pointer(content, self.pointer)
         if not found:
-            return False
+            if self.optional or self._is_pure_exists():
+                return PredicateResult.NO_MATCH
+            return PredicateResult.UNKNOWN
         if self.in_values and value in self.in_values:
-            return True
+            return PredicateResult.MATCH
         if self.equals is not _UNSET and value == self.equals:
-            return True
+            return PredicateResult.MATCH
         if self.contains is not None and self.contains in _as_text(value):
-            return True
+            return PredicateResult.MATCH
         if self.pattern is not None:
             try:
                 if re.search(self.pattern, _as_text(value)):
-                    return True
+                    return PredicateResult.MATCH
             except re.error:
                 pass  # a malformed pattern never matches (config error, fails safe)
-        # ``exists`` fires only when it is the sole condition (pointer present ⇒ failure).
-        return bool(self.exists and not self._has_explicit_condition())
+        if self._is_pure_exists():
+            return PredicateResult.MATCH  # pointer present ⇒ failure
+        return PredicateResult.NO_MATCH
+
+    def matches(self, content: Any) -> bool:
+        """True iff ``content`` is a declared failure (MATCH) — a shim over :meth:`evaluate`."""
+        return self.evaluate(content) is PredicateResult.MATCH
 
     def describe(self, content: Any) -> str:
         """A short evidence string naming the matched path and value."""
