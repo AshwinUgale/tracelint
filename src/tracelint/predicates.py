@@ -180,6 +180,19 @@ class FailurePredicate:
         """True iff ``content`` is a declared failure (MATCH) — a shim over :meth:`evaluate`."""
         return self.evaluate(content) is PredicateResult.MATCH
 
+    def summary(self) -> str:
+        """A static, content-independent description of this failure contract."""
+        ptr = self.pointer or "(result)"
+        if self.in_values:
+            return f"{ptr} in {list(self.in_values)!r}"
+        if self.equals is not _UNSET:
+            return f"{ptr} == {self.equals!r}"
+        if self.contains is not None:
+            return f"{ptr} contains {self.contains!r}"
+        if self.pattern is not None:
+            return f"{ptr} matches /{self.pattern}/"
+        return f"{ptr} present"
+
     def describe(self, content: Any) -> str:
         """A short evidence string naming the matched path and value."""
         value, _ = resolve_pointer(content, self.pointer)

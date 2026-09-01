@@ -85,6 +85,78 @@ class ToolSpec:
         )
 
 
+@dataclass(frozen=True)
+class ToolContract:
+    """A coherent, read-only view of a tool's declared *contract*.
+
+    tracelint never infers a tool's behaviour from its name — an operator declares it. Those
+    declarations accreted as separate keys (``schema``, ``side_effecting``, ``failure_when``, and
+    per-field ``x-value-origin``), but they are one idea: the contract the tool operates under, that
+    the rules check the recorded execution against. This groups them into named sections so the
+    concept has a single home. It adds **no** semantics — it reads the same :class:`ToolSpec` the
+    rules already use, so declaring a contract is still just the existing metadata keys.
+    """
+
+    name: str
+    schema: dict[str, Any] | None
+    metadata: ToolMetadata
+    value_origins: dict[str, str]
+
+    @classmethod
+    def from_spec(cls, spec: ToolSpec) -> ToolContract:
+        return cls(spec.name, spec.schema, spec.metadata, dict(spec.value_origins))
+
+    @property
+    def side_effecting(self) -> bool:
+        return self.metadata.side_effecting
+
+    @property
+    def failure_when(self) -> FailurePredicate | None:
+        return self.metadata.failure_when
+
+    def to_dict(self) -> dict[str, Any]:
+        m = self.metadata
+        props = list((self.schema or {}).get("properties", {})) if self.schema else []
+        return {
+            "name": self.name,
+            "schema": {"declared": self.schema is not None, "properties": sorted(props)},
+            "effects": {
+                "side_effecting": m.side_effecting,
+                "idempotent": m.idempotent,
+                "polling": m.polling,
+                "paginated": m.paginated,
+            },
+            "failure_when": self.failure_when.summary() if self.failure_when else None,
+            "provenance": dict(self.value_origins),
+        }
+
+    def describe(self) -> str:
+        """A compact, human-readable block presenting the four contract sections."""
+        m = self.metadata
+        if self.schema is not None:
+            n = len(list((self.schema.get("properties") or {}).keys()))
+            args = f"schema declared ({n} propert{'y' if n == 1 else 'ies'})"
+        else:
+            args = "no schema declared"
+        effects = "side-effecting" if m.side_effecting else "no declared side effect"
+        if m.idempotent:
+            effects += ", idempotent"
+        failure = self.failure_when.summary() if self.failure_when else "none declared"
+        prov = (
+            ", ".join(f"{k}={v}" for k, v in sorted(self.value_origins.items()))
+            or "none declared"
+        )
+        return "\n".join(
+            [
+                self.name,
+                f"  args:       {args}",
+                f"  effects:    {effects}",
+                f"  failure:    {failure}",
+                f"  provenance: {prov}",
+            ]
+        )
+
+
 def _extract_value_origins(
     schema: dict[str, Any] | None, explicit: dict[str, str] | None
 ) -> dict[str, str]:
@@ -131,6 +203,15 @@ class ToolRegistry:
     def metadata_for(self, name: str) -> ToolMetadata | None:
         spec = self._tools.get(name)
         return spec.metadata if spec else None
+
+    def contract_for(self, name: str) -> ToolContract | None:
+        """The declared contract for ``name`` as one coherent view, or ``None`` if undeclared."""
+        spec = self._tools.get(name)
+        return ToolContract.from_spec(spec) if spec else None
+
+    def contracts(self) -> list[ToolContract]:
+        """Every declared tool's contract, in declaration order."""
+        return [ToolContract.from_spec(s) for s in self._tools.values()]
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolRegistry:

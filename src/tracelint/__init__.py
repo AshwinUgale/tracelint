@@ -27,7 +27,7 @@ from tracelint.trace import (
 )
 
 # --- Tool ground truth --------------------------------------------------------------
-from tracelint.tools import ToolMetadata, ToolRegistry, ToolSpec
+from tracelint.tools import ToolContract, ToolMetadata, ToolRegistry, ToolSpec
 
 # --- Findings + report --------------------------------------------------------------
 from tracelint.findings import ConfidenceTier, Coverage, Finding, LintReport
@@ -124,6 +124,7 @@ __all__ = [
     "build_trace",
     "load_traces",
     # Tools
+    "ToolContract",
     "ToolRegistry",
     "ToolSpec",
     "ToolMetadata",
