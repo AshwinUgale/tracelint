@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from tracelint.findings import ConfidenceTier, Finding
+from tracelint.findings import ConfidenceTier, Coverage, Finding
 from tracelint.predicates import PredicateResult
 from tracelint.rules.base import Rule
 from tracelint.signatures import is_structured_error as _is_structured_error
@@ -65,6 +65,27 @@ class ToolErrorEventRule(Rule):
         if not trace.tool_results():
             return "trace has no tool results"
         return None
+
+    def coverage(self, trace: Trace, registry: ToolRegistry) -> Coverage | None:
+        results = trace.tool_results()
+        # Evaluatable = the result is structurally classifiable — a structured error, a declared
+        # failure_when that resolves (MATCH/NO_MATCH, not UNKNOWN), or an explicit OK. The rest fall
+        # to the heuristic (candidate) tier, i.e. R2a could not verifiably decide them.
+        evaluatable = 0
+        for result in results:
+            call = trace.call_for(result)
+            meta = registry.metadata_for(call.name) if call else None
+            predicate = meta.failure_when if meta else None
+            if _is_structured_error(result):
+                evaluatable += 1  # a structured error is always decidable
+            elif predicate is not None:
+                # A declared contract counts as evaluated only if it actually resolved — a
+                # declared-but-UNKNOWN predicate is *not* rescued by a status-OK fallthrough.
+                if predicate.evaluate(result.content) is not PredicateResult.UNKNOWN:
+                    evaluatable += 1
+            elif result.status is ResultStatus.OK:
+                evaluatable += 1  # explicit transport success, no declared contract to check
+        return Coverage(self.id, "tool results", evaluatable, len(results))
 
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         findings: list[Finding] = []

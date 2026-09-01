@@ -46,6 +46,11 @@ def render_report(report: LintReport, *, include_candidates: bool = False) -> st
         for s in report.suppressions:
             lines.append(f"    {s.rule} {s.finding_type}: {s.suppressed_reason}")
 
+    if report.coverage:
+        lines.append("  verification coverage (evaluatable / total):")
+        for c in report.coverage:
+            lines.append(f"    {c.rule}  {c.evaluatable}/{c.total} {c.unit}")
+
     if not active and not report.suppressions:
         lines.append("  clean — no findings.")
     return "\n".join(lines)

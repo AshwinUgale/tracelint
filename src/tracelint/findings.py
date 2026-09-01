@@ -111,11 +111,41 @@ EXIT_HARD_DEFECT = 2
 EXIT_INPUT_ERROR = 3  # bad/missing trace or tools file, unknown rule, malformed JSON.
 
 
+@dataclass(frozen=True)
+class Coverage:
+    """How much of a trace a rule could actually evaluate.
+
+    ``evaluatable`` of ``total`` units (tool calls, tool results, ...) were checkable; the remainder
+    the rule had to abstain on (no schema declared, an unclassifiable status, ...). This turns the
+    honest question *"what portion of this run was actually verifiable?"* into a number you can
+    watch across releases, and it is *why* a clean report is trustworthy — you can see how much was
+    checked, not merely that nothing fired.
+    """
+
+    rule: str
+    unit: str
+    evaluatable: int
+    total: int
+
+    @property
+    def ratio(self) -> float:
+        return 1.0 if self.total == 0 else self.evaluatable / self.total
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rule": self.rule,
+            "unit": self.unit,
+            "evaluatable": self.evaluatable,
+            "total": self.total,
+        }
+
+
 @dataclass
 class LintReport:
     """The result of linting one trace: all findings plus the run they describe.
 
     ``active_findings`` are real observations; ``suppressions`` are the rules that could not run.
+    ``coverage`` records, per reporting rule, how many units it could evaluate (:class:`Coverage`).
     ``exit_code`` implements the CI contract — a non-zero exit is driven by a ``hard_defect``,
     exactly the tier reserved for structurally-provable defects, so CI never fails on a heuristic
     candidate unless a caller explicitly opts in later.
@@ -123,6 +153,7 @@ class LintReport:
 
     run_id: str
     findings: list[Finding] = field(default_factory=list)
+    coverage: list[Coverage] = field(default_factory=list)
 
     @property
     def active_findings(self) -> list[Finding]:
@@ -144,8 +175,11 @@ class LintReport:
         return EXIT_HARD_DEFECT if self.has_hard_defect else EXIT_OK
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "run_id": self.run_id,
             "findings": [f.to_dict() for f in self.findings],
             "exit_code": self.exit_code,
         }
+        if self.coverage:
+            out["coverage"] = [c.to_dict() for c in self.coverage]
+        return out
