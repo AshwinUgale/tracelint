@@ -21,7 +21,7 @@ from typing import Any
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import validator_for
 
-from tracelint.findings import ConfidenceTier, Finding
+from tracelint.findings import ConfidenceTier, Coverage, Finding
 from tracelint.rules.base import Rule
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ToolCall, Trace
@@ -46,6 +46,13 @@ class SchemaViolationRule(Rule):
         if not any(registry.schema_for(c.name) is not None for c in calls):
             return "no tool schema available for any called tool"
         return None
+
+    def coverage(self, trace: Trace, registry: ToolRegistry) -> Coverage | None:
+        calls = trace.tool_calls()
+        # Evaluatable = a schema is declared for the called tool (a declared-but-invalid schema is
+        # reported separately as a per-call suppression, so it doesn't count as verified here).
+        evaluatable = sum(1 for c in calls if registry.schema_for(c.name) is not None)
+        return Coverage(self.id, "tool calls", evaluatable, len(calls))
 
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         findings: list[Finding] = []

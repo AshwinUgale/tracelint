@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from tracelint.findings import Finding, LintReport
+from tracelint.findings import Coverage, Finding, LintReport
 from tracelint.tools import ToolRegistry
 from tracelint.trace import Trace
 
@@ -38,6 +38,15 @@ class Rule(ABC):
 
     def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
         """Return ``None`` if runnable, else a reason this rule is suppressed on ``trace``."""
+        return None
+
+    def coverage(self, trace: Trace, registry: ToolRegistry) -> Coverage | None:
+        """How many of this rule's units it could actually evaluate, or ``None`` to not report.
+
+        Optional. A rule with a natural unit (tool calls for R1, tool results for R2) reports how
+        many were checkable vs. abstained on, so a reader can trust *how much* was verified — not
+        just that nothing fired. Whole-rule suppression shows up here as ``0 / total``.
+        """
         return None
 
     @abstractmethod
@@ -59,10 +68,14 @@ def lint_trace(
     """
     registry = registry or ToolRegistry()
     findings: list[Finding] = []
+    coverage: list[Coverage] = []
     for rule in rules:
+        cov = rule.coverage(trace, registry)
+        if cov is not None:
+            coverage.append(cov)
         reason = rule.applicable(trace, registry)
         if reason is not None:
             findings.append(Finding.suppressed(rule.id, rule.finding_type, reason))
             continue
         findings.extend(rule.run(trace, registry))
-    return LintReport(run_id=trace.run_id, findings=findings)
+    return LintReport(run_id=trace.run_id, findings=findings, coverage=coverage)

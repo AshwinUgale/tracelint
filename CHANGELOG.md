@@ -6,6 +6,12 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- Verification coverage: each report now carries a per-rule `coverage` — how many units a rule could
+  actually evaluate vs. abstain on (e.g. `R1  1/2 tool calls`, `R2a  1/2 tool results`), shown in the
+  text report and `to_dict()`. Rules opt in via `Rule.coverage()`; R1 (schema availability) and R2a
+  (structurally-classifiable results) report today, and a whole-rule suppression reads as `0 / total`.
+  This makes "what portion of this run was actually verifiable?" a number you can watch — the reason a
+  clean report is trustworthy, not merely empty.
 - `failure_when` is now tri-state (fixes #34). A declared value predicate distinguishes MATCH
   (declared failure), NO_MATCH (field present, not a failure value — a clean pass), and UNKNOWN (the
   pointed-to field is absent, so the predicate cannot be evaluated). On a side-effecting tool an

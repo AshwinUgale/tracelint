@@ -30,7 +30,7 @@ from tracelint.trace import (
 from tracelint.tools import ToolMetadata, ToolRegistry, ToolSpec
 
 # --- Findings + report --------------------------------------------------------------
-from tracelint.findings import ConfidenceTier, Finding, LintReport
+from tracelint.findings import ConfidenceTier, Coverage, Finding, LintReport
 
 # --- Rules + driver -----------------------------------------------------------------
 from tracelint.rules import (
@@ -130,6 +130,7 @@ __all__ = [
     # Findings
     "Finding",
     "ConfidenceTier",
+    "Coverage",
     "LintReport",
     # Rules
     "Rule",
