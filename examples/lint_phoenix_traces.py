@@ -32,8 +32,9 @@ Then lint them — one report per trace — in Python:
 --------------------------------------------------------------------------------------------------
 This file is a fully offline, keyless demo
 --------------------------------------------------------------------------------------------------
-It builds a Phoenix-shape span export for a support agent that makes three real mistakes on one
-run, then lints it — no Phoenix instance or API key required:
+It builds an **illustrative** Phoenix-shape span export (constructed, not a captured run) for a
+support agent with three planted defects, then lints it — no Phoenix instance or API key required.
+Swap in your own `spans.json` export (see above) to lint real traces:
 
     python examples/lint_phoenix_traces.py
 """
@@ -73,7 +74,8 @@ def _tool_span(
 
 
 def build_phoenix_spans() -> list[dict[str, Any]]:
-    """A support-agent run captured as Phoenix OpenInference spans, with three planted defects.
+    """An illustrative support-agent trace, constructed in Phoenix's OpenInference span format
+    (not a captured run), with three planted defects.
 
     The user asks to refund order A100. Then:
       1. ``get_order`` **errors** (500) — but the run continues (R2a: a hard_event from the OTel
