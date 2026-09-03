@@ -101,6 +101,33 @@ class StepMeta:
 
 
 @dataclass
+class SourceRef:
+    """Where a step came from in its origin platform (provider-neutral).
+
+    Adapters populate this so a finding can be traced back to the exact provider record — a
+    Langfuse ``observation_id``, an OTel/Phoenix ``span_id`` — which is what lets an *integration*
+    (not the rules) attach the finding to the offending span/observation and build a deep link.
+    Optional and absent by default; the rule engine never reads it (rules speak only in step
+    indices), keeping provider knowledge out of the deterministic core.
+    """
+
+    provider: str | None = None
+    trace_id: str | None = None
+    span_id: str | None = None
+    observation_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> SourceRef | None:
+        if not data:
+            return None
+        known = {f for f in cls.__dataclass_fields__}  # noqa: C416 - explicit set of field names
+        return cls(**{k: v for k, v in data.items() if k in known})
+
+
+@dataclass
 class Message:
     """A role-tagged conversational turn. ``content`` is free text (may be empty)."""
 
@@ -108,6 +135,7 @@ class Message:
     content: str = ""
     index: int = -1
     meta: StepMeta | None = None
+    source: SourceRef | None = None
 
     kind = "message"
 
@@ -115,6 +143,8 @@ class Message:
         out: dict[str, Any] = {"type": self.kind, "role": self.role.value, "content": self.content}
         if self.meta is not None:
             out["meta"] = self.meta.to_dict()
+        if self.source is not None:
+            out["source"] = self.source.to_dict()
         return out
 
 
@@ -134,6 +164,7 @@ class ToolCall:
     raw_text: str | None = None
     index: int = -1
     meta: StepMeta | None = None
+    source: SourceRef | None = None
 
     kind = "tool_call"
 
@@ -148,6 +179,8 @@ class ToolCall:
             out["raw_text"] = self.raw_text
         if self.meta is not None:
             out["meta"] = self.meta.to_dict()
+        if self.source is not None:
+            out["source"] = self.source.to_dict()
         return out
 
 
@@ -166,6 +199,7 @@ class ToolResult:
     http_status: int | None = None
     index: int = -1
     meta: StepMeta | None = None
+    source: SourceRef | None = None
 
     kind = "tool_result"
 
@@ -182,6 +216,8 @@ class ToolResult:
             out["http_status"] = self.http_status
         if self.meta is not None:
             out["meta"] = self.meta.to_dict()
+        if self.source is not None:
+            out["source"] = self.source.to_dict()
         return out
 
 
@@ -197,8 +233,14 @@ _STEP_TYPES: dict[str, Any] = {
 def _step_from_dict(data: dict[str, Any]) -> Step:
     kind = data.get("type")
     meta = StepMeta.from_dict(data.get("meta"))
+    source = SourceRef.from_dict(data.get("source"))
     if kind == Message.kind:
-        return Message(role=Role.parse(data["role"]), content=data.get("content", ""), meta=meta)
+        return Message(
+            role=Role.parse(data["role"]),
+            content=data.get("content", ""),
+            meta=meta,
+            source=source,
+        )
     if kind == ToolCall.kind:
         return ToolCall(
             call_id=str(data["call_id"]),
@@ -206,6 +248,7 @@ def _step_from_dict(data: dict[str, Any]) -> Step:
             args=data.get("args") or {},
             raw_text=data.get("raw_text"),
             meta=meta,
+            source=source,
         )
     if kind == ToolResult.kind:
         return ToolResult(
@@ -215,6 +258,7 @@ def _step_from_dict(data: dict[str, Any]) -> Step:
             error=data.get("error"),
             http_status=data.get("http_status"),
             meta=meta,
+            source=source,
         )
     raise ValueError(f"unknown step type {kind!r} (expected message, tool_call, or tool_result)")
 

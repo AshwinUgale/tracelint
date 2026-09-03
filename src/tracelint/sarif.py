@@ -20,11 +20,11 @@ finding across runs is one alert, not a new one each time.
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Sequence
 from typing import Any
 
 from tracelint.findings import ConfidenceTier, Finding, LintReport
+from tracelint.identity import finding_fingerprint
 
 SARIF_VERSION = "2.1.0"
 SCHEMA_URI = "https://json.schemastore.org/sarif-2.1.0.json"
@@ -93,9 +93,9 @@ _RULE_META: dict[str, dict[str, str]] = {
 
 def _fingerprint(uri: str, finding: Finding) -> str:
     """A stable identity for a finding so GitHub treats it as one alert across runs."""
-    steps = ",".join(str(i) for i in sorted(finding.step_indices))
-    basis = f"{uri}|{finding.rule}|{finding.finding_type}|{finding.tier.value}|{steps}"
-    return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+    return finding_fingerprint(
+        finding, scope=uri, step_keys=[str(i) for i in finding.step_indices]
+    )
 
 
 def _rule_descriptor(rule_id: str, finding_type: str) -> dict[str, Any]:
