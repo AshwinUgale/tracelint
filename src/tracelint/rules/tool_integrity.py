@@ -22,7 +22,6 @@ from tracelint.rules.base import Rule
 from tracelint.tools import ToolRegistry
 from tracelint.trace import Trace
 
-
 # Framework-owned control tools that appear in agent traces but are never part of a user's declared
 # toolset — e.g. smolagents' terminal ``final_answer``. The framework emits them; the model does not
 # pick them from the app's tools, so R7 must not flag them as possible hallucinated tool names (that
