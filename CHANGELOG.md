@@ -6,6 +6,17 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Langfuse integration — `tracelint langfuse check --trace <id>`.** tracelint now runs *inside*
+  the platform you already use: it fetches a trace from Langfuse, lints it, and (with
+  `--write-back`) writes the verdict back as **Scores** — a trace-level `tracelint.passed`
+  (BOOLEAN) and `tracelint.hard_defects` (NUMERIC), plus each *certain* finding (`hard_defect` /
+  `hard_event`) attached to the **exact offending observation** with the evidence in the comment.
+  Read-only by default (prints the score plan); candidates are review-only and never written.
+  Scores are keyed by stable finding fingerprints, so a re-run updates in place instead of
+  duplicating. New `integrations/` layer, kept separate from the pure adapters; needs
+  `pip install "tracelint[langfuse]"` (v3 SDK). Reframes the pitch: *add deterministic structural
+  checks to your Langfuse traces.*
+
 - **Source identity on canonical steps** (`SourceRef`): adapters can now record where a step came
   from in its origin platform — `provider` + `trace_id` / `span_id` / `observation_id` — so an
   integration can attach a finding back to the exact offending record (a Langfuse observation, an

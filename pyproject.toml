@@ -35,9 +35,10 @@ dependencies = [
 # A real OpenAI ReAct agent used to *generate* traces to lint (the system under test,
 # never part of the deterministic linter). Opt-in; the whole test/validation path is offline.
 real-agent = ["openai>=1.0"]
-# Fetch traces from Langfuse and write findings back as scores (live cookbook mode only;
-# the adapter itself is dependency-free and the offline example needs no key).
-langfuse = ["langfuse>=2.0"]
+# The Langfuse integration: `tracelint langfuse check` fetches traces and writes findings back
+# as Scores. Targets the v3 Python SDK (get_client / create_score). The adapter itself is
+# dependency-free — this extra is only needed for the live fetch/write-back path.
+langfuse = ["langfuse>=3.0"]
 # Everything needed to run the full test suite.
 dev = [
     "pytest>=7",

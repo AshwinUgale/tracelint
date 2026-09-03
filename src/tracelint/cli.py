@@ -78,6 +78,30 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--quiet", action="store_true", help="suppress the text report")
     check.set_defaults(func=_cmd_check)
 
+    lf = sub.add_parser("langfuse", help="check traces you already collect in Langfuse")
+    lfsub = lf.add_subparsers(dest="lf_command")
+    lfcheck = lfsub.add_parser(
+        "check", help="fetch a Langfuse trace, lint it, optionally write findings back as Scores"
+    )
+    lfcheck.add_argument("--trace", dest="trace_id", required=True, help="Langfuse trace id")
+    lfcheck.add_argument("--tools", help="tools.json for schema-dependent rules (R1, R3)")
+    lfcheck.add_argument(
+        "--tool-names",
+        type=_csv,
+        metavar="a,b,...",
+        help="observation names to treat as tool calls (for span-based instrumentation)",
+    )
+    lfcheck.add_argument(
+        "--write-back",
+        action="store_true",
+        help="write findings back to Langfuse as Scores (default: read-only, shows the plan)",
+    )
+    lfcheck.add_argument(
+        "--include-candidates", action="store_true", help="show candidate findings in the report"
+    )
+    lfcheck.add_argument("--quiet", action="store_true", help="suppress the text report")
+    lfcheck.set_defaults(func=_cmd_langfuse_check)
+
     demo = sub.add_parser("demo", help="run the keyless validation suite + recovery scorecard")
     demo.add_argument("--html", dest="html_out", metavar="OUT", help="write an HTML report")
     demo.add_argument("--runs", type=int, default=3, help="scorecard runs per fault (default 3)")
@@ -135,6 +159,29 @@ def _cmd_check(args: argparse.Namespace) -> int:
             print(render_report(report, include_candidates=args.include_candidates))
 
     return EXIT_HARD_DEFECT if any(r.has_hard_defect for r in reports) else EXIT_OK
+
+
+def _cmd_langfuse_check(args: argparse.Namespace) -> int:
+    from tracelint.integrations.langfuse import LangfuseIntegration
+
+    registry = ToolRegistry.load(args.tools) if args.tools else ToolRegistry()
+    result = LangfuseIntegration().check(
+        args.trace_id,
+        registry=registry,
+        tool_names=args.tool_names,
+        write_back=args.write_back,
+    )
+    if not args.quiet:
+        print(render_report(result.report, include_candidates=args.include_candidates))
+        print()
+        if args.write_back:
+            print(f"wrote {result.written} score(s) back to Langfuse trace {args.trace_id}:")
+        else:
+            print("would write these scores to Langfuse (re-run with --write-back):")
+        for plan in result.plans:
+            target = f"obs {plan.observation_id}" if plan.observation_id else "trace"
+            print(f"  {plan.name:34} {plan.value:<5} [{target}]")
+    return EXIT_HARD_DEFECT if result.report.has_hard_defect else EXIT_OK
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
@@ -206,12 +253,12 @@ def _cmd_scorecard(args: argparse.Namespace) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if not getattr(args, "command", None):
+    if not getattr(args, "command", None) or not getattr(args, "func", None):
         parser.print_help()
         return EXIT_OK
     try:
         return args.func(args)
-    except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError) as exc:
+    except (FileNotFoundError, ValueError, KeyError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"tracelint: error: {exc}", file=sys.stderr)
         return EXIT_INPUT_ERROR
 
