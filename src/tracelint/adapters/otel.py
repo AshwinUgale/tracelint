@@ -395,6 +395,33 @@ def _genai_input_seed(attrs: dict[str, Any]) -> list[Message]:
     return seeded
 
 
+def _llm_tool_call_args(
+    parsed: list[tuple[dict[str, Any], dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Structured tool-call arguments from LLM spans, indexed by tool name in span order.
+
+    Some instrumentors (LangChain / LangGraph) record a TOOL span's ``input.value`` as a *lossy bare
+    scalar* — e.g. ``"A100"`` instead of ``{"order_id": "A100"}`` — while the model's actual, valid
+    arguments live on the originating LLM span's ``tool_calls.*.tool_call.function.arguments``. A
+    TOOL span whose own input did not parse to an argument object recovers its arguments from here.
+
+    Only the LLM span's ``llm.output_messages`` (the newly emitted calls) are read — never the
+    replayed ``input_messages`` — so each call is indexed once, and only when its arguments parse to
+    a non-empty dict (a genuinely malformed model call yields nothing here, so R6 still fires).
+    """
+    by_tool: dict[str, list[dict[str, Any]]] = {}
+    for span, attrs in parsed:
+        if _span_kind(span, attrs) != "LLM":
+            continue
+        for msg in _collect_messages(attrs, "llm.output_messages"):
+            for _i, tc in sorted(msg.get("tool_calls", {}).items()):
+                name = str(tc.get("name", ""))
+                c_args, _ = _args_from(tc.get("arguments"))
+                if name and c_args:
+                    by_tool.setdefault(name, []).append(c_args)
+    return by_tool
+
+
 def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -> Trace:
     """Normalize a list of OpenInference/OTel spans into a canonical :class:`Trace`."""
     ordered = sorted(
@@ -403,6 +430,8 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
     )
     parsed = [(s, _attrs(s)) for s in ordered]
     has_tool_span = any(_span_kind(s, a) == "TOOL" for s, a in parsed)
+    # Only needed to repair lossy TOOL-span inputs (below); skip the work when there are no tools.
+    llm_args_by_tool = _llm_tool_call_args(parsed) if has_tool_span else {}
 
     steps: list[Step] = []
     steps.extend(_seed_input_messages(parsed))
@@ -423,6 +452,13 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
                 or ""
             )
             args, raw_text = _args_from(_input_value(attrs))
+            if not args and name:
+                # Lossy TOOL-span input (e.g. LangChain's bare scalar): recover the model's real
+                # arguments from the matching LLM tool_call. Clearing raw_text prevents a false R6
+                # (the arguments were never malformed — the TOOL span just under-recorded them).
+                recovered = llm_args_by_tool.get(name)
+                if recovered:
+                    args, raw_text = recovered.pop(0), None
             steps.append(ToolCall(call_id=call_id, name=name, args=args, raw_text=raw_text))
             is_err, err_msg = _is_error_span(span, attrs)
             content, _ = _parse_value(_output_value(attrs))
