@@ -35,10 +35,24 @@ jobs:
       - name: Install tracelint
         run: pip install -e .
 
-      - name: Generate the demo report
+      - name: Generate the demo report + redirect the root to tracelint.com
         run: |
-          mkdir site
-          tracelint demo --html site/index.html
+          mkdir -p site/demo
+          tracelint demo --html site/demo/index.html
+          # The marketing site now lives at tracelint.com; keep the old Pages root as a
+          # redirect so existing links land there instead of competing with it.
+          cat > site/index.html <<'HTML'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>tracelint</title>
+            <meta http-equiv="refresh" content="0; url=https://tracelint.com/">
+            <link rel="canonical" href="https://tracelint.com/">
+          </head>
+          <body>Redirecting to <a href="https://tracelint.com/">tracelint.com</a>.</body>
+          </html>
+          HTML
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
