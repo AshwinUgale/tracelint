@@ -55,6 +55,22 @@ def _exception_marker(content: Any) -> str | None:
     return None
 
 
+# A conservative, TOP-LEVEL-only failure convention: a result dict whose own ``status`` field says
+# the operation failed. Deliberately shallow — a nested ``jobs[].status == "failed"`` means a failed
+# *item was retrieved*, not that the call failed, so we never descend. Reading this convention as a
+# *fact* would be interpreting domain semantics; declaring ``failure_when`` is what makes it a fact.
+# So it only ever yields a *candidate* that names the fix (convention → hint, contract → fact).
+_CONVENTION_FAIL_STATES = {"error", "failed", "failure"}
+
+
+def _convention_failure_marker(content: Any) -> str | None:
+    if isinstance(content, dict):
+        status = content.get("status")
+        if isinstance(status, str) and status.strip().lower() in _CONVENTION_FAIL_STATES:
+            return f"status={status!r}"
+    return None
+
+
 class ToolErrorEventRule(Rule):
     """R2a: a tool returned an error (structured → hard_event, heuristic → candidate)."""
 
@@ -120,6 +136,15 @@ class ToolErrorEventRule(Rule):
             ):
                 findings.append(self._suppress_unverified(result, tool))
                 continue
+            # Zero-config convention hint: the result's own top-level ``status`` says it failed, but
+            # the tool declares no failure_when. Runs even on a transport-OK result (an HTTP-200
+            # error envelope is the exact case), because we cannot *prove* a failure without the
+            # contract — so surface it as a candidate that names the fix, never a hard event.
+            if predicate is None:
+                convention = _convention_failure_marker(result.content)
+                if convention is not None:
+                    findings.append(self._convention_candidate(result, tool, convention))
+                    continue
             # Heuristics only on an unknown-status result — trust an explicit OK.
             if result.status is ResultStatus.OK:
                 continue
@@ -198,6 +223,24 @@ class ToolErrorEventRule(Rule):
                 "http_status": result.http_status,
                 "error": result.error,
             },
+        )
+
+    def _convention_candidate(self, result: ToolResult, tool: str, marker: str) -> Finding:
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.CANDIDATE,
+            summary=(
+                f"{tool!r} result matches a failure convention ({marker}) but declares no "
+                "failure_when contract — declare one to make this a deterministic event"
+            ),
+            evidence={
+                "step_indices": [result.index],
+                "tool": tool,
+                "signal": "status_convention",
+                "matched": marker,
+            },
+            possible_false_positive=True,
         )
 
     def _candidate(self, result: ToolResult, tool: str, signal: str, marker: str) -> Finding:

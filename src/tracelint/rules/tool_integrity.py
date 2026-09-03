@@ -23,6 +23,15 @@ from tracelint.tools import ToolRegistry
 from tracelint.trace import Trace
 
 
+# Framework-owned control tools that appear in agent traces but are never part of a user's declared
+# toolset — e.g. smolagents' terminal ``final_answer``. The framework emits them; the model does not
+# pick them from the app's tools, so R7 must not flag them as possible hallucinated tool names (that
+# is onboarding noise the user cannot fix without declaring a tool they never wrote). This is a
+# starter allowlist by name; the general form is a ``framework_internal`` tag carried on the
+# canonical ToolCall at normalization time (roadmap).
+FRAMEWORK_INTERNAL_TOOLS = frozenset({"final_answer"})
+
+
 def _is_invalid_json_object(raw: str) -> bool:
     """True if ``raw`` is not a valid JSON *object* (parse fails, or parses to a non-object)."""
     try:
@@ -86,6 +95,8 @@ class UnknownToolRule(Rule):
         declared = sorted(registry.names())
         findings: list[Finding] = []
         for call in trace.tool_calls():
+            if call.name in FRAMEWORK_INTERNAL_TOOLS:
+                continue  # framework-owned control tool (e.g. final_answer) — not user-declared
             if registry.get(call.name) is None:
                 findings.append(
                     Finding(

@@ -158,6 +158,43 @@ def test_empty_result_is_candidate():
     assert f.tier is ConfidenceTier.CANDIDATE
 
 
+def test_status_error_convention_without_contract_is_candidate():
+    # An HTTP-200 error envelope ({"status":"error"}) with no declared failure_when is a hint, not
+    # a fact — surfaced as a candidate that names the fix, even though transport looks OK.
+    steps = [
+        ToolCall("c1", "get_order", {"order_id": "A100"}),
+        ToolResult("c1", {"status": "error", "code": 500}, status=ResultStatus.UNKNOWN),
+    ]
+    f = _r2a(steps).active_findings[0]
+    assert f.tier is ConfidenceTier.CANDIDATE
+    assert f.possible_false_positive is True
+    assert f.evidence["signal"] == "status_convention"
+    assert "failure_when" in f.summary
+
+
+def test_status_error_convention_yields_to_declared_contract():
+    # When a failure_when contract exists, the contract decides (hard event) — the convention
+    # candidate must not also fire, so exactly one finding, at the hard tier.
+    steps = [
+        ToolCall("c1", "get_order", {"order_id": "A100"}),
+        ToolResult("c1", {"status": "error", "code": 500}, status=ResultStatus.UNKNOWN),
+    ]
+    reg = _reg("get_order", failure_when={"pointer": "/status", "in": ["error"]})
+    findings = _r2a(steps, reg).active_findings
+    assert len(findings) == 1
+    assert findings[0].tier is ConfidenceTier.HARD_EVENT
+
+
+def test_nested_failed_status_is_not_flagged_by_convention():
+    # A retrieved failed *item* ({"jobs":[{"status":"failed"}]}) does not mean the call failed —
+    # the convention is top-level only, so nothing fires.
+    steps = [
+        ToolCall("c1", "list_jobs", {}),
+        ToolResult("c1", {"jobs": [{"status": "failed"}]}, status=ResultStatus.UNKNOWN),
+    ]
+    assert _r2a(steps).active_findings == []
+
+
 def test_explicit_ok_is_trusted_no_heuristic_flag():
     # An OK result containing the word "Exception" (e.g. a docs tool) is NOT flagged.
     steps = [
