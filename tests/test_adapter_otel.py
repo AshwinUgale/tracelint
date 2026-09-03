@@ -126,6 +126,47 @@ def test_input_messages_seed_user_turn_for_provenance():
     assert not [f for f in report.active_findings if f.rule == "R3"]
 
 
+def test_input_messages_seed_from_nested_content_parts_shape():
+    """OpenInference's *content-parts* message shape (llm.input_messages.N.message.contents.M.
+    message_content.text) — what smolagents emits — must seed the user turn too. Regression from a
+    real gpt-4o-mini smolagents trace: reading only the flat message.content dropped the user's
+    request, so R3 falsely flagged an argument (order_id) the user actually supplied."""
+    spans = [
+        {
+            "span_id": "l1",
+            "name": "OpenAIModel.generate",
+            "start_time": "1",
+            "attributes": {
+                "openinference.span.kind": "LLM",
+                "llm.input_messages.0.message.role": "system",
+                "llm.input_messages.0.message.contents.0.message_content.type": "text",
+                "llm.input_messages.0.message.contents.0.message_content.text": "You are an agent.",
+                "llm.input_messages.1.message.role": "user",
+                "llm.input_messages.1.message.contents.0.message_content.type": "text",
+                "llm.input_messages.1.message.contents.0.message_content.text": (
+                    "New task:\nPlease refund order A100."
+                ),
+            },
+        },
+        {
+            "span_id": "t1",
+            "name": "SimpleTool",
+            "start_time": "2",
+            "status_code": "OK",
+            "attributes": {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "refund_order",
+                "input.value": '{"args": [], "kwargs": {"order_id": "A100"}}',
+                "output.value": '{"refunded": true}',
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    assert any(m.role.value == "user" and "A100" in m.content for m in trace.messages())
+    report = lint_trace(trace, default_rules())
+    assert not [f for f in report.active_findings if f.rule == "R3"]
+
+
 def test_genai_semconv_execute_tool_span_is_recognized():
     """OTel GenAI semconv (OpenLLMetry / Traceloop) identifies a tool span by
     gen_ai.operation.name == 'execute_tool', with gen_ai.tool.name and plain input/output — not
