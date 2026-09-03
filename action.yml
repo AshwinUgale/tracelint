@@ -21,6 +21,10 @@ inputs:
     description: "Comma-separated subset of rules to run (e.g. R1,R2a). Default: all."
     required: false
     default: ""
+  sarif:
+    description: "Write findings as SARIF 2.1.0 to this path (upload it with github/codeql-action/upload-sarif, if: always())."
+    required: false
+    default: ""
   version:
     description: "tracelint version to install (e.g. '0.4.0'). Default: the latest release on PyPI."
     required: false
@@ -51,6 +55,7 @@ runs:
         TL_TOOLS: ${{ inputs.tools }}
         TL_FORMAT: ${{ inputs.format }}
         TL_RULES: ${{ inputs.rules }}
+        TL_SARIF: ${{ inputs.sarif }}
         TL_ARGS: ${{ inputs.args }}
       run: |
         set -euo pipefail
@@ -62,6 +67,7 @@ runs:
         if [ -n "$TL_TOOLS" ]; then cmd+=(--tools "$TL_TOOLS"); fi
         if [ -n "$TL_FORMAT" ]; then cmd+=(--format "$TL_FORMAT"); fi
         if [ -n "$TL_RULES" ]; then cmd+=(--rules "$TL_RULES"); fi
+        if [ -n "$TL_SARIF" ]; then cmd+=(--sarif "$TL_SARIF"); fi
         if [ -n "$TL_ARGS" ]; then cmd+=($TL_ARGS); fi
         printf '+ %s\n' "${cmd[*]}"
         # Exit 2 (a structural hard_defect) propagates and fails the job — the CI gate.

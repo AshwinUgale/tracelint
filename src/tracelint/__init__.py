@@ -100,6 +100,7 @@ from tracelint.report import (
     write_html,
     write_json,
 )
+from tracelint.sarif import to_sarif
 
 # --- Source on-ramps: load a provider format and lint it ----------------------------
 from tracelint.sources import (
@@ -186,6 +187,7 @@ __all__ = [
     # Reporting
     "render_report",
     "render_reports",
+    "to_sarif",
     "render_html",
     "write_json",
     "write_html",
