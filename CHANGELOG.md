@@ -6,6 +6,17 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Source identity on canonical steps** (`SourceRef`): adapters can now record where a step came
+  from in its origin platform — `provider` + `trace_id` / `span_id` / `observation_id` — so an
+  integration can attach a finding back to the exact offending record (a Langfuse observation, an
+  OTel/Phoenix span). Optional and absent by default; the Langfuse adapter populates it today. The
+  rule engine never reads it, keeping provider knowledge out of the deterministic core. Groundwork
+  for observability-platform write-back.
+- **Stable finding fingerprints** (`tracelint.identity.finding_fingerprint`): a deterministic id
+  from a finding's rule, kind, scope, and evidence locations — independent of output format. SARIF's
+  `partialFingerprints` now derive from it, and it will key idempotent write-back (update, not
+  duplicate, on re-run).
+
 - **SARIF output** for GitHub code scanning (`tracelint check --sarif out.sarif`, and a `sarif:`
   input on the GitHub Action). Emits a SARIF 2.1.0 log so findings appear in the repo's
   *Security → Code scanning* tab and as inline PR annotations. Tiers map to SARIF levels

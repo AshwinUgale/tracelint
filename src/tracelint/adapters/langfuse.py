@@ -40,7 +40,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolResult, Trace
+from tracelint.trace import (
+    Message,
+    ResultStatus,
+    Role,
+    SourceRef,
+    Step,
+    ToolCall,
+    ToolResult,
+    Trace,
+)
 
 _TOOL_META_KEYS = ("tracelint", "kind")
 
@@ -246,15 +255,24 @@ def from_langfuse_trace(
     known = {str(t) for t in (tool_names or ())}
     observations = _ordered_observations(data)
     has_tool_obs = any(_is_tool_observation(o, known) for o in observations)
+    src_trace_id = str(data["id"]) if data.get("id") else None
+
+    def _src(obs_id: str | None) -> SourceRef:
+        return SourceRef(provider="langfuse", trace_id=src_trace_id, observation_id=obs_id)
 
     steps: list[Step] = list(_seed_messages(data.get("input")))
     for obs in observations:
+        obs_id = str(obs["id"]) if obs.get("id") else None
         if _is_tool_observation(obs, known):
             call_id = str(obs.get("id") or f"obs-{len(steps)}")
             args, raw_text = _parse_tool_input(obs.get("input"))
             steps.append(
                 ToolCall(
-                    call_id=call_id, name=str(obs.get("name") or ""), args=args, raw_text=raw_text
+                    call_id=call_id,
+                    name=str(obs.get("name") or ""),
+                    args=args,
+                    raw_text=raw_text,
+                    source=_src(obs_id),
                 )
             )
             status, error, http = _result_signals(obs)
@@ -265,6 +283,7 @@ def from_langfuse_trace(
                     status=status,
                     error=error,
                     http_status=http,
+                    source=_src(obs_id),
                 )
             )
             continue
@@ -272,7 +291,7 @@ def from_langfuse_trace(
         if str(obs.get("type") or "").lower() == "generation":
             text = _generation_text(obs.get("output"))
             if text:
-                steps.append(Message(Role.ASSISTANT, text))
+                steps.append(Message(Role.ASSISTANT, text, source=_src(obs_id)))
             if not has_tool_obs:
                 for call_id, name, args, raw_text in _tool_calls_from_generation(obs.get("output")):
                     steps.append(ToolCall(call_id=call_id, name=name, args=args, raw_text=raw_text))
