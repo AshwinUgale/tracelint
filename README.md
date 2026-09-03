@@ -180,6 +180,30 @@ print(lint_otel_trace(spans).exit_code)
 Both Phoenix shapes are handled: the span-export JSON (top-level `span_kind`) and the
 `get_spans_dataframe()` records (attributes as `attributes.*` columns).
 
+## Langfuse: check in place, write findings back
+
+Instead of exporting a trace and running tracelint elsewhere, run it *inside* Langfuse — add
+deterministic structural checks to the traces you already collect, and see the verdict beside your
+normal evals:
+
+```bash
+pip install "tracelint[langfuse]"        # v3 SDK; reads your LANGFUSE_* env vars
+
+tracelint langfuse check --trace <trace-id> --tools tools.json          # read-only: prints the plan
+tracelint langfuse check --trace <trace-id> --tools tools.json --write-back
+```
+
+With `--write-back`, tracelint writes a small, bounded set of **Scores** onto the trace:
+
+- `tracelint.passed` (BOOLEAN) and `tracelint.hard_defects` (NUMERIC) at the trace level, and
+- one score per *certain* finding (`hard_defect` / `hard_event`) attached to the **exact offending
+  observation**, with the evidence in the comment.
+
+Now you can filter `tracelint.hard_defects > 0` in Langfuse, or correlate a high LLM-judge score
+with `tracelint.passed = false` — a structurally-provable failure your judge missed. Heuristic
+candidates are shown in the terminal report but never written back. Scores are keyed by a stable
+finding id, so re-running updates them in place rather than duplicating.
+
 ## Add to CI
 
 `tracelint check` returns exit `2` on a structurally-provable defect, so it gates a build directly.
