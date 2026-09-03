@@ -6,6 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **SARIF output** for GitHub code scanning (`tracelint check --sarif out.sarif`, and a `sarif:`
+  input on the GitHub Action). Emits a SARIF 2.1.0 log so findings appear in the repo's
+  *Security → Code scanning* tab and as inline PR annotations. Tiers map to SARIF levels
+  (`hard_defect` → `error`, `hard_event` → `warning`, `candidate` → `note`); suppressions are not
+  results; each result carries stable `partialFingerprints` and the trace `step_indices`. The file
+  is written before the exit-`2` gate, so an `if: always()` `upload-sarif` step runs even on a
+  defect. Library entry point: `tracelint.to_sarif(reports, tool_version=..., uris=...)`. (#13)
+
 - New rule **R8 — duplicate side effect**: flags a non-idempotent side-effecting tool called again
   with equivalent arguments when the first call did **not** fail (the double-charge). `hard_event`
   when the first call succeeded, `candidate` when its outcome is unknown; a repeat after a genuine

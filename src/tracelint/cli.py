@@ -3,6 +3,7 @@
     tracelint check ./trace.json --tools ./tools.json          # exit 2 on a hard_defect
     tracelint check ./spans.json --format openinference        # lint OTel/OpenInference spans
     tracelint check ./traces/*.jsonl --rules R1 --json out.json --include-candidates
+    tracelint check ./spans.json --sarif out.sarif             # for GitHub code scanning
 
 ``check`` lints one or more traces and returns a CI-usable exit code:
 
@@ -62,6 +63,12 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"subset of rules to run (default: all — {', '.join(rule_ids())})",
     )
     check.add_argument("--json", dest="json_out", metavar="OUT", help="write findings as JSON")
+    check.add_argument(
+        "--sarif",
+        dest="sarif_out",
+        metavar="OUT",
+        help="write findings as SARIF 2.1.0 (for GitHub code scanning)",
+    )
     check.add_argument("--html", dest="html_out", metavar="OUT", help="write an HTML report")
     check.add_argument(
         "--include-candidates",
@@ -105,13 +112,19 @@ def _cmd_check(args: argparse.Namespace) -> int:
     rules = select_rules(args.rules)
 
     reports = []
+    uris: list[str] = []
     for path in args.traces:
         traces: list[Trace] = load_source(path, args.fmt)
         for trace in traces:
             reports.append(lint_trace(trace, rules, registry))
+            uris.append(path)
 
     if args.json_out:
         write_json(args.json_out, reports_to_dict(reports))
+    if args.sarif_out:
+        from tracelint.sarif import to_sarif
+
+        write_json(args.sarif_out, to_sarif(reports, tool_version=_version(), uris=uris))
     if args.html_out:
         from tracelint.report import render_html, write_html
 
