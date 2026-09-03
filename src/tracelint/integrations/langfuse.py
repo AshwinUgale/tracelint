@@ -65,8 +65,25 @@ class LangfuseIntegration:
             self._client = _default_client()
         return self._client
 
+    @staticmethod
+    def _call(fn, *, what: str):
+        """Run a Langfuse SDK call, turning any vendor/network error into a clean RuntimeError
+        (which the CLI reports as exit 3) instead of leaking a provider traceback."""
+        try:
+            return fn()
+        except RuntimeError:
+            raise
+        except Exception as exc:  # vendor SDK / HTTP / auth errors
+            raise RuntimeError(
+                f"Langfuse {what} failed: {exc}. Check LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY, "
+                "and that the host matches your project's region "
+                "(EU: https://cloud.langfuse.com, US: https://us.cloud.langfuse.com)."
+            ) from exc
+
     def fetch_trace(self, trace_id: str, *, tool_names: list[str] | None = None) -> Trace:
-        raw = self.client().api.trace.get(trace_id)
+        raw = self._call(
+            lambda: self.client().api.trace.get(trace_id), what=f"fetching trace {trace_id!r}"
+        )
         return from_langfuse_trace(raw, tool_names=tool_names)
 
     def check(
@@ -98,6 +115,9 @@ class LangfuseIntegration:
                 kwargs["observation_id"] = plan.observation_id
             if plan.comment:
                 kwargs["comment"] = plan.comment
-            client.create_score(**kwargs)
+            self._call(
+                lambda kw=kwargs: client.create_score(**kw),
+                what=f"writing score {plan.name!r}",
+            )
             written += 1
         return written

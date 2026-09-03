@@ -181,6 +181,28 @@ def test_cli_write_back(monkeypatch, capsys, tmp_path):
     assert "wrote" in out
 
 
+def test_vendor_error_becomes_clean_exit_3(monkeypatch, capsys):
+    """A Langfuse auth/network error surfaces as exit 3 with guidance, not a raw traceback."""
+    import tracelint.integrations.langfuse as lf
+
+    class Unauthorized(Exception):
+        pass
+
+    class BadClient:
+        def __init__(self):
+            self.api = types.SimpleNamespace(
+                trace=types.SimpleNamespace(
+                    get=lambda _tid: (_ for _ in ()).throw(Unauthorized("401 Invalid credentials"))
+                )
+            )
+
+    monkeypatch.setattr(lf, "_default_client", BadClient)
+    code = main(["langfuse", "check", "--trace", "trace-xyz"])
+    assert code == 3
+    err = capsys.readouterr().err
+    assert "Langfuse" in err and "region" in err
+
+
 def test_missing_sdk_is_a_clean_error(monkeypatch, capsys):
     """No Langfuse SDK installed -> exit 3 with a helpful message, never a traceback."""
     import tracelint.integrations.langfuse as lf
