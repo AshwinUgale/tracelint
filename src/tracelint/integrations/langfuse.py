@@ -120,4 +120,9 @@ class LangfuseIntegration:
                 what=f"writing score {plan.name!r}",
             )
             written += 1
+        # create_score enqueues; flush so the scores actually reach Langfuse before the process
+        # exits (a short-lived CLI can't rely on the SDK's atexit flush firing in time).
+        flush = getattr(client, "flush", None)
+        if written and callable(flush):
+            self._call(flush, what="flushing scores")
         return written
