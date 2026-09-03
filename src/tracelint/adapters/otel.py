@@ -293,11 +293,23 @@ def _collect_messages(attrs: dict[str, Any], prefix: str) -> list[dict[str, Any]
         if not head.isdigit():
             continue
         idx = int(head)
-        msg = messages.setdefault(idx, {"role": None, "content": None, "tool_calls": {}})
+        msg = messages.setdefault(
+            idx, {"role": None, "content": None, "content_parts": {}, "tool_calls": {}}
+        )
         if tail == "message.role":
             msg["role"] = val
         elif tail == "message.content":
             msg["content"] = val
+        elif tail.startswith("message.contents."):
+            # OpenInference *content-parts* shape (emitted by smolagents and other instrumentors):
+            # ``message.contents.<i>.message_content.text`` — content is a list of typed parts, not
+            # a flat string. Reading only ``message.content`` dropped the user's own request, which
+            # manufactured R3 hallucination false-positives (the arg value was in the prompt all
+            # along). Collect the text parts here; they are joined into ``content`` below.
+            part_rest = tail[len("message.contents.") :]
+            pi, _, pfield = part_rest.partition(".")
+            if pi.isdigit() and pfield == "message_content.text" and isinstance(val, str):
+                msg["content_parts"][int(pi)] = val
         elif tail.startswith("message.tool_calls."):
             tc_rest = tail[len("message.tool_calls.") :]
             tci, _, tc_field = tc_rest.partition(".")
@@ -309,7 +321,14 @@ def _collect_messages(attrs: dict[str, Any], prefix: str) -> list[dict[str, Any]
                     tc["arguments"] = val
                 elif tc_field == "tool_call.id":
                     tc["id"] = val
-    return [messages[i] for i in sorted(messages)]
+    result: list[dict[str, Any]] = []
+    for i in sorted(messages):
+        msg = messages[i]
+        # A flat ``message.content`` wins; fall back to the joined content-parts text.
+        if msg["content"] is None and msg["content_parts"]:
+            msg["content"] = "".join(msg["content_parts"][k] for k in sorted(msg["content_parts"]))
+        result.append(msg)
+    return result
 
 
 def _seed_input_messages(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> list[Message]:
