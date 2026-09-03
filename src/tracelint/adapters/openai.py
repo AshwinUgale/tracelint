@@ -131,6 +131,33 @@ def _result_status(msg: dict[str, Any]) -> ResultStatus:
     return ResultStatus.UNKNOWN
 
 
+def _coerce_messages(messages: Any) -> list[dict[str, Any]]:
+    """Reduce the input to a list of message dicts, or raise a clear error.
+
+    Accepts the message list itself, or a common wrapper (``{"messages": [...]}`` / a ShareGPT
+    ``{"conversations": [...]}`` record). A non-list, non-wrapping input is rejected with a
+    ``TypeError`` rather than being iterated into an obscure crash; individual non-dict items
+    inside the list are dropped (they are not messages), keeping a real export with stray entries
+    readable instead of fatal.
+    """
+    if isinstance(messages, dict):
+        for key in ("messages", "conversations", "conversation"):
+            inner = messages.get(key)
+            if isinstance(inner, list):
+                messages = inner
+                break
+        else:
+            raise TypeError(
+                "from_openai_messages expects a list of messages "
+                "(or a dict with a 'messages'/'conversations' list)"
+            )
+    if not isinstance(messages, list):
+        raise TypeError(
+            f"from_openai_messages expects a list of messages, got {type(messages).__name__}"
+        )
+    return [m for m in messages if isinstance(m, dict)]
+
+
 def from_openai_messages(
     messages: list[dict[str, Any]],
     *,
@@ -138,6 +165,7 @@ def from_openai_messages(
     final: Any = None,
 ) -> Trace:
     """Normalize a message list (OpenAI or a common variant) into a canonical :class:`Trace`."""
+    messages = _coerce_messages(messages)
     steps: list[Step] = []
     for msg in messages:
         role = _role_of(msg)
@@ -157,13 +185,18 @@ def from_openai_messages(
             text = _message_text(msg)
             if text:
                 steps.append(Message(Role.ASSISTANT, text))
-            for tc in msg.get("tool_calls") or []:
-                fn = tc.get("function", tc)
+            tool_calls = msg.get("tool_calls")
+            for tc in tool_calls if isinstance(tool_calls, list) else []:
+                if not isinstance(tc, dict):
+                    continue
+                fn = tc.get("function")
+                if not isinstance(fn, dict):
+                    fn = tc
                 args, raw_text = _parse_arguments(fn.get("arguments"))
                 steps.append(
                     ToolCall(
                         call_id=str(tc.get("id", "")),
-                        name=fn.get("name", ""),
+                        name=str(fn.get("name") or ""),
                         args=args,
                         raw_text=raw_text,
                     )
@@ -190,9 +223,18 @@ def openai_tools_to_registry(tools: list[dict[str, Any]]) -> ToolRegistry:
     configure the agent also feed the linter. An optional ``function.metadata`` object supplies
     behavioural hints (``idempotent`` / ``polling`` / ...) for the later loop/error rules.
     """
+    if not isinstance(tools, list):
+        raise TypeError(
+            f"openai_tools_to_registry expects a list of tool definitions, "
+            f"got {type(tools).__name__}"
+        )
     registry = ToolRegistry()
     for tool in tools:
-        fn = tool.get("function", tool)
+        if not isinstance(tool, dict):
+            continue
+        fn = tool.get("function")
+        if not isinstance(fn, dict):
+            fn = tool
         name = fn.get("name")
         if not name:
             continue
