@@ -211,6 +211,22 @@ pip install tracelint
 tracelint check traces/*.jsonl --format openinference --tools tools.json
 ```
 
+**GitHub code scanning (SARIF)** — surface findings in the repo's *Security → Code scanning* tab
+and as inline pull-request annotations. `--sarif` writes a SARIF 2.1.0 file (mapping `hard_defect`
+→ `error`, `hard_event` → `warning`, `candidate` → `note`). It's written *before* the exit-`2`
+gate, so an `if: always()` upload step runs even when a defect fails the job:
+
+```yaml
+      - run: tracelint check traces/*.jsonl --format openinference --tools tools.json --sarif tracelint.sarif
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()          # upload even when tracelint exits 2 on a hard_defect
+        with:
+          sarif_file: tracelint.sarif
+```
+
+The ready-made action takes a `sarif:` input for the same purpose (pair it with the `upload-sarif`
+step above).
+
 **pre-commit** — lint only the trace files a commit touches:
 
 ```yaml
