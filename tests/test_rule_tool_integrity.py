@@ -72,3 +72,15 @@ def test_r7_suppressed_without_a_registry():
     trace = _trace(ToolCall("c1", "whatever", {}))
     report = lint_trace(trace, [UnknownToolRule()], ToolRegistry())
     assert report.suppressions and not report.active_findings
+
+
+def test_r7_ignores_framework_internal_final_answer():
+    # smolagents' built-in terminal tool appears in the trace but is never user-declared —
+    # flagging it as a hallucinated tool is onboarding noise the user cannot fix.
+    trace = _trace(
+        ToolCall("c1", "cancel_order", {"order_id": "4521"}),
+        ToolCall("c2", "final_answer", {"answer": "done"}),
+    )
+    registry = ToolRegistry({"cancel_order": ToolSpec("cancel_order")})
+    report = lint_trace(trace, [UnknownToolRule()], registry)
+    assert report.active_findings == []
