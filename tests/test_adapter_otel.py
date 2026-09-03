@@ -272,6 +272,60 @@ def test_python_repr_tool_args_are_parsed_not_malformed():
     assert not [f for f in report.active_findings if f.rule == "R6"]
 
 
+def test_lossy_tool_span_input_recovers_args_from_llm_tool_call():
+    """LangChain/LangGraph records a TOOL span's input.value as a lossy bare scalar (e.g. "A100"),
+    while the model's real arguments live on the originating LLM span's tool_calls. Regression from
+    a real LangGraph gpt-4o-mini trace: without recovering those args, R6 (malformed) and R1
+    (schema) fired false hard_defects and the run failed CI (exit 2)."""
+    tc = "llm.output_messages.0.message.tool_calls.0.tool_call.function"
+    spans = [
+        {
+            "span_id": "l1",
+            "name": "ChatOpenAI",
+            "start_time": "1",
+            "attributes": {
+                "openinference.span.kind": "LLM",
+                "llm.output_messages.0.message.role": "assistant",
+                f"{tc}.name": "refund_order",
+                f"{tc}.arguments": '{"order_id": "A100"}',
+            },
+        },
+        {
+            "span_id": "t1",
+            "name": "refund_order",
+            "start_time": "2",
+            "status_code": "OK",
+            "attributes": {
+                "openinference.span.kind": "TOOL",
+                "tool.name": "refund_order",
+                "input.value": "A100",  # lossy: the bare scalar, not {"order_id": "A100"}
+                "output.value": '{"refunded": true}',
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    call = trace.tool_calls()[0]
+    assert call.args == {"order_id": "A100"}  # recovered from the LLM tool_call
+    assert call.raw_text is None  # not malformed
+    # No false R6, and a schema requiring order_id is now satisfied (no false R1).
+    registry = ToolRegistry.from_dict(
+        {
+            "tools": {
+                "refund_order": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"order_id": {"type": "string"}},
+                        "required": ["order_id"],
+                    }
+                }
+            }
+        }
+    )
+    report = lint_trace(trace, default_rules(), registry)
+    assert not report.has_hard_defect
+    assert report.exit_code == 0
+
+
 def test_events_as_nonlist_does_not_crash_on_truthiness():
     """Phoenix get_spans_dataframe records store ``events`` as a numpy array; ``array or []`` raises
     'truth value of an array is ambiguous'. Regression: never boolean-test the events value."""
