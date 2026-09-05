@@ -11,6 +11,13 @@ New to the codebase? The `src/tracelint/` modules: `trace.py` (the canonical tra
 · `scorecard.py` (recovery scoring) · `nondeterminism.py` · `adapters/` (otel / openai /
 langfuse) · `report.py` · `cli.py`.
 
+## Found a trace that breaks it?
+
+That's the single most useful report. Open a **[A trace that breaks tracelint](https://github.com/AshwinUgale/tracelint/issues/new?template=trace_that_breaks_it.yml)**
+issue and paste the trace, the exact `tracelint` command, and what you expected vs. what you got. A
+tiny trace beats a big one, and you can redact values — the shape is what matters. Wrong results
+(false positive / false negative) and crashes on a real trace are exactly what we want to see.
+
 ## Development setup
 
 ```bash

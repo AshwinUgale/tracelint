@@ -1,0 +1,65 @@
+name: A trace that breaks tracelint
+description: tracelint gave a wrong result, errored, or said nothing on your agent's trace.
+labels: ["bug", "trace-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sending a trace! This is the most useful thing you can give us. Paste the trace,
+        the exact command, and what you expected vs. what you got — that's enough for us to reproduce
+        and fix it. A tiny trace beats a big one; feel free to redact values (keep the shape).
+  - type: input
+    id: version
+    attributes:
+      label: tracelint version
+      description: Output of `tracelint --version`.
+      placeholder: "0.6.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Where did the trace come from?
+      options:
+        - smolagents
+        - LangGraph / LangChain
+        - CrewAI
+        - Langflow
+        - Other (say which below)
+    validations:
+      required: true
+  - type: dropdown
+    id: format
+    attributes:
+      label: --format used
+      options:
+        - openinference
+        - otel
+        - langfuse
+        - langsmith
+        - openai
+        - native
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: The exact command you ran
+      placeholder: "tracelint check spans.json --format openinference"
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: What you expected vs. what you got
+      description: Paste tracelint's output, and say what you expected instead (e.g. "expected clean, got exit 2 on a valid call").
+    validations:
+      required: true
+  - type: textarea
+    id: trace
+    attributes:
+      label: The trace
+      description: Paste the trace/spans JSON (or attach the file by dragging it in). Redact values freely — the shape is what matters.
+      render: json
+    validations:
+      required: true
