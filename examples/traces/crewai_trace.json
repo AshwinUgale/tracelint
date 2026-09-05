@@ -1,0 +1,68 @@
+[
+  {
+    "name": "Crew_d915565c-936e-4f46-8de3-81cfab6566f9.kickoff",
+    "span_id": "68e6c87a5c62ff4d",
+    "trace_id": "b37b4434d4e79f235dafa25f6243c346",
+    "parent_id": null,
+    "start_time": 1788468986209179200,
+    "end_time": 1788468990466034300,
+    "status_code": "OK",
+    "status_message": null,
+    "attributes": {
+      "crew_key": "98f7e3354b041a277289090433108962",
+      "crew_id": "d915565c-936e-4f46-8de3-81cfab6566f9",
+      "crew_inputs": "",
+      "crew_agents": "[{\"key\": \"c55c15effcdc3ee3089a6350fd5a23ab\", \"id\": \"8d54d341-ba32-4935-8429-3c1b2b38df54\", \"role\": \"Support agent\", \"goal\": \"Refund the customer's order using the available tools.\", \"backstory\": \"You process refunds. Use the tools; do not make up results.\", \"verbose?\": false, \"max_iter\": 5, \"max_rpm\": null, \"delegation_enabled\": false, \"tools_names\": [\"get_order\", \"refund_order\"]}]",
+      "crew_tasks": "[{\"id\": \"3a033dc4-646b-47ec-845c-f7e441ee9bd2\", \"description\": \"Refund order A100 for the customer. Use the refund_order tool.\", \"expected_output\": \"A short confirmation that order A100 was refunded.\", \"async_execution?\": false, \"human_input?\": false, \"agent_role\": \"Support agent\", \"agent_key\": \"c55c15effcdc3ee3089a6350fd5a23ab\", \"context\": null, \"tools_names\": [\"get_order\", \"refund_order\"]}]",
+      "output.value": "{\"raw\": \"Order A100 was refunded.\", \"pydantic\": null, \"json_dict\": null, \"tasks_output\": [{\"description\": \"Refund order A100 for the customer. Use the refund_order tool.\", \"name\": \"Refund order A100 for the customer. Use the refund_order tool.\", \"expected_output\": \"A short confirmation that order A100 was refunded.\", \"summary\": \"Refund order A100 for the customer. Use the refund_order tool....\", \"raw\": \"Order A100 was refunded.\", \"pydantic\": null, \"json_dict\": null, \"agent\": \"Support agent\", \"output_format\": \"raw\", \"messages\": [{\"role\": \"system\", \"content\": \"You are Support agent. You process refunds. Use the tools; do not make up results.\\nYour personal goal is: Refund the customer's order using the available tools.\"}, {\"role\": \"user\", \"content\": \"\\nCurrent Task: Refund order A100 for the customer. Use the refund_order tool.\\n\\nThis is the expected criteria for your final answer: A short confirmation that order A100 was refunded.\\nyou MUST return the actual complete content as the final answer, not a summary.\"}, {\"role\": \"assistant\", \"content\": \"\", \"tool_calls\": [{\"id\": \"call_ItPmTxfxi5qMPESB3lX7nJTa\", \"type\": \"function\", \"function\": {\"name\": \"refund_order\", \"arguments\": \"{\\\"order_id\\\":\\\"A100\\\"}\"}}]}, {\"role\": \"tool\", \"content\": \"{'refunded': True, 'order_id': 'A100', 'amount': 49.99}\", \"tool_call_id\": \"call_ItPmTxfxi5qMPESB3lX7nJTa\", \"name\": \"refund_order\"}, {\"role\": \"assistant\", \"content\": \"Order A100 was refunded.\"}], \"tool_failures\": []}], \"token_usage\": {\"total_tokens\": 391, \"prompt_tokens\": 367, \"cached_prompt_tokens\": 0, \"completion_tokens\": 24, \"reasoning_tokens\": 0, \"cache_creation_tokens\": 0, \"successful_requests\": 2}}",
+      "output.mime_type": "application/json",
+      "openinference.span.kind": "CHAIN"
+    }
+  },
+  {
+    "name": "Support agent._execute_core",
+    "span_id": "97dd8fbde0778d36",
+    "trace_id": "b37b4434d4e79f235dafa25f6243c346",
+    "parent_id": "68e6c87a5c62ff4d",
+    "start_time": 1788468986350198300,
+    "end_time": 1788468990427960700,
+    "status_code": "OK",
+    "status_message": null,
+    "attributes": {
+      "input.value": "{\"agent\": {\"role\": \"Support agent\", \"goal\": \"Refund the customer's order using the available tools.\", \"backstory\": \"You process refunds. Use the tools; do not make up results.\", \"verbose\": false, \"allow_delegation\": false, \"max_iter\": 5, \"max_rpm\": null, \"id\": \"8d54d341-ba32-4935-8429-3c1b2b38df54\", \"key\": \"c55c15effcdc3ee3089a6350fd5a23ab\"}, \"context\": \"\", \"tools\": [\"name='get_order' description='Look up an order by its id. Returns the order status.' env_vars=[] args_schema=<class 'crewai.tools.base_tool.Get_Order'> result_schema=None description_updated=False cache_function=<function _default_cache_function at 0x00000248E733F880> result_as_answer=False max_usage_count=None tool_failure_policy=None current_usage_count=0 func=<function get_order at 0x00000248E745DE40> tool_type='crewai.tools.base_tool.Tool'\", \"name='refund_order' description='Refund an order by its id.' env_vars=[] args_schema=<class 'crewai.tools.base_tool.Refund_Order'> result_schema=None description_updated=False cache_function=<function _default_cache_function at 0x00000248E733F880> result_as_answer=False max_usage_count=None tool_failure_policy=None current_usage_count=0 func=<function refund_order at 0x00000248FAFFCD60> tool_type='crewai.tools.base_tool.Tool'\"]}",
+      "input.mime_type": "application/json",
+      "task_key": "09f144f5a648d2bbd95f927d76813b73",
+      "task_id": "3a033dc4-646b-47ec-845c-f7e441ee9bd2",
+      "graph.node.id": "Support agent",
+      "crew_key": "98f7e3354b041a277289090433108962",
+      "crew_id": "d915565c-936e-4f46-8de3-81cfab6566f9",
+      "output.value": "{\"description\": \"Refund order A100 for the customer. Use the refund_order tool.\", \"name\": \"Refund order A100 for the customer. Use the refund_order tool.\", \"expected_output\": \"A short confirmation that order A100 was refunded.\", \"summary\": \"Refund order A100 for the customer. Use the refund_order tool....\", \"raw\": \"Order A100 was refunded.\", \"pydantic\": null, \"json_dict\": null, \"agent\": \"Support agent\", \"output_format\": \"raw\", \"messages\": [{\"role\": \"system\", \"content\": \"You are Support agent. You process refunds. Use the tools; do not make up results.\\nYour personal goal is: Refund the customer's order using the available tools.\"}, {\"role\": \"user\", \"content\": \"\\nCurrent Task: Refund order A100 for the customer. Use the refund_order tool.\\n\\nThis is the expected criteria for your final answer: A short confirmation that order A100 was refunded.\\nyou MUST return the actual complete content as the final answer, not a summary.\"}, {\"role\": \"assistant\", \"content\": \"\", \"tool_calls\": [{\"id\": \"call_ItPmTxfxi5qMPESB3lX7nJTa\", \"type\": \"function\", \"function\": {\"name\": \"refund_order\", \"arguments\": \"{\\\"order_id\\\":\\\"A100\\\"}\"}}]}, {\"role\": \"tool\", \"content\": \"{'refunded': True, 'order_id': 'A100', 'amount': 49.99}\", \"tool_call_id\": \"call_ItPmTxfxi5qMPESB3lX7nJTa\", \"name\": \"refund_order\"}, {\"role\": \"assistant\", \"content\": \"Order A100 was refunded.\"}], \"tool_failures\": []}",
+      "output.mime_type": "application/json",
+      "openinference.span.kind": "AGENT"
+    }
+  },
+  {
+    "name": "refund_order.run",
+    "span_id": "f80dc7e8827223e4",
+    "trace_id": "b37b4434d4e79f235dafa25f6243c346",
+    "parent_id": "97dd8fbde0778d36",
+    "start_time": 1788468989428389300,
+    "end_time": 1788468989429446700,
+    "status_code": "OK",
+    "status_message": null,
+    "attributes": {
+      "input.value": "{\"order_id\": \"A100\"}",
+      "input.mime_type": "application/json",
+      "tool.name": "refund_order",
+      "tool.description": "Tool Name: refund_order\nTool Arguments: {\n  \"properties\": {\n    \"order_id\": {\n      \"title\": \"Order Id\",\n      \"type\": \"string\"\n    }\n  },\n  \"required\": [\n    \"order_id\"\n  ],\n  \"title\": \"Refund_Order\",\n  \"type\": \"object\",\n  \"additionalProperties\": false\n}\nTool Description: Refund an order by its id.",
+      "tool.parameters": "{\"properties\": {\"order_id\": {\"title\": \"Order Id\", \"type\": \"string\"}}, \"required\": [\"order_id\"], \"title\": \"Refund_Order\", \"type\": \"object\"}",
+      "tool.description_updated": false,
+      "tool.cache_function": "_default_cache_function",
+      "tool.result_as_answer": false,
+      "tool.current_usage_count": 0,
+      "output.value": "{\"refunded\": true, \"order_id\": \"A100\", \"amount\": 49.99}",
+      "output.mime_type": "application/json",
+      "openinference.span.kind": "TOOL"
+    }
+  }
+]
