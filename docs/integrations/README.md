@@ -21,28 +21,32 @@ correctly with **zero framework-specific code**.
 Each example is **offline and keyless** — it ships the real captured spans and just lints them, so
 you can reproduce the result with no API key.
 
-## The two ingestion paths
+## Ingestion paths (`--format`)
 
-**OpenInference / OpenTelemetry** (Arize Phoenix, OpenLLMetry, LangSmith export, OTLP) — point
-tracelint at the spans you already collect:
+tracelint reads six trace formats through four adapters — one shared adapter reaches a whole
+ecosystem rather than one vendor. Each has a one-pager:
+
+| `--format` | Platform / shape | One-pager |
+|---|---|---|
+| `openinference` | Arize **Phoenix**, OTLP, OpenInference instrumentors | [phoenix.md](phoenix.md) |
+| `otel` | **OpenLLMetry / Traceloop** (OTel GenAI semconv) | [otel.md](otel.md) |
+| `langfuse` | **Langfuse** (+ native fetch & Score write-back) | [langfuse.md](langfuse.md) |
+| `langsmith` | **LangSmith** run tree | [langsmith.md](langsmith.md) |
+| `openai` | **OpenAI** chat message list, incl. **ShareGPT** | [openai.md](openai.md) |
+| `native` | tracelint's own JSON | — |
+
+Two quick entry points:
 
 ```bash
+# OpenInference / OTel spans you already collect (Phoenix, OpenLLMetry, …):
 tracelint check spans.json --format openinference
-```
 
-If you use Arize Phoenix, you can lint the spans directly from the client dataframe — see
-[`examples/lint_openinference_phoenix.py`](../../examples/lint_openinference_phoenix.py) and
-[`examples/lint_phoenix_traces.py`](../../examples/lint_phoenix_traces.py).
-
-**Langfuse** — tracelint has a native integration that fetches a trace and can write findings back as
-Langfuse **Scores**:
-
-```bash
+# Langfuse — fetch a trace, lint it, and write findings back as Scores:
 tracelint langfuse check --trace <trace-id> --write-back
 ```
 
-See [`examples/lint_langfuse_traces.py`](../../examples/lint_langfuse_traces.py) and
-[`examples/langfuse_cookbook.py`](../../examples/langfuse_cookbook.py).
+The lowest-friction path needs no tracing stack at all — lint a raw OpenAI/ShareGPT message list
+with `--format openai` (see [openai.md](openai.md)).
 
 ## What tracelint proves vs. suggests
 
