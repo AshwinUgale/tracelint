@@ -101,3 +101,21 @@ python examples/langfuse_generate_and_lint.py --task "Refund order Z999." --dump
 Cost is negligible (free Langfuse tier + a few cents of gpt-4o-mini). The instrumentation logic is
 tested offline with a fake client in `tests/test_langfuse_generate_example.py`; it targets the
 Langfuse Python SDK v3+.
+
+## Framework traces — real captured runs, offline & keyless
+
+Each of these lints a **real** `gpt-4o-mini` trace captured from a named framework's stock
+OpenInference instrumentation. The spans are bundled under `examples/traces/`, so every script runs
+with no API key and reproduces the documented result. They double as CI regression fixtures
+(`tests/test_framework_examples.py`) — a guard on the shared OTel adapter across frameworks. See
+[`docs/integrations/`](../docs/integrations/README.md) for the per-framework one-pagers.
+
+```bash
+python examples/lint_smolagents.py   # Hugging Face smolagents ToolCallingAgent — clean, exit 0
+python examples/lint_langgraph.py    # LangGraph create_react_agent (LangChain) — clean, exit 0
+python examples/lint_crewai.py       # CrewAI crew — clean; one non-CI-failing R3 candidate
+python examples/lint_langflow.py     # Langflow "Simple Agent" flow (Phoenix tracer) — clean, exit 0
+```
+
+These are **compatibility validations** on real traces (illustrative that tracelint reads each
+framework's telemetry with no adapter changes), not production benchmarks or endorsements.
