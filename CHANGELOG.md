@@ -6,6 +6,16 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **`tracelint init` — bootstrap a `tools.json` from a trace.** The #1 onboarding step was writing a
+  contract by hand; now `tracelint init spans.json --format openinference -o tools.json` reads a
+  trace, discovers the tools called, and fills in each tool's argument **schema** from the telemetry
+  (OpenInference `tool.parameters` / `llm.tools.*.tool.json_schema`), leaving the **behavior** it
+  can't infer (`side_effecting` / `idempotent` / `failure_when`) as explicit `null` placeholders and
+  printing the review TODOs. The result is a valid contract that round-trips through `--tools`.
+  Framework-internal control tools (e.g. `final_answer`) are skipped, matching R7. `ToolCall` gained
+  an optional `schema` field (discovery-only — the rules still validate against the operator's
+  `tools.json`, not this), populated by the OTel/OpenInference adapter.
+
 - **HTML report is now a trace view.** `tracelint check --html report.html` renders each linted run
   as the agent's **step timeline** (each step that a finding touches is marked inline with its
   rule + tier) beside **finding cards** (tier, rule, summary, evidence) and a **verification

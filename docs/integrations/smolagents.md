@@ -40,7 +40,8 @@ python examples/lint_smolagents.py
 
 To exercise the behavioral rules (schema violations, tool errors, duplicate side effects), declare a
 small `tools.json` with your tools' schemas and `side_effecting` / `idempotent` / `failure_when`, and
-pass `--tools tools.json`. See the offline
+pass `--tools tools.json`. Bootstrap it with `tracelint init spans.json --format openinference -o
+tools.json` — smolagents traces carry the tool schemas, so they're discovered for you. See the offline
 [`examples/lint_openinference_phoenix.py`](../../examples/lint_openinference_phoenix.py) for a trace
 with planted defects that tracelint proves and fails CI on.
 

@@ -49,6 +49,14 @@ Lint a trace in CI:
 tracelint check ./trace.json --tools ./tools.json     # exit 2 on a hard_defect
 ```
 
+Don't have a `tools.json` yet? Bootstrap one from a trace — `init` discovers the tools called and
+their argument schemas (from OpenInference `tool.parameters` / `llm.tools`), leaving only the
+behavior for you to fill in:
+
+```bash
+tracelint init ./spans.json --format openinference -o tools.json
+```
+
 Exit codes: `0` clean · `2` a structurally-provable defect (`hard_defect`) · `3` an input error.
 Heuristic candidates never fail CI on their own; suppressions are disclosed but are not defects.
 
@@ -153,9 +161,11 @@ tracelint check run.json      --format langsmith       # a LangSmith run tree ex
 ```
 
 Most rules need no tool schemas, so this works keyless; add `--tools tools.json` to light up the
-schema-dependent rules (R1, and R3's high-confidence tier). A multi-trace input (a `.jsonl` file, a
-JSON array, or an OTLP export carrying several `trace_id`s) fans out to one report each. From the
-library, the same one-liner:
+schema-dependent rules (R1, and R3's high-confidence tier). Don't have one? `tracelint init
+spans.json --format openinference -o tools.json` bootstraps a starter contract from the trace —
+schemas discovered where the telemetry carries them, behavior fields left as placeholders to review.
+A multi-trace input (a `.jsonl` file, a JSON array, or an OTLP export carrying several `trace_id`s)
+fans out to one report each. From the library, the same one-liner:
 
 ```python
 from tracelint import lint_otel_trace
@@ -179,6 +189,23 @@ print(lint_otel_trace(spans).exit_code)
 
 Both Phoenix shapes are handled: the span-export JSON (top-level `span_kind`) and the
 `get_spans_dataframe()` records (attributes as `attributes.*` columns).
+
+## Integrations
+
+tracelint reads the telemetry your stack already emits — one shared adapter reaches the whole
+ecosystem. [`docs/integrations/`](docs/integrations/README.md) has short, reproducible one-pagers,
+each validated on a **real captured trace**:
+
+- **Frameworks:** [smolagents](docs/integrations/smolagents.md) ·
+  [LangGraph / LangChain](docs/integrations/langgraph.md) · [CrewAI](docs/integrations/crewai.md) ·
+  [Langflow](docs/integrations/langflow.md) — each lints via `--format openinference` with no
+  framework-specific code. The runnable, offline examples live in `examples/lint_*.py`.
+- **Platforms:** [Arize Phoenix](docs/integrations/phoenix.md) ·
+  [Langfuse](docs/integrations/langfuse.md) · [LangSmith](docs/integrations/langsmith.md) ·
+  [OpenLLMetry / Traceloop](docs/integrations/otel.md) ·
+  [OpenAI / ShareGPT message lists](docs/integrations/openai.md).
+
+These are compatibility validations on real traces, not benchmarks or endorsements.
 
 ## Langfuse: check in place, write findings back
 

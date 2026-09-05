@@ -60,6 +60,18 @@ with `--format openai` (see [openai.md](openai.md)).
 When a rule can't run (missing data) it is **suppressed with a reason** — never a silent pass — and
 tracelint reports per-rule verification coverage.
 
+## Bootstrapping a contract
+
+Behavioral rules need a `tools.json`, but you don't have to write it from scratch. `tracelint init`
+reads a trace, discovers the tools called and their argument schemas (from `tool.parameters` /
+`llm.tools`), and emits a starter contract — you only fill in the behavior it can't infer:
+
+```bash
+tracelint init spans.json --format openinference -o tools.json
+# then review side_effecting / idempotent / failure_when, and:
+tracelint check spans.json --format openinference --tools tools.json
+```
+
 ## Scope
 
 These are **compatibility validations** on real traces — illustrative that tracelint reads each

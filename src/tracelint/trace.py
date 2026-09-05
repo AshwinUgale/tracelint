@@ -156,6 +156,10 @@ class ToolCall:
     object exactly as the model emitted it (before any transport-layer coercion), so a schema
     check (R1) validates what the *model* produced, not what a runtime later fixed up.
     ``raw_text`` preserves the original serialized call for evidence when parsing was lossy.
+    ``schema`` is the tool's declared argument JSON Schema when the trace itself carries it (e.g.
+    OpenInference ``tool.parameters`` / ``llm.tools.*.tool.json_schema``); it is discovery-only —
+    rules validate against the operator's ``tools.json``, not this — and it lets ``tracelint init``
+    bootstrap a starter contract.
     """
 
     call_id: str
@@ -165,6 +169,7 @@ class ToolCall:
     index: int = -1
     meta: StepMeta | None = None
     source: SourceRef | None = None
+    schema: dict[str, Any] | None = None
 
     kind = "tool_call"
 
@@ -177,6 +182,8 @@ class ToolCall:
         }
         if self.raw_text is not None:
             out["raw_text"] = self.raw_text
+        if self.schema is not None:
+            out["schema"] = self.schema
         if self.meta is not None:
             out["meta"] = self.meta.to_dict()
         if self.source is not None:
