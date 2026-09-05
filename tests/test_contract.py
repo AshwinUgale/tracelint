@@ -57,11 +57,38 @@ def test_draft_roundtrips_as_a_valid_registry():
     assert spec.metadata.failure_when is None
 
 
-def test_no_schema_tool_is_listed_for_review():
-    trace = Trace(run_id="t", steps=[ToolCall("c1", "charge", {"amount": 5})])  # no schema
+def test_schema_inferred_from_observed_args_when_undeclared():
+    # No declared schema, but args were observed → infer an object schema, marked for review.
+    trace = Trace(
+        run_id="t",
+        steps=[
+            ToolCall("c1", "charge", {"amount": 49.99, "currency": "USD"}),
+            ToolCall("c2", "charge", {"amount": 10, "currency": "USD"}),  # int vs float → drop type
+        ],
+    )
     draft = discover_contract([trace])
-    assert draft.tools["charge"]["schema"] is None
-    assert draft.needs_schema == ["charge"]
+    assert draft.inferred_schema == ["charge"]
+    schema = draft.tools["charge"]["schema"]
+    assert schema["type"] == "object"
+    assert schema["properties"]["currency"] == {"type": "string"}
+    assert schema["properties"]["amount"] == {}  # inconsistent type → left unconstrained
+    assert "$comment" in schema  # marked as inferred
+
+
+def test_no_args_tool_has_null_schema_for_review():
+    trace = Trace(run_id="t", steps=[ToolCall("c1", "ping", {})])  # no schema, no args
+    draft = discover_contract([trace])
+    assert draft.tools["ping"]["schema"] is None
+    assert draft.no_schema == ["ping"]
+
+
+def test_todo_present_and_ignored_on_load():
+    trace = Trace(run_id="t", steps=[ToolCall("c1", "charge", {"amount": 5})])
+    draft = discover_contract([trace])
+    assert draft.tools["charge"]["_todo"]  # self-documenting TODOs live in the JSON
+    # _todo and the top-level _comment must not break loading as a registry.
+    registry = ToolRegistry.from_dict(draft.to_dict())
+    assert registry.get("charge") is not None
 
 
 def test_cli_init_prints_valid_contract(capsys):
