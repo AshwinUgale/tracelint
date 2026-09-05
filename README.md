@@ -248,7 +248,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # ... your step that runs the agent and writes traces to ./traces ...
-      - uses: AshwinUgale/tracelint@v0.4.1
+      - uses: AshwinUgale/tracelint@v0.6.0
         with:
           traces: "traces/*.jsonl"
           format: "openinference"     # or native / openai / langfuse

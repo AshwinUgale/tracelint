@@ -6,6 +6,8 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.6.0]
+
 - **`tracelint init` — bootstrap a `tools.json` from a trace.** The #1 onboarding step was writing a
   contract by hand; now `tracelint init spans.json --format openinference -o tools.json` reads a
   trace, discovers the tools called, and fills in each tool's argument **schema** from the telemetry
