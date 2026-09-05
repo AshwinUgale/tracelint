@@ -28,7 +28,8 @@ trace lints **clean — 0 findings, exit 0**. The tool call, the tool result, an
 smolagents records in OpenInference's nested *content-parts* message shape) are all read correctly,
 with no false positives.
 
-Reproduce it offline, no API key:
+Reproduce it offline, no API key — from a clone of the [tracelint repo](https://github.com/AshwinUgale/tracelint)
+(the bundled example traces ship with the source, not the PyPI wheel):
 
 ```bash
 python examples/lint_smolagents.py

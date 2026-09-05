@@ -29,7 +29,8 @@ LangChain's instrumentation places the tool call's structured arguments on the *
 adapter recovers the real arguments from the originating LLM tool_call, so a valid call is **not**
 mis-flagged as malformed (R6) or schema-violating (R1). This works with no LangGraph-specific code.
 
-Reproduce it offline, no API key:
+Reproduce it offline, no API key — from a clone of the [tracelint repo](https://github.com/AshwinUgale/tracelint)
+(the bundled example traces ship with the source, not the PyPI wheel):
 
 ```bash
 python examples/lint_langgraph.py

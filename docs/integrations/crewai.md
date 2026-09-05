@@ -32,7 +32,8 @@ raises a *candidate* (possible-false-positive). It **never fails CI**, and it cl
 trace also includes an LLM span with the user turn (e.g. by adding an LLM instrumentor alongside the
 CrewAI one). It is a coverage characteristic of the instrumentation, not a defect in the agent.
 
-Reproduce it offline, no API key:
+Reproduce it offline, no API key — from a clone of the [tracelint repo](https://github.com/AshwinUgale/tracelint)
+(the bundled example traces ship with the source, not the PyPI wheel):
 
 ```bash
 python examples/lint_crewai.py

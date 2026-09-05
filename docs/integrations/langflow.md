@@ -42,7 +42,8 @@ via its tool), the real trace lints **clean — 0 findings, exit 0**. Because La
 `LangChainInstrumentor`, the same shared adapter that handles LangChain/LangGraph handles Langflow —
 **no Langflow-specific code**.
 
-Reproduce it offline, no API key:
+Reproduce it offline, no API key — from a clone of the [tracelint repo](https://github.com/AshwinUgale/tracelint)
+(the bundled example traces ship with the source, not the PyPI wheel):
 
 ```bash
 python examples/lint_langflow.py
