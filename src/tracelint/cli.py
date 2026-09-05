@@ -136,11 +136,12 @@ def _cmd_check(args: argparse.Namespace) -> int:
     rules = select_rules(args.rules)
 
     reports = []
+    linted: list[Trace] = []
     uris: list[str] = []
     for path in args.traces:
-        traces: list[Trace] = load_source(path, args.fmt)
-        for trace in traces:
+        for trace in load_source(path, args.fmt):
             reports.append(lint_trace(trace, rules, registry))
+            linted.append(trace)
             uris.append(path)
 
     if args.json_out:
@@ -152,7 +153,10 @@ def _cmd_check(args: argparse.Namespace) -> int:
     if args.html_out:
         from tracelint.report import render_html, write_html
 
-        write_html(args.html_out, render_html(title="tracelint report", reports=reports))
+        write_html(
+            args.html_out,
+            render_html(title="tracelint report", reports=reports, traces=linted),
+        )
 
     if not args.quiet:
         for report in reports:

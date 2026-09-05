@@ -6,6 +6,13 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **HTML report is now a trace view.** `tracelint check --html report.html` renders each linted run
+  as the agent's **step timeline** (each step that a finding touches is marked inline with its
+  rule + tier) beside **finding cards** (tier, rule, summary, evidence) and a **verification
+  coverage** bar — instead of a bare findings table. `render_html` gained a `traces=` parameter
+  (pass alongside `reports=`); without it the compact table still renders. Still a single
+  self-contained file — inline CSS, **no scripts, no external resources**.
+
 - **Langfuse integration — `tracelint langfuse check --trace <id>`.** tracelint now runs *inside*
   the platform you already use: it fetches a trace from Langfuse, lints it, and (with
   `--write-back`) writes the verdict back as **Scores** — a trace-level `tracelint.passed`

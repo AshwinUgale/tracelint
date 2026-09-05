@@ -88,6 +88,33 @@ def test_write_html_creates_parent_dirs(tmp_path):
     assert out.exists() and out.read_text(encoding="utf-8").startswith("<!doctype html>")
 
 
+def test_html_trace_view_shows_steps_and_findings():
+    from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult, Trace
+
+    trace = Trace(
+        run_id="run-1",
+        steps=[
+            Message(Role.USER, "refund order A100"),
+            ToolCall(call_id="c1", name="get_order", args={"order_id": "A100"}),
+            ToolResult(call_id="c1", content="A100", status=ResultStatus.ERROR, http_status=500),
+        ],
+    )
+    report = LintReport(
+        "run-1",
+        [Finding("R2b", "error_mishandled", ConfidenceTier.HARD_DEFECT, "reused an errored value",
+                 evidence={"step_indices": [1, 2], "value": "A100"})],
+    )
+    html = render_html(title="t", reports=[report], traces=[trace])
+    # the actual trace steps render (not just a findings table)
+    assert "refund order A100" in html and "get_order" in html
+    assert "trace-view" in html and "timeline" in html
+    # the finding + its evidence render
+    assert "error_mishandled" in html and "reused an errored value" in html
+    assert "A100" in html  # evidence value
+    # still script-free / self-contained
+    assert "<script" not in html.lower()
+
+
 def test_html_renders_validation_and_scorecards():
     from tracelint import FaultType, run_scorecard
     from tracelint.agent import build_recovery_task
