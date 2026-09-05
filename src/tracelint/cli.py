@@ -102,6 +102,25 @@ def build_parser() -> argparse.ArgumentParser:
     lfcheck.add_argument("--quiet", action="store_true", help="suppress the text report")
     lfcheck.set_defaults(func=_cmd_langfuse_check)
 
+    init = sub.add_parser(
+        "init", help="bootstrap a starter tools.json from a trace (discovers tools + schemas)"
+    )
+    init.add_argument("trace", help="trace file to read tools from (.json / .jsonl / a JSON array)")
+    init.add_argument(
+        "--format",
+        dest="fmt",
+        choices=list(SUPPORTED_FORMATS),
+        default="native",
+        help="input format (same choices as `check`; openinference/otel carry tool schemas)",
+    )
+    init.add_argument(
+        "-o",
+        "--output",
+        metavar="OUT",
+        help="write the starter tools.json here (default: print it to stdout)",
+    )
+    init.set_defaults(func=_cmd_init)
+
     demo = sub.add_parser("demo", help="run the keyless validation suite + recovery scorecard")
     demo.add_argument("--html", dest="html_out", metavar="OUT", help="write an HTML report")
     demo.add_argument("--runs", type=int, default=3, help="scorecard runs per fault (default 3)")
@@ -186,6 +205,26 @@ def _cmd_langfuse_check(args: argparse.Namespace) -> int:
             target = f"obs {plan.observation_id}" if plan.observation_id else "trace"
             print(f"  {plan.name:34} {plan.value:<5} [{target}]")
     return EXIT_HARD_DEFECT if result.report.has_hard_defect else EXIT_OK
+
+
+def _cmd_init(args: argparse.Namespace) -> int:
+    from tracelint.contract import discover_contract
+
+    draft = discover_contract(load_source(args.trace, args.fmt))
+    payload = json.dumps(draft.to_dict(), indent=2)
+    if args.output:
+        from pathlib import Path
+
+        Path(args.output).write_text(payload + "\n", encoding="utf-8")
+        print(draft.summary())
+        print(f"\nwrote starter contract to {args.output} — fill the behavior fields, then pass it "
+              "to `tracelint check --tools`.")
+    else:
+        # stdout is the contract (pipe-able); the review summary goes to stderr so it never
+        # corrupts the JSON.
+        print(payload)
+        print(draft.summary(), file=sys.stderr)
+    return EXIT_OK
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:

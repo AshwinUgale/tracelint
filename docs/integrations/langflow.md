@@ -53,7 +53,9 @@ python examples/lint_langflow.py
 ## Catching real defects
 
 Declare a `tools.json` (schemas + `side_effecting` / `idempotent` / `failure_when`) and pass
-`--tools tools.json` to light up the behavioral rules on the tools your flow calls.
+`--tools tools.json` to light up the behavioral rules on the tools your flow calls. Bootstrap it
+straight from the trace — `tracelint init spans.json --format openinference -o tools.json` discovers
+the tools and their schemas, leaving only the behavior to fill in.
 
 ## Scope
 

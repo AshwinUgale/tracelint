@@ -43,8 +43,9 @@ python examples/lint_crewai.py
 ## Bonus: schemas are in the trace
 
 CrewAI's TOOL span carries `tool.parameters` — the tool's JSON schema — so schema-based checks (R1)
-can be driven from the trace itself. Declaring a `tools.json` with `side_effecting` / `idempotent` /
-`failure_when` adds the behavioral rules on top.
+can be driven from the trace itself. `tracelint init spans.json --format openinference -o tools.json`
+discovers those schemas into a starter contract; add `side_effecting` / `idempotent` / `failure_when`
+to it for the behavioral rules.
 
 ## Scope
 

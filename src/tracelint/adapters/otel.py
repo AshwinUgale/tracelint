@@ -422,6 +422,63 @@ def _llm_tool_call_args(
     return by_tool
 
 
+def _normalize_arg_schema(parsed: Any) -> dict[str, Any] | None:
+    """Coerce a discovered parameter blob into a JSON Schema *object* (``type: object``).
+
+    Instrumentors record a tool's parameters two ways: a full schema object (``{"properties": ...,
+    "required": ...}`` — CrewAI) or a bare properties map (``{"order_id": {"type": "string"}}`` —
+    smolagents). Both become a proper object schema so ``tracelint init`` can emit a valid contract.
+    """
+    if not isinstance(parsed, dict) or not parsed:
+        return None
+    if "properties" in parsed or parsed.get("type") == "object":
+        schema = dict(parsed)
+        schema.setdefault("type", "object")
+        return schema
+    # A bare properties map: every value is itself a per-property schema dict.
+    if all(isinstance(v, dict) for v in parsed.values()):
+        return {"type": "object", "properties": parsed}
+    return None
+
+
+def _tool_schemas(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> dict[str, dict[str, Any]]:
+    """Discover per-tool argument JSON Schemas from the spans, indexed by tool name.
+
+    Two sources, LLM-span definitions preferred (they are the standard OpenAI tool format and cover
+    every declared tool): ``llm.tools.<i>.tool.json_schema`` (an OpenAI ``{"function": {"name",
+    "parameters"}}`` definition) on LLM spans, and ``tool.parameters`` on the TOOL span. Powers
+    ``tracelint init``; unused by the rules.
+    """
+    schemas: dict[str, dict[str, Any]] = {}
+    # TOOL-span tool.parameters first (lower precedence — LLM-span definitions overwrite below).
+    for span, attrs in parsed:
+        if _span_kind(span, attrs) != "TOOL":
+            continue
+        name = str(
+            attrs.get("tool.name") or attrs.get("gen_ai.tool.name") or span.get("name") or ""
+        )
+        if not name or "tool.parameters" not in attrs:
+            continue
+        got, _ = _parse_value(attrs.get("tool.parameters"))
+        schema = _normalize_arg_schema(got)
+        if schema is not None:
+            schemas[name] = schema
+    # LLM-span tool definitions (preferred): llm.tools.<i>.tool.json_schema
+    for _span, attrs in parsed:
+        for key, val in attrs.items():
+            if not (key.startswith("llm.tools.") and key.endswith(".tool.json_schema")):
+                continue
+            defn, _ = _parse_value(val)
+            if not isinstance(defn, dict):
+                continue
+            fn = defn.get("function") if isinstance(defn.get("function"), dict) else defn
+            name = str(fn.get("name") or "")
+            schema = _normalize_arg_schema(fn.get("parameters"))
+            if name and schema is not None:
+                schemas[name] = schema
+    return schemas
+
+
 def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -> Trace:
     """Normalize a list of OpenInference/OTel spans into a canonical :class:`Trace`."""
     ordered = sorted(
@@ -432,6 +489,7 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
     has_tool_span = any(_span_kind(s, a) == "TOOL" for s, a in parsed)
     # Only needed to repair lossy TOOL-span inputs (below); skip the work when there are no tools.
     llm_args_by_tool = _llm_tool_call_args(parsed) if has_tool_span else {}
+    tool_schemas = _tool_schemas(parsed)  # discovery-only; feeds `tracelint init`, not the rules
 
     steps: list[Step] = []
     steps.extend(_seed_input_messages(parsed))
@@ -459,7 +517,15 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
                 recovered = llm_args_by_tool.get(name)
                 if recovered:
                     args, raw_text = recovered.pop(0), None
-            steps.append(ToolCall(call_id=call_id, name=name, args=args, raw_text=raw_text))
+            steps.append(
+                ToolCall(
+                    call_id=call_id,
+                    name=name,
+                    args=args,
+                    raw_text=raw_text,
+                    schema=tool_schemas.get(name),
+                )
+            )
             is_err, err_msg = _is_error_span(span, attrs)
             content, _ = _parse_value(_output_value(attrs))
             steps.append(
@@ -479,12 +545,14 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
                 if not has_tool_span:
                     for _i, tc in sorted(msg.get("tool_calls", {}).items()):
                         c_args, c_raw = _args_from(tc.get("arguments"))
+                        c_name = str(tc.get("name", ""))
                         steps.append(
                             ToolCall(
                                 call_id=str(tc.get("id", "")),
-                                name=str(tc.get("name", "")),
+                                name=c_name,
                                 args=c_args,
                                 raw_text=c_raw,
+                                schema=tool_schemas.get(c_name),
                             )
                         )
         # Other span kinds (CHAIN / RETRIEVER / AGENT / EMBEDDING) are skipped — faithful, not
