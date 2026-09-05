@@ -51,8 +51,14 @@ def render_report(report: LintReport, *, include_candidates: bool = False) -> st
         for c in report.coverage:
             lines.append(f"    {c.rule}  {c.evaluatable}/{c.total} {c.unit}")
 
-    if not active and not report.suppressions:
-        lines.append("  clean — no findings.")
+    if not active:
+        if report.suppressions:
+            lines.append(
+                "  no structural issues found — but some rules were suppressed above "
+                "(not checked); run `tracelint init` to generate a tools.json and enable them."
+            )
+        else:
+            lines.append("  clean — no structural issues found.")
     return "\n".join(lines)
 
 

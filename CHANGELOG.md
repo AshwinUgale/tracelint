@@ -6,6 +6,19 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **First-run hardening.** A malformed or unfamiliar trace shape now degrades to a clear error and
+  exit `3`, never a Python traceback: the native loader validates that `steps` is a list, each step
+  is an object, and a `tool_call`'s `args` is an object (with a specific message for each), and the
+  CLI has a last-resort handler that turns any unforeseen error into a "please report it" message
+  pointing at the issue tracker. A clean run with suppressed rules now prints an explicit "no
+  structural issues found" line (and points to `tracelint init`) instead of only a bare count.
+- **`tracelint init` — schema inference + inline TODOs.** When the trace declares no schema for a
+  tool, `init` now **infers** an object schema from the argument values actually observed (dropping a
+  type when it varies across calls; never guessing `required`), marked with a `$comment`. Each tool
+  entry carries a `_todo` list naming exactly what to fill in (schema review + `side_effecting` /
+  `idempotent` / `failure_when`), and the file has a top-level `_comment`; both are ignored on load,
+  so the draft still round-trips through `--tools`.
+
 ## [0.6.0]
 
 - **`tracelint init` — bootstrap a `tools.json` from a trace.** The #1 onboarding step was writing a

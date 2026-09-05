@@ -304,6 +304,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (FileNotFoundError, ValueError, KeyError, RuntimeError, json.JSONDecodeError) as exc:
         print(f"tracelint: error: {exc}", file=sys.stderr)
         return EXIT_INPUT_ERROR
+    except Exception as exc:  # noqa: BLE001 — last-resort: never dump a traceback at a user
+        # An unfamiliar trace shape should degrade gracefully, and (during outreach) become a bug
+        # report rather than a scary stack trace.
+        print(
+            f"tracelint: could not process this input ({type(exc).__name__}: {exc}).\n"
+            "This may be a trace shape tracelint doesn't handle yet — please report it at "
+            "https://github.com/AshwinUgale/tracelint/issues with the trace and command.",
+            file=sys.stderr,
+        )
+        return EXIT_INPUT_ERROR
 
 
 if __name__ == "__main__":  # pragma: no cover

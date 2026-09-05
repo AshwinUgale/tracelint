@@ -238,6 +238,8 @@ _STEP_TYPES: dict[str, Any] = {
 
 
 def _step_from_dict(data: dict[str, Any]) -> Step:
+    if not isinstance(data, dict):
+        raise ValueError(f"each step must be a JSON object, got {type(data).__name__}")
     kind = data.get("type")
     meta = StepMeta.from_dict(data.get("meta"))
     source = SourceRef.from_dict(data.get("source"))
@@ -249,10 +251,15 @@ def _step_from_dict(data: dict[str, Any]) -> Step:
             source=source,
         )
     if kind == ToolCall.kind:
+        args = data.get("args") or {}
+        if not isinstance(args, dict):
+            raise ValueError(
+                f"tool_call 'args' must be an object, got {type(args).__name__}"
+            )
         return ToolCall(
             call_id=str(data["call_id"]),
             name=data["name"],
-            args=data.get("args") or {},
+            args=args,
             raw_text=data.get("raw_text"),
             meta=meta,
             source=source,
@@ -336,7 +343,14 @@ class Trace:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Trace:
-        steps = [_step_from_dict(s) for s in data.get("steps", [])]
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"a trace must be a JSON object with a 'steps' list, got {type(data).__name__}"
+            )
+        raw_steps = data.get("steps", [])
+        if not isinstance(raw_steps, list):
+            raise ValueError(f"'steps' must be a list, got {type(raw_steps).__name__}")
+        steps = [_step_from_dict(s) for s in raw_steps]
         return cls(run_id=str(data.get("run_id", "")), steps=steps, final=data.get("final"))
 
     @classmethod
