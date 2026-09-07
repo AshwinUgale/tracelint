@@ -1,0 +1,69 @@
+# Vision & roadmap
+
+tracelint reads what an agent **actually did** — the execution trace — and flags structural bugs
+deterministically, with no LLM judge. This document is where the project is headed and, just as
+importantly, where it is *deliberately not* headed.
+
+## What tracelint is
+
+**A portable, deterministic execution-analysis engine for tool-calling agents.**
+
+The emphasis is on all three words:
+
+- **Portable** — it works across the places your traces already live: Langfuse, Arize Phoenix,
+  OpenTelemetry / OpenInference, OpenAI messages, LangSmith, and plain files. One canonical trace model
+  underneath, so the same checks apply no matter where the run came from. No platform will ever
+  integrate its competitors; a neutral engine that spans all of them is a thing only an independent
+  tool can be.
+- **Deterministic** — same trace in, same findings out. Every finding points at exact evidence in the
+  trace. Hard defects fail CI; heuristics stay advisory. No model is asked to judge.
+- **Engine** — the rules you see today are the standard library, not the ceiling. The value is the
+  execution-semantics layer beneath them: identifying calls, results, errors, provenance, side effects,
+  repetition, and the causal relationships between them.
+
+## What tracelint is *not*
+
+tracelint is **not an observability platform** and will not try to become one. It builds no trace
+viewer, no dashboard, no dataset store, no annotation UI, no prompt manager, no general evaluation
+platform. Those systems already exist and are good at what they do.
+
+tracelint **consumes** their traces and returns deterministic verdicts **back into** them — as Langfuse
+scores, Phoenix annotations, SARIF for code scanning, or a CI exit code. It is designed to be something
+those platforms are glad exists, not something they need to reproduce.
+
+A natural shape for this: tracelint's engine is meant to be droppable *inside* the deterministic
+code-evaluator surfaces those platforms now offer — import it, call it, get native scores — as well as
+run standalone in CI.
+
+## Roadmap
+
+Near-term work is all in service of the identity above: make the engine excellent and the first run
+frictionless, everywhere traces come from.
+
+- **Bulletproof first run.** Never crash on an unfamiliar trace shape; give useful output even before a
+  tool contract exists.
+- **Effortless onboarding.** `tracelint init` bootstraps a tool contract from a trace so you fill in
+  only what the trace cannot know.
+- **Real-trace coverage.** Golden fixtures and regression tests drawn from real runs across the major
+  agent frameworks, so adopters' traces don't surprise it.
+- **Deeper platform integrations.** Pull traces in, push findings back — without recreating any
+  platform's UI.
+
+### Explicitly deferred — gated on real user demand
+
+The following are promising directions, but the project will **not** build them speculatively. Each
+waits until real users ask for it, because each adds conceptual weight and the universal engine has to
+earn that first:
+
+- **Developer-defined invariants** — application-specific contracts ("never issue a refund after a
+  fraud block", "no account mutation after identity verification fails") evaluated deterministically
+  over a whole trace. High value for the teams that need it; also higher onboarding cost, so it belongs
+  to motivated users, not everyone.
+- **Deterministic regression analysis** — compare two agent versions on structural behavior and
+  contracts, not just final-answer quality.
+- **Fault injection & failure-handling tests** — deliberately break a tool and verify the agent still
+  behaves safely. Powerful, but it requires *running* the agent rather than only reading a trace, so it
+  is a heavier, later step that sits outside the clean read-only design.
+
+The guiding principle: **the vision is the destination; real usage is the compass.** tracelint stays a
+focused, portable engine and expands only where users actively pull it.
