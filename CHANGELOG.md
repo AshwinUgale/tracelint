@@ -6,6 +6,8 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.7.0]
+
 - **First-run hardening.** A malformed or unfamiliar trace shape now degrades to a clear error and
   exit `3`, never a Python traceback: the native loader validates that `steps` is a list, each step
   is an object, and a `tool_call`'s `args` is an object (with a specific message for each), and the
