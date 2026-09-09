@@ -212,8 +212,16 @@ each validated on a **real captured trace**:
   and `check` it** —  [Arize Phoenix](docs/integrations/phoenix.md) ·
   [Langfuse](docs/integrations/langfuse.md) · [LangSmith](docs/integrations/langsmith.md) ·
   [OpenLLMetry / Traceloop](docs/integrations/otel.md) ·
-  [OpenAI / ShareGPT message lists](docs/integrations/openai.md). Pulling a trace straight from a
-  platform (`tracelint langfuse pull <id>`) is convenience sugar on top of that baseline.
+  [OpenAI / ShareGPT message lists](docs/integrations/openai.md).
+
+For Langfuse, `pull` is convenience sugar on top of that baseline — it fetches a trace straight to a
+file, so `pull` → `check` composes and the file doubles as a saved fixture:
+
+```bash
+pip install "tracelint[langfuse]"                 # reads your LANGFUSE_* env vars
+tracelint langfuse pull <trace-id> -o trace.json   # writes native tracelint JSON
+tracelint check trace.json                          # lint it (native is the default format)
+```
 
 These are compatibility validations on real traces, not benchmarks or endorsements.
 
