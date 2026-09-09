@@ -5,7 +5,12 @@ instruments its Agent with `LangChainInstrumentor` under the hood
 (`langflow/services/tracing/arize_phoenix.py`). So a Langflow agent flow emits LangChain-shaped
 OpenInference spans that tracelint reads directly — enabling the tracer is all a user needs.
 
-## Three steps
+> Langflow runs as a product, not a library you call in a test, so there is **no in-process
+> `tracelint.capture` helper** for it (that helper is for smolagents / LangChain / CrewAI). Instead,
+> capture a Langflow trace the OTel-to-file way below: let its tracer collect the spans, export them
+> to a file, and `check` that file.
+
+## Capture a trace (OTel-to-file)
 
 1. **Enable the Phoenix tracer** in Langflow by pointing it at a Phoenix collector:
 

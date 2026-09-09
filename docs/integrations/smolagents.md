@@ -4,7 +4,42 @@
 `ToolCallingAgent` with OpenInference and ships the spans to Phoenix or Langfuse. tracelint reads
 those same spans — no extra SDK in your agent.
 
-## Three steps
+## Capture a trace in a test
+
+The fastest way in: `tracelint.capture` records a run to a lintable trace by wrapping smolagents'
+OpenInference instrumentor for you — no manual provider, no export step.
+
+```bash
+pip install "tracelint[capture-smolagents]"
+```
+
+```python
+# test_agent_trace.py
+import json
+
+from tracelint import lint_otel_trace
+from tracelint.capture import capture
+
+
+def test_agent_run_has_no_structural_defects(tmp_path):
+    trace = tmp_path / "trace.json"
+    with capture(trace, framework="smolagents"):
+        run_my_agent("refund order A100")          # your agent under test, unchanged
+
+    report = lint_otel_trace(json.loads(trace.read_text()))
+    assert not report.has_hard_defect              # a provable defect fails the test
+```
+
+Or capture in one CI job and lint in the next as a shell step:
+
+```bash
+tracelint check trace.json --format openinference
+```
+
+## Or wire the instrumentor yourself
+
+Already run the OpenInference instrumentor and export spans elsewhere? Lint those directly — capture
+is only a convenience over this path:
 
 1. **Instrument** exactly as the smolagents telemetry docs show:
 

@@ -3,7 +3,43 @@
 A [CrewAI](https://github.com/crewAIInc/crewAI) crew instrumented with
 `openinference-instrumentation-crewai` emits agent / task / tool spans. tracelint reads them.
 
-## Three steps
+## Capture a trace in a test
+
+The fastest way in: `tracelint.capture` records a run to a lintable trace by wrapping CrewAI's
+OpenInference instrumentor for you — no manual provider or export.
+
+```bash
+pip install "tracelint[capture-crewai]"
+```
+
+```python
+# test_crew_trace.py
+import json
+
+from tracelint import lint_otel_trace
+from tracelint.capture import capture
+
+
+def test_crew_run_has_no_structural_defects(tmp_path):
+    trace = tmp_path / "trace.json"
+    with capture(trace, framework="crewai"):
+        my_crew.kickoff()                          # your crew, unchanged
+
+    report = lint_otel_trace(json.loads(trace.read_text()))
+    assert not report.has_hard_defect              # a provable defect fails the test
+```
+
+`has_hard_defect` is the CI gate, so the R3 *candidate* CrewAI raises (see below) does **not** fail
+this test. To see it, print the report or pass `--include-candidates` to the CLI form:
+
+```bash
+tracelint check trace.json --format openinference --include-candidates
+```
+
+## Or wire the instrumentor yourself
+
+Already run the OpenInference instrumentor and export spans elsewhere? Lint those directly — capture
+is only a convenience over this path:
 
 1. **Instrument** with the CrewAI OpenInference instrumentor:
 
