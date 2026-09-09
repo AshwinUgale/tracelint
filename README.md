@@ -314,6 +314,19 @@ spans → findings, with and without a tool registry).
 
 These layers sit around the core loop and are opt-in.
 
+**Native test assertion (pytest).** Opt in with `pytest_plugins = ["tracelint.pytest_plugin"]` in
+your `conftest.py`; the `trace_capture` fixture then captures a run and lints it inline, so a hard
+defect fails the test (candidates never do):
+
+```python
+def test_agent(trace_capture):
+    with trace_capture(framework="smolagents"):
+        agent.run("refund order A100")   # a hard defect in the trace fails this test
+```
+
+Pass `assert_clean=False` to inspect `cap.report` yourself instead of auto-failing. It's a thin
+wrapper over the capture helper, so the same `capture-<framework>` extra applies.
+
 **Recovery scorecard & fault injection.** Measure how an agent behaves under injected faults, scored
 against deterministic success oracles:
 
