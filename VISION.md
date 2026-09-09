@@ -6,53 +6,71 @@ importantly, where it is *deliberately not* headed.
 
 ## What tracelint is
 
-**A portable, deterministic execution-analysis engine for tool-calling agents.**
+**A developer tool: a deterministic linter for agent execution traces, run in the test suite and
+CI.** It belongs where your other checks already live — pre-merge, offline, portable, no account.
+The core loop is the whole product:
 
-The emphasis is on all three words:
+```
+run agent in tests → capture the trace → run tracelint → fail CI on provable defects
+```
 
-- **Portable** — it works across the places your traces already live: Langfuse, Arize Phoenix,
-  OpenTelemetry / OpenInference, OpenAI messages, LangSmith, and plain files. One canonical trace model
-  underneath, so the same checks apply no matter where the run came from. No platform will ever
-  integrate its competitors; a neutral engine that spans all of them is a thing only an independent
-  tool can be.
+Everything else is an optional layer around that core. Three properties define the engine underneath:
+
+- **Portable** — it works across the trace formats your runs already produce: OpenTelemetry /
+  OpenInference, OpenAI messages, native JSON, and platform exports (Langfuse, Arize Phoenix,
+  LangSmith). One canonical trace model underneath, so the same checks apply no matter where the run
+  came from. A neutral engine that spans all of them is something only an independent tool can be.
 - **Deterministic** — same trace in, same findings out. Every finding points at exact evidence in the
   trace. Hard defects fail CI; heuristics stay advisory. No model is asked to judge.
 - **Engine** — the rules you see today are the standard library, not the ceiling. The value is the
   execution-semantics layer beneath them: identifying calls, results, errors, provenance, side effects,
   repetition, and the causal relationships between them.
 
+## The three-tier model
+
+Where tracelint sits relative to the platforms people already run:
+
+1. **Core — depends on no platform.** Frameworks and trace formats only. OpenTelemetry / OpenInference
+   is a *format*, not a platform, so it stays the universal spine alongside native JSON and OpenAI
+   messages. tracelint is stateless: it never stores traces — that is not its job.
+2. **Read convenience — kept, lower priority.** Import a specific trace from a platform to lint or
+   reproduce it (e.g. pull a failed production trace as a fixture). The zero-dependency fallback —
+   export the trace to a file and `check` it — is always the documented baseline; per-platform pull
+   is sugar on top, added as users ask.
+3. **Write-back — an advanced recipe, frozen.** tracelint can write its verdict back into a platform's
+   own score model, but that is the one layer that overlaps with what those platforms increasingly do
+   themselves. It stays functional as an advanced recipe and is not part of the core narrative; no
+   further write-back work is planned.
+
 ## What tracelint is *not*
 
 tracelint is **not an observability platform** and will not try to become one. It builds no trace
 viewer, no dashboard, no dataset store, no annotation UI, no prompt manager, no general evaluation
-platform. Those systems already exist and are good at what they do.
-
-tracelint **consumes** their traces and returns deterministic verdicts **back into** them — as Langfuse
-scores, Phoenix annotations, SARIF for code scanning, or a CI exit code. It is designed to be something
-those platforms are glad exists, not something they need to reproduce.
-
-A natural shape for this: tracelint's engine is meant to be droppable *inside* the deterministic
-code-evaluator surfaces those platforms now offer — import it, call it, get native scores — as well as
-run standalone in CI.
+platform. Those systems already exist and are good at what they do. tracelint is a deterministic
+check you run against their output — designed to be something those platforms are glad exists, not
+something they need to reproduce.
 
 ## Roadmap
 
-Near-term work is all in service of the identity above: make the engine excellent and the first run
-frictionless, everywhere traces come from.
+Near-term work is all in service of the identity above: make the engine excellent and the
+capture→lint→CI loop frictionless, everywhere traces come from.
 
-- **Bulletproof first run.** Never crash on an unfamiliar trace shape; give useful output even before a
-  tool contract exists.
+- **Frictionless capture.** The first run should not require you to already have a trace file — a
+  one-call capture helper records a run to a lintable trace by wrapping the instrumentation your
+  framework already ships.
+- **Bulletproof first run.** Never crash on an unfamiliar trace shape; give useful output even before
+  a tool contract exists.
 - **Effortless onboarding.** `tracelint init` bootstraps a tool contract from a trace so you fill in
   only what the trace cannot know.
 - **Real-trace coverage.** Golden fixtures and regression tests drawn from real runs across the major
   agent frameworks, so adopters' traces don't surprise it.
-- **Deeper platform integrations.** Pull traces in, push findings back — without recreating any
-  platform's UI.
+- **Read convenience.** Pull a trace in from a platform to lint or reproduce it — demand-gated per
+  platform, always with the export-to-file baseline underneath.
 
 ### Explicitly deferred — gated on real user demand
 
 The following are promising directions, but the project will **not** build them speculatively. Each
-waits until real users ask for it, because each adds conceptual weight and the universal engine has to
+waits until real users ask for it, because each adds conceptual weight and the core loop has to
 earn that first:
 
 - **Developer-defined invariants** — application-specific contracts ("never issue a refund after a
