@@ -6,6 +6,35 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.8.0]
+
+- **`tracelint.capture` — record an agent run to a lintable trace.** The primary path assumed you
+  already had a trace file; now `with capture("trace.json", framework="smolagents"): agent.run(...)`
+  captures one by wrapping the framework's stock OpenInference instrumentor against a *local* OTel
+  provider whose only exporter writes the flat OpenInference span shape — so the file lints with
+  `--format openinference` exactly like a hand-exported one, and any tracing you already run is left
+  untouched. Covers the in-process frameworks (smolagents, LangGraph / LangChain, CrewAI) via opt-in
+  extras `tracelint[capture]` / `[capture-smolagents]` / `[capture-langchain]` / `[capture-crewai]`;
+  Langflow uses an OTel-to-file recipe. The OTel SDK and instrumentors are imported lazily, so
+  importing tracelint never requires them.
+- **`tracelint langfuse pull <trace-id> [-o file]`.** Fetch a Langfuse trace straight to a file (as
+  native tracelint JSON) so `pull` → `check` composes and the file doubles as a saved fixture.
+  Read-only; reuses the existing `LANGFUSE_*` auth and turns a vendor/network/auth failure into a
+  clean exit `3` that names the env vars to check but never echoes their values. Default output is
+  `<trace-id>.json`.
+- **Write-back demoted.** `pull` is now the featured Langfuse verb; `langfuse check --write-back` is
+  repositioned as an advanced recipe — labeled "(advanced)" in `--help` and moved out of the primary
+  README path. It still works: repositioned, not removed.
+- **`trace_capture` pytest fixture.** Opt in with `pytest_plugins = ["tracelint.pytest_plugin"]` in
+  `conftest.py`, then a test captures an agent run and lints it inline — a hard defect fails the test
+  (candidates never do); `assert_clean=False` exposes the report on the handle's `.report` to assert
+  on yourself. A thin wrapper over `capture` + `lint_otel_trace`; no new dependency.
+- **Dev-tool / CI-first repositioning.** README and VISION now lead with the capture → lint → CI core
+  loop and the three-tier platform model (core depends on no platform; read convenience; write-back
+  demoted and frozen). OpenTelemetry / OpenInference is presented as a *format*, not a platform.
+  Per-framework "capture a trace in a test" recipes were added to the integration one-pagers, and
+  `docs/DIRECTION.md` records the change.
+
 ## [0.7.0]
 
 - **First-run hardening.** A malformed or unfamiliar trace shape now degrades to a clear error and
