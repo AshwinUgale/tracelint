@@ -78,10 +78,32 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--quiet", action="store_true", help="suppress the text report")
     check.set_defaults(func=_cmd_check)
 
-    lf = sub.add_parser("langfuse", help="check traces you already collect in Langfuse")
+    lf = sub.add_parser(
+        "langfuse",
+        help="pull a Langfuse trace to a file for `check` (or, advanced, check it in place)",
+    )
     lfsub = lf.add_subparsers(dest="lf_command")
+
+    # `pull` is the featured verb: fetch a trace to a file so `pull` -> `check` composes and the
+    # file doubles as a saved fixture. Read-only; it never writes anything back to Langfuse.
+    lfpull = lfsub.add_parser(
+        "pull", help="fetch a Langfuse trace and write it to a file that `tracelint check` lints"
+    )
+    lfpull.add_argument("trace_id", help="Langfuse trace id")
+    lfpull.add_argument(
+        "-o", "--output", metavar="OUT", help="write the trace here (default: <trace-id>.json)"
+    )
+    lfpull.add_argument(
+        "--tool-names",
+        type=_csv,
+        metavar="a,b,...",
+        help="observation names to treat as tool calls (for span-based instrumentation)",
+    )
+    lfpull.set_defaults(func=_cmd_langfuse_pull)
+
     lfcheck = lfsub.add_parser(
-        "check", help="fetch a Langfuse trace, lint it, optionally write findings back as Scores"
+        "check",
+        help="(advanced) fetch a trace, lint it, and optionally write findings back as Scores",
     )
     lfcheck.add_argument("--trace", dest="trace_id", required=True, help="Langfuse trace id")
     lfcheck.add_argument("--tools", help="tools.json for schema-dependent rules (R1, R3)")
@@ -94,7 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     lfcheck.add_argument(
         "--write-back",
         action="store_true",
-        help="write findings back to Langfuse as Scores (default: read-only, shows the plan)",
+        help="(advanced) write findings back to Langfuse as Scores (default: read-only plan)",
     )
     lfcheck.add_argument(
         "--include-candidates", action="store_true", help="show candidate findings in the report"
@@ -182,6 +204,27 @@ def _cmd_check(args: argparse.Namespace) -> int:
             print(render_report(report, include_candidates=args.include_candidates))
 
     return EXIT_HARD_DEFECT if any(r.has_hard_defect for r in reports) else EXIT_OK
+
+
+def _safe_filename(name: str) -> str:
+    """A filesystem-safe basename from a trace id (usually hex/UUID, so this rarely bites)."""
+    cleaned = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in name)
+    return cleaned or "trace"
+
+
+def _cmd_langfuse_pull(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from tracelint.integrations.langfuse import LangfuseIntegration
+
+    # fetch_trace turns any vendor/network/auth failure into a clean RuntimeError (-> exit 3) whose
+    # message names the env vars to check but never echoes their values.
+    trace = LangfuseIntegration().fetch_trace(args.trace_id, tool_names=args.tool_names)
+    out = args.output or f"{_safe_filename(args.trace_id)}.json"
+    Path(out).write_text(trace.to_json() + "\n", encoding="utf-8")
+    print(f"wrote Langfuse trace {args.trace_id} to {out} (native format).")
+    print(f"lint it: tracelint check {out}")
+    return EXIT_OK
 
 
 def _cmd_langfuse_check(args: argparse.Namespace) -> int:

@@ -12,6 +12,7 @@ import types
 
 from tracelint.cli import main
 from tracelint.integrations.langfuse import LangfuseIntegration
+from tracelint.sources import load_source
 from tracelint.tools import ToolRegistry
 
 # A trace with two planted, *certain* defects: get_order errors, its value A100 is reused by a
@@ -151,6 +152,38 @@ def _write_tools(tmp_path):
         encoding="utf-8",
     )
     return str(p)
+
+
+def test_cli_pull_writes_a_lintable_file(monkeypatch, capsys, tmp_path):
+    """`langfuse pull` writes a native-format file that `check` then lints, writing nothing back."""
+    import tracelint.integrations.langfuse as lf
+
+    client = FakeClient(TRACE)
+    monkeypatch.setattr(lf, "_default_client", lambda: client)
+    out = tmp_path / "pulled.json"
+    code = main(["langfuse", "pull", "trace-xyz", "-o", str(out)])
+    assert code == 0
+    assert client.created == []  # pull never writes anything back to Langfuse
+
+    msg = capsys.readouterr().out
+    assert "trace-xyz" in msg and "native" in msg
+    assert "SECRET" not in msg.upper()  # never echo credentials
+
+    # The file is native tracelint JSON: `check` (default --format native) reads and lints it.
+    traces = load_source(out, "native")
+    assert len(traces) == 1
+    assert [c.name for c in traces[0].tool_calls()] == ["get_order", "refund_order", "refund_order"]
+
+
+def test_cli_pull_defaults_output_to_trace_id(monkeypatch, tmp_path):
+    import tracelint.integrations.langfuse as lf
+
+    client = FakeClient(TRACE)
+    monkeypatch.setattr(lf, "_default_client", lambda: client)
+    monkeypatch.chdir(tmp_path)
+    code = main(["langfuse", "pull", "trace-xyz"])
+    assert code == 0
+    assert (tmp_path / "trace-xyz.json").exists()  # default output is <trace-id>.json
 
 
 def test_cli_dry_run(monkeypatch, capsys, tmp_path):
