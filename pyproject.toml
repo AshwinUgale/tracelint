@@ -39,10 +39,19 @@ real-agent = ["openai>=1.0"]
 # as Scores. Targets the v3 Python SDK (get_client / create_score). The adapter itself is
 # dependency-free — this extra is only needed for the live fetch/write-back path.
 langfuse = ["langfuse>=3.0"]
-# Everything needed to run the full test suite.
+# `tracelint.capture` — record an agent run to a lintable trace file. The base extra is just the
+# OpenTelemetry SDK (the uniform capture mechanism); each per-framework extra adds that framework's
+# stock OpenInference instrumentor, which capture wraps rather than reimplements.
+capture = ["opentelemetry-sdk>=1.20"]
+capture-smolagents = ["opentelemetry-sdk>=1.20", "openinference-instrumentation-smolagents>=0.1"]
+capture-langchain = ["opentelemetry-sdk>=1.20", "openinference-instrumentation-langchain>=0.1"]
+capture-crewai = ["opentelemetry-sdk>=1.20", "openinference-instrumentation-crewai>=0.1"]
+# Everything needed to run the full test suite. opentelemetry-sdk is here so the capture mechanism
+# test runs in CI (the per-framework instrumentors are not needed — that path is tested offline).
 dev = [
     "pytest>=7",
     "ruff>=0.4",
+    "opentelemetry-sdk>=1.20",
 ]
 
 [project.scripts]
