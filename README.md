@@ -108,14 +108,16 @@ schema-dependent rules (R1, and R3's high-confidence tier). Don't have one? `tra
 spans.json --format openinference -o tools.json` bootstraps a starter contract from the trace —
 schemas discovered where the telemetry carries them, behavior fields left as placeholders to review.
 A multi-trace input (a `.jsonl` file, a JSON array, or an OTLP export carrying several `trace_id`s)
-fans out to one report each. From the library, the same one-liner:
+fans out to one report each. From the library:
 
 ```python
-from tracelint import lint_otel_trace
+from tracelint import lint_otel_traces
 
-report = lint_otel_trace(spans)   # spans: your OpenInference span export (a list of dicts)
-print(report.exit_code)           # 0 or 2
+for report in lint_otel_traces(spans):   # spans: your OpenInference span export (a list of dicts)
+    print(report.exit_code)              # 0 or 2, one report per trace
 ```
+
+(`lint_otel_trace`, singular, lints one run's spans and raises if they span several traces.)
 
 ## The rules
 
@@ -228,15 +230,16 @@ These are compatibility validations on real traces, not benchmarks or endorsemen
 Straight from a running [Arize Phoenix](https://phoenix.arize.com) instance, from the library:
 
 ```python
-import phoenix as px
-from tracelint import lint_otel_trace
+from phoenix.client import Client
+from tracelint import lint_otel_traces
 
-spans = px.Client().get_spans_dataframe().to_dict("records")
-print(lint_otel_trace(spans).exit_code)
+spans = Client().spans.get_spans_dataframe(project_name="my-agent")
+for report in lint_otel_traces(spans.to_dict("records")):   # one report per run
+    print(report.exit_code)
 ```
 
 Both Phoenix shapes are handled: the span-export JSON (top-level `span_kind`) and the
-`get_spans_dataframe()` records (attributes as `attributes.*` columns).
+`get_spans_dataframe()` records (attributes as `attributes.*` columns, message lists nested).
 
 ## Add to CI
 

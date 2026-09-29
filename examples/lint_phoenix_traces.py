@@ -11,11 +11,10 @@ Live Phoenix (the traces you already collect)
 --------------------------------------------------------------------------------------------------
 Phoenix hands you spans as a dataframe; tracelint reads that exact shape.
 
-    import json
-    import phoenix as px
+    from phoenix.client import Client
 
-    records = px.Client().get_spans_dataframe().to_dict("records")   # your real agent traces
-    json.dump(records, open("spans.json", "w"))
+    spans = Client().spans.get_spans_dataframe(project_name="my-agent")   # your real agent traces
+    spans.to_json("spans.json", orient="records", date_format="iso")
 
 Then lint them — one report per trace — in Python:
 
