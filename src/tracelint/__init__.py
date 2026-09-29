@@ -210,4 +210,4 @@ __all__ = [
 try:
     __version__ = _pkg_version("tracelint")
 except PackageNotFoundError:  # pragma: no cover - exercised only in an uninstalled checkout
-    __version__ = "0.8.0"
+    __version__ = "0.9.0"

@@ -6,6 +6,8 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.9.0]
+
 Found by running a real LangGraph 1.2 agent (openinference-instrumentation-langchain 0.1.76,
 gpt-4o-mini) through a local Arize Phoenix and linting the result — a release agent that deployed a
 Jenkins `UNSTABLE` build to production. Both real traces are now regression fixtures
