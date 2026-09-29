@@ -31,7 +31,7 @@ from typing import Any
 from tracelint.adapters.langfuse import from_langfuse_trace
 from tracelint.adapters.langsmith import from_langsmith_run
 from tracelint.adapters.openai import from_openai_messages
-from tracelint.adapters.otel import from_otel_spans
+from tracelint.adapters.otel import from_otel_spans, span_trace_id
 from tracelint.findings import LintReport
 from tracelint.rules import default_rules, lint_trace
 from tracelint.rules.base import Rule
@@ -65,9 +65,27 @@ def lint_otel_trace(
     *,
     run_id: str | None = None,
 ) -> LintReport:
-    """Lint OpenTelemetry / OpenInference ``spans`` (Phoenix / OTLP / TRAIL) in one call."""
+    """Lint one trace's OpenTelemetry / OpenInference ``spans`` (Phoenix / OTLP / TRAIL).
+
+    ``spans`` must come from a single trace; spans spanning several traces raise ``ValueError``
+    (use :func:`lint_otel_traces` for those).
+    """
     trace = from_otel_spans(spans, run_id=run_id)
     return lint_trace(trace, rules or default_rules(), registry)
+
+
+def lint_otel_traces(
+    spans: list[dict[str, Any]],
+    rules: list[Rule] | None = None,
+    registry: ToolRegistry | None = None,
+) -> list[LintReport]:
+    """Lint OpenInference spans from any number of traces — one :class:`LintReport` per trace.
+
+    The shape a Phoenix project export actually has: ``Client().spans.get_spans_dataframe(...)
+    .to_dict("records")`` returns every run in the project, grouped here by trace id.
+    """
+    active = rules or default_rules()
+    return [lint_trace(trace, active, registry) for trace in _otel_traces(spans)]
 
 
 def lint_openai_trace(
@@ -194,14 +212,10 @@ def _spans_from_otlp(resource_spans: Any) -> list[dict[str, Any]]:
 
 
 def _span_trace_id(span: dict[str, Any]) -> str:
-    for key in ("trace_id", "traceId"):
-        value = span.get(key)
-        if value:
-            return str(value)
-    ctx = span.get("context")
-    if isinstance(ctx, dict) and ctx.get("trace_id"):
-        return str(ctx["trace_id"])
-    return ""
+    # Shared with the adapter so grouping and the adapter's one-trace guard agree on what a trace
+    # id is — including the Phoenix dataframe's flat ``context.trace_id`` column, which a bare
+    # ``trace_id`` lookup missed (a multi-run Phoenix export was linted as one merged trace).
+    return span_trace_id(span)
 
 
 def _grouped_spans(doc: Any) -> list[list[dict[str, Any]]]:

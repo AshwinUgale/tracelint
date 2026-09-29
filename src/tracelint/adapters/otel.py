@@ -98,6 +98,31 @@ def _otlp_value(v: Any) -> Any:
 _ATTR_PREFIX = "attributes."
 
 
+def _flatten_into(flat: dict[str, Any], key: str, value: Any) -> None:
+    """Record ``value`` under ``key`` and rebuild OpenInference's flat dotted keys beneath it.
+
+    Arize Phoenix's span dataframe (and its REST API) return list-valued attributes such as
+    ``llm.input_messages`` *unflattened*: a list of objects whose own keys are relative dotted
+    paths, e.g. ``[{"message.role": "user", "message.tool_calls": [{"tool_call.id": ...}]}]``.
+    Recursing with the list index as a path segment reproduces exactly the flat keys the
+    OpenInference convention specifies (``llm.input_messages.1.message.role``), so every reader
+    below works on both shapes. Without this a real Phoenix export loses the user's request and
+    the LLM span's tool-call arguments (a false R3 candidate, and a false R6 hard defect on
+    LangChain's lossy TOOL inputs). The original value is kept under ``key`` too, since
+    ``input.value`` may itself be a dict.
+    """
+    if hasattr(value, "tolist") and not isinstance(value, (str, bytes)):
+        value = value.tolist()  # numpy arrays / scalars from an in-memory dataframe
+    flat.setdefault(key, value)
+    if isinstance(value, dict):
+        for sub, item in value.items():
+            _flatten_into(flat, f"{key}.{sub}", item)
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            if isinstance(item, dict):
+                _flatten_into(flat, f"{key}.{i}", item)
+
+
 def _attrs(span: dict[str, Any]) -> dict[str, Any]:
     """Return a span's attributes as a flat ``{dotted_key: value}`` map.
 
@@ -112,7 +137,8 @@ def _attrs(span: dict[str, Any]) -> dict[str, Any]:
     raw = span.get("span_attributes") or span.get("attributes") or span.get("attribute") or {}
     flat: dict[str, Any] = {}
     if isinstance(raw, dict):
-        flat = dict(raw)
+        for key, value in raw.items():
+            _flatten_into(flat, key, value)
     elif isinstance(raw, list):  # OTLP: [{"key": "...", "value": {"stringValue": "..."}}, ...]
         for item in raw:
             if isinstance(item, dict) and "key" in item:
@@ -125,7 +151,7 @@ def _attrs(span: dict[str, Any]) -> dict[str, Any]:
         stripped = key[len(_ATTR_PREFIX) :]
         if not stripped or value is None or (isinstance(value, float) and value != value):
             continue  # skip the empty tail and NaN/None (json_normalize fills absent cells)
-        flat.setdefault(stripped, value)
+        _flatten_into(flat, stripped, value)
     return flat
 
 
@@ -147,6 +173,15 @@ def _get(span: dict[str, Any], *keys: str) -> Any:
 
 def _span_id(span: dict[str, Any]) -> str:
     return str(_get(span, "span_id", "spanId", "id", "context.span_id") or "")
+
+
+def span_trace_id(span: dict[str, Any]) -> str:
+    """A span's trace id across export shapes, or ``""`` when it carries none.
+
+    Reads a flat ``trace_id`` / ``traceId``, the Phoenix span dataframe's flat ``context.trace_id``
+    column, and a nested ``context`` object (the OTel SDK's ``to_json``).
+    """
+    return str(_get(span, "trace_id", "traceId", "context.trace_id") or "")
 
 
 def _start_key(span: dict[str, Any]) -> str:
@@ -221,6 +256,29 @@ def _parse_value(raw: Any) -> tuple[Any, str | None]:
     return raw, None
 
 
+def _unwrap_tool_message(value: Any) -> tuple[Any, str | None]:
+    """Unwrap a serialized LangChain ``ToolMessage`` into ``(tool result, message status)``.
+
+    LangChain / LangGraph's OpenInference instrumentation records a TOOL span's ``output.value``
+    as the whole serialized message — ``{"type": "tool", "data": {"content": "<the tool's
+    result>", "status": "success" | "error", ...}}`` — so the tool's actual result sits one level
+    down, usually as a JSON string. Left wrapped, a ``failure_when`` pointer into the result can
+    never match (the "acted on a failed result" defect goes unseen) and the message's structured
+    ``status`` is unread. Anything that isn't exactly this envelope is returned unchanged.
+    """
+    if (
+        isinstance(value, dict)
+        and value.get("type") == "tool"
+        and isinstance(value.get("data"), dict)
+        and "content" in value["data"]
+    ):
+        data = value["data"]
+        content, _ = _parse_value(data.get("content"))
+        status = data.get("status")
+        return content, (str(status).lower() if status is not None else None)
+    return value, None
+
+
 def _args_from(raw: Any) -> tuple[dict[str, Any], str | None]:
     value, raw_text = _parse_value(raw)
     if isinstance(value, dict):
@@ -269,6 +327,9 @@ def _is_error_span(span: dict[str, Any], attrs: dict[str, Any]) -> tuple[bool, s
             return True, str(ev_attrs.get("exception.message") or "exception")
     out = _output_value(attrs)
     parsed, _ = _parse_value(out)
+    parsed, message_status = _unwrap_tool_message(parsed)
+    if message_status == "error":  # LangChain ToolMessage(status="error"): a structured signal
+        return True, message or "tool message status: error"
     if isinstance(parsed, dict):
         http = parsed.get("http_status", parsed.get("status_code"))
         if isinstance(http, int) and http >= 400:
@@ -480,11 +541,21 @@ def _tool_schemas(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> dict[s
 
 
 def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -> Trace:
-    """Normalize a list of OpenInference/OTel spans into a canonical :class:`Trace`."""
-    ordered = sorted(
-        _flatten_spans(spans),
-        key=lambda s: (_start_key(s), _span_id(s)),
-    )
+    """Normalize one trace's OpenInference/OTel spans into a canonical :class:`Trace`.
+
+    Spans from more than one trace are rejected rather than merged: a merged "trace" interleaves
+    separate runs, which manufactures false loops and redundant calls and misattributes every
+    finding. Split first with :func:`tracelint.lint_otel_traces` or ``tracelint check``.
+    """
+    flat_spans = _flatten_spans(spans)
+    trace_ids = {tid for tid in (span_trace_id(s) for s in flat_spans) if tid}
+    if len(trace_ids) > 1:
+        raise ValueError(
+            f"these spans belong to {len(trace_ids)} different traces, but a trace is linted one "
+            "run at a time. Use tracelint.lint_otel_traces(spans) for one report per trace, or "
+            "`tracelint check --format openinference`, which splits by trace id."
+        )
+    ordered = sorted(flat_spans, key=lambda s: (_start_key(s), _span_id(s)))
     parsed = [(s, _attrs(s)) for s in ordered]
     has_tool_span = any(_span_kind(s, a) == "TOOL" for s, a in parsed)
     # Only needed to repair lossy TOOL-span inputs (below); skip the work when there are no tools.
@@ -527,7 +598,7 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
                 )
             )
             is_err, err_msg = _is_error_span(span, attrs)
-            content, _ = _parse_value(_output_value(attrs))
+            content, _ = _unwrap_tool_message(_parse_value(_output_value(attrs))[0])
             steps.append(
                 ToolResult(
                     call_id=call_id,

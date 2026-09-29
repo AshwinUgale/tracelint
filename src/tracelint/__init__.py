@@ -110,6 +110,7 @@ from tracelint.sources import (
     lint_langsmith_trace,
     lint_openai_trace,
     lint_otel_trace,
+    lint_otel_traces,
     load_source,
 )
 
@@ -197,6 +198,7 @@ __all__ = [
     # Source on-ramps
     "load_source",
     "lint_otel_trace",
+    "lint_otel_traces",
     "lint_openai_trace",
     "lint_langfuse_trace",
     "lint_langsmith_trace",

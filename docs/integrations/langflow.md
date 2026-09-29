@@ -23,15 +23,16 @@ OpenInference spans that tracelint reads directly — enabling the tracer is all
 2. **Export** the spans Phoenix collected:
 
    ```python
-   import phoenix as px
-   records = px.Client().get_spans_dataframe().to_dict("records")
+   from phoenix.client import Client
+   spans = Client().spans.get_spans_dataframe(project_name="default")   # your Langflow project
    ```
 
 3. **Lint** — tracelint reads the Phoenix dataframe records directly:
 
    ```python
-   from tracelint import lint_otel_trace, render_report
-   print(render_report(lint_otel_trace(records)))
+   from tracelint import lint_otel_traces, render_report
+   for report in lint_otel_traces(spans.to_dict("records")):   # one report per run
+       print(render_report(report))
    ```
 
    or, from an exported `spans.json`:

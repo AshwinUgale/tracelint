@@ -6,6 +6,31 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+Found by running a real LangGraph 1.2 agent (openinference-instrumentation-langchain 0.1.76,
+gpt-4o-mini) through a local Arize Phoenix and linting the result — a release agent that deployed a
+Jenkins `UNSTABLE` build to production. Both real traces are now regression fixtures
+(`examples/traces/langgraph_phoenix_trace.json`, `langgraph_capture_trace.json`).
+
+- **Fix: a false CI failure on real Phoenix exports.** Phoenix's span dataframe returns message
+  attributes (`llm.input_messages`, `llm.output_messages`, `llm.tools`) *unflattened* into lists of
+  relative-keyed objects; the OTel adapter only read the flat dotted form. It lost the user's request
+  (a false R3 candidate) and, on LangChain's lossy single-argument TOOL inputs, could not recover the
+  real arguments from the LLM span — a false **R6 hard defect, exit 2, on a valid call**. The adapter
+  now rebuilds the flat OpenInference keys from nested attributes (also handles numpy arrays from an
+  in-memory dataframe).
+- **Fix: "acted on a failed result" was missed for LangChain / LangGraph.** Their instrumentation
+  records a tool's output as a serialized `ToolMessage` (`{"type": "tool", "data": {"content": ...}}`),
+  so a `failure_when` pointer never matched and R2a/R2b could not see the failure. The envelope is now
+  unwrapped to the tool's real result, and a `ToolMessage` `status: "error"` counts as a structured
+  tool error.
+- **Fix: a multi-run Phoenix export was linted as one merged trace.** Trace-id grouping now reads the
+  dataframe's flat `context.trace_id` column, so `tracelint check` splits it into one report per run.
+- **New: `lint_otel_traces(spans)`** — one report per trace, the shape a Phoenix project export
+  actually has. `lint_otel_trace` / `from_otel_spans` now **raise** on spans from several traces
+  instead of silently merging them (a merged "trace" manufactures false loops and redundant calls).
+- Docs: the Phoenix, Langflow, and README snippets use `phoenix.client.Client().spans
+  .get_spans_dataframe(...)` with `lint_otel_traces`.
+
 ## [0.8.0]
 
 - **`tracelint.capture` — record an agent run to a lintable trace.** The primary path assumed you
