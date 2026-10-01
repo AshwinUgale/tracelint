@@ -110,8 +110,10 @@ Most rules need no tool schemas, so this works keyless; add `--tools tools.json`
 schema-dependent rules (R1, and R3's high-confidence tier). Don't have one? `tracelint init
 spans.json --format openinference -o tools.json` bootstraps a starter contract from the trace —
 schemas discovered where the telemetry carries them, behavior fields left as placeholders to review.
-A multi-trace input (a `.jsonl` file, a JSON array, or an OTLP export carrying several `trace_id`s)
-fans out to one report each. From the library:
+A multi-trace input (a JSON array, an OTLP export, or a `.jsonl` file) fans out to one report per
+run. Spans are grouped into runs by trace id, so a `.jsonl` file can hold one span per line
+(Phoenix's `to_json(..., lines=True)`, an OTel file exporter), whole runs, or export batches, and a
+run split across files is linted whole. From the library:
 
 ```python
 from tracelint import lint_otel_traces

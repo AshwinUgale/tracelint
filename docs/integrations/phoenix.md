@@ -25,6 +25,8 @@ rather than merging them.)
 
 ```python
 spans.to_json("spans.json", orient="records", date_format="iso")
+# or one span per line, e.g. for a CI step that lints traces/*.jsonl:
+spans.to_json("spans.jsonl", orient="records", lines=True, date_format="iso")
 ```
 
 ```bash

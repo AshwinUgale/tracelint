@@ -18,8 +18,13 @@ Supported ``--format`` values:
 - ``langsmith``              a LangSmith run tree (or a JSON array of them).
 
 Consistent with the rest of the tool, a loader never guesses beyond the shapes its adapter
-documents. Multi-trace inputs fan out to one :class:`Trace` each: a ``.jsonl`` file (one unit per
-line), a JSON array, and an OTLP export carrying several distinct ``trace_id`` s.
+documents. Multi-trace inputs fan out to one :class:`Trace` each: a JSON array, an OTLP export
+carrying several distinct ``trace_id`` s, and a ``.jsonl`` file. For the span formats a run is
+defined by its trace id, not by a line or a file: an exporter writes a span (or a batch) per line,
+so a ``.jsonl`` file is read as one span collection and regrouped by trace id, and ``check`` merges
+a run whose spans are split across files. For OpenAI, a ``.jsonl`` file of single messages is one
+conversation; one ``{"messages": [...]}`` (or ShareGPT ``{"conversations": [...]}``) per line is
+one conversation per line.
 """
 
 from __future__ import annotations
@@ -138,30 +143,73 @@ def load_source(
     """Load ``path`` in ``fmt`` and return every :class:`Trace` it contains.
 
     ``native`` uses :func:`~tracelint.trace.load_traces` (unchanged behaviour). For a provider
-    format the file is parsed as one JSON document (``.json``) or one unit per line (``.jsonl``),
-    then handed to the matching adapter. ``tool_names`` is forwarded to the Langfuse adapter only.
+    format the file is parsed as one JSON document (``.json``) or one document per line
+    (``.jsonl``), then handed to the matching adapter; span formats regroup the file's spans by
+    trace id (see the module docstring). ``tool_names`` is forwarded to the Langfuse adapter only.
     """
     if fmt in (NATIVE, None):
         return load_traces(path)
     if fmt not in SUPPORTED_FORMATS:
         raise ValueError(f"unknown --format {fmt!r}; choose from {', '.join(SUPPORTED_FORMATS)}")
-
-    p = Path(path)
-    text = p.read_text(encoding="utf-8")
-    if p.suffix == ".jsonl":
-        docs = [json.loads(line) for line in text.splitlines() if line.strip()]
-    else:
-        docs = [json.loads(text)]
+    if fmt in (OPENINFERENCE, OTEL):
+        return [from_otel_spans(spans) for spans in _span_groups(path) if spans]
 
     traces: list[Trace] = []
-    for doc in docs:
+    for doc in _read_docs(path, fmt):
         traces.extend(_traces_from_doc(doc, fmt, tool_names=tool_names))
     return traces
 
 
+def load_sources(
+    paths: list[str | Path],
+    fmt: str = NATIVE,
+    *,
+    tool_names: list[str] | set[str] | None = None,
+) -> list[tuple[Trace, str]]:
+    """Load every file in ``paths`` and return ``(trace, path)`` for each trace — what ``check``
+    lints.
+
+    For the span formats a run is its trace id, wherever its spans landed: a rotating exporter or a
+    glob over batch files can split one run across files, and linting the pieces separately would
+    hide its cross-step defects and invent partial-run ones. Those pieces are merged (a span seen
+    twice, e.g. the same file passed twice, is kept once) and reported under the first file. Other
+    formats are one or more self-contained traces per file, read with :func:`load_source`.
+    """
+    if fmt not in (OPENINFERENCE, OTEL):
+        return [
+            (trace, str(path))
+            for path in paths
+            for trace in load_source(path, fmt, tool_names=tool_names)
+        ]
+
+    runs: dict[str, list[dict[str, Any]]] = {}
+    first_seen: dict[str, str] = {}
+    for path in paths:
+        for i, spans in enumerate(_span_groups(path)):
+            trace_id = next((tid for tid in map(_span_trace_id, spans) if tid), "")
+            # A run without a trace id can't be matched to another file's, so it never merges.
+            key = trace_id or f"\x00{path}#{i}"
+            if key not in runs:
+                runs[key], first_seen[key] = list(spans), str(path)
+                continue
+            seen = {_span_key(span) for span in runs[key]}
+            runs[key].extend(span for span in spans if _span_key(span) not in seen)
+    return [(from_otel_spans(spans), first_seen[key]) for key, spans in runs.items() if spans]
+
+
+def _read_docs(path: str | Path, fmt: str) -> list[Any]:
+    """The JSON documents in ``path``: the whole file (``.json``), or one per line (``.jsonl``)."""
+    p = Path(path)
+    text = p.read_text(encoding="utf-8")
+    if p.suffix != ".jsonl":
+        return [json.loads(text)]
+    docs = [json.loads(line) for line in text.splitlines() if line.strip()]
+    if fmt == OPENAI and docs and all(_is_lone_message(doc) for doc in docs):
+        return [docs]  # one message per line: the file is a single conversation
+    return docs
+
+
 def _traces_from_doc(doc: Any, fmt: str, *, tool_names: list[str] | set[str] | None) -> list[Trace]:
-    if fmt in (OPENINFERENCE, OTEL):
-        return _otel_traces(doc)
     if fmt == OPENAI:
         return _openai_traces(doc)
     if fmt == LANGFUSE:
@@ -176,7 +224,36 @@ def _traces_from_doc(doc: Any, fmt: str, *, tool_names: list[str] | set[str] | N
 
 def _otel_traces(doc: Any) -> list[Trace]:
     """One trace per distinct ``trace_id`` in ``doc`` (an OTLP export can carry several)."""
-    return [from_otel_spans(spans) for spans in _grouped_spans(doc) if spans]
+    return [from_otel_spans(spans) for spans in _group_by_trace(_extract_spans(doc)) if spans]
+
+
+def _span_groups(path: str | Path) -> list[list[dict[str, Any]]]:
+    """A span file's spans, grouped by trace id. A ``.jsonl`` file is one span collection — its
+    lines may each hold a span, a whole run, or an OTLP batch — so it is grouped exactly as if the
+    lines were concatenated into one JSON array, never line by line. The one exception: with no
+    trace ids to regroup by, lines that each hold a whole run stay separate runs (merging them would
+    invent loops and repeats across unrelated runs)."""
+    docs = _read_docs(path, OPENINFERENCE)
+    per_doc = [_extract_spans(doc) for doc in docs]
+    spans = [span for group in per_doc for span in group]
+    if (
+        len(docs) > 1
+        and all(_is_span_collection(doc) for doc in docs)
+        and not any(_span_trace_id(span) for span in spans)
+    ):
+        return [group for group in per_doc if group]
+    return _group_by_trace(spans)
+
+
+def _is_span_collection(doc: Any) -> bool:
+    """A document holding many spans (a list, an OTLP export, ``{"spans": [...]}``), not one."""
+    if isinstance(doc, list):
+        return True
+    if not isinstance(doc, dict):
+        return False
+    if "resourceSpans" in doc or "resource_spans" in doc:
+        return True
+    return any(isinstance(doc.get(key), list) for key in ("spans", "data"))
 
 
 def _extract_spans(doc: Any) -> list[dict[str, Any]]:
@@ -218,14 +295,18 @@ def _span_trace_id(span: dict[str, Any]) -> str:
     return span_trace_id(span)
 
 
-def _grouped_spans(doc: Any) -> list[list[dict[str, Any]]]:
-    """Group extracted spans by ``trace_id``, only splitting when 2+ distinct ids are present.
+def _span_key(span: dict[str, Any]) -> str:
+    """Identity of a span for de-duplicating merged runs: its full content."""
+    return json.dumps(span, sort_keys=True, default=str)
+
+
+def _group_by_trace(spans: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    """Group spans by ``trace_id``, only splitting when 2+ distinct ids are present.
 
     A single-trace export whose spans share (or omit) their ``trace_id`` stays one trace — the
-    adapter already merges and orders it. Splitting is reserved for a genuine multi-trace OTLP
-    file, so we never fracture one run into fragments over an unset id.
+    adapter already merges and orders it. Splitting is reserved for a genuine multi-trace export,
+    so we never fracture one run into fragments over an unset id.
     """
-    spans = _extract_spans(doc)
     distinct = {tid for tid in (_span_trace_id(s) for s in spans) if tid}
     if len(distinct) <= 1:
         return [spans] if spans else []
@@ -244,21 +325,37 @@ def _grouped_spans(doc: Any) -> list[list[dict[str, Any]]]:
 # --- OpenAI chat-completions --------------------------------------------------------
 
 
+def _conversation(doc: dict[str, Any]) -> list[Any] | None:
+    """The message list of a conversation object: OpenAI's ``{"messages": [...]}`` (the
+    fine-tuning / batch format) or ShareGPT's ``{"conversations": [...]}``."""
+    for key in ("messages", "conversations"):
+        if isinstance(doc.get(key), list):
+            return doc[key]
+    return None
+
+
+def _is_lone_message(doc: Any) -> bool:
+    """A single chat message object — ``role`` (OpenAI) or ``from`` (ShareGPT) — not a
+    conversation."""
+    return isinstance(doc, dict) and ("role" in doc or "from" in doc) and _conversation(doc) is None
+
+
 def _openai_traces(doc: Any) -> list[Trace]:
     if isinstance(doc, dict):
-        if isinstance(doc.get("messages"), list):
+        messages = _conversation(doc)
+        if messages is not None:
             return [
                 from_openai_messages(
-                    doc["messages"],
+                    messages,
                     run_id=str(doc.get("run_id", "openai-run")),
                     final=doc.get("final"),
                 )
             ]
-        if "role" in doc:  # a lone message object
+        if _is_lone_message(doc):
             return [from_openai_messages([doc])]
         return []
     if isinstance(doc, list):
-        if doc and all(isinstance(m, dict) and "role" in m for m in doc):
+        if doc and all(_is_lone_message(m) for m in doc):
             return [from_openai_messages(doc)]  # a single message list
         traces: list[Trace] = []
         for item in doc:
