@@ -10,7 +10,9 @@ required. This is the lowest-friction ingestion path.
 tracelint check messages.json --format openai
 ```
 
-`.jsonl` is accepted too (one message per line).
+`.jsonl` is accepted too: one message per line (the file is one conversation), or one conversation
+per line, as `{"messages": [...]}` (the fine-tuning / batch format) or ShareGPT's
+`{"conversations": [...]}`.
 
 ## What tracelint reads
 

@@ -6,6 +6,20 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: `.jsonl` span files are linted as runs, not as one trace per line.** Exporters write one
+  span (or one export batch) per line, as Phoenix's `to_json(..., lines=True)` and OTel file
+  exporters do. Every CI path in the docs (the GitHub Action example, the pre-commit hook, the
+  plain `tracelint check traces/*.jsonl` command) linted each line as its own trace, so a defect
+  spanning steps could never be seen. On a real Phoenix JSONL export of 10 failed-release runs,
+  0.9 reported 110 one-span "runs", exited 0, and missed all 10 defects. With `--format
+  openinference`/`otel`, a `.jsonl` file is now read as one span collection and regrouped by
+  trace id. `check` also merges a run whose spans are split across files (a rotating exporter, a
+  glob over batches) and reports it under the first file; a span seen twice is kept once. Lines
+  that each hold a whole run and carry no trace ids still lint one run per line.
+- **Fix: OpenAI `.jsonl` and ShareGPT datasets.** A `.jsonl` file of single messages is one
+  conversation, as the docs said; 0.9 made each message its own trace, so tool results never met
+  their calls. ShareGPT datasets (`{"conversations": [...]}`, `from`/`value` messages) loaded zero
+  traces and exited 0 with no output; they now lint one conversation each.
 - **Fix: lossy argument records no longer fail CI — the arguments are *unknown*, not `{}`.**
   Instrumentation often records a tool call's arguments lossily: as a bare value (LangChain
   single-input and LCEL tools), redacted (`OPENINFERENCE_HIDE_INPUTS`), positionally with no

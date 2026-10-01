@@ -21,8 +21,16 @@ from pathlib import Path
 
 import pytest
 
-from tracelint import ToolRegistry, lint_otel_trace, lint_otel_traces, load_source
+from tracelint import (
+    ToolRegistry,
+    default_rules,
+    lint_otel_trace,
+    lint_otel_traces,
+    lint_trace,
+    load_source,
+)
 from tracelint.adapters.otel import from_otel_spans
+from tracelint.cli import main
 from tracelint.findings import ConfidenceTier
 from tracelint.trace import ResultStatus, Role
 
@@ -31,23 +39,22 @@ PHOENIX = TRACES / "langgraph_phoenix_trace.json"
 CAPTURE = TRACES / "langgraph_capture_trace.json"
 
 # The operator's contract: Jenkins' non-success results are failures; deploy has side effects.
-REGISTRY = ToolRegistry.from_dict(
-    {
-        "tools": {
-            "run_release_pipeline": {
-                "metadata": {
-                    "failure_when": {"pointer": "/result", "in": ["FAILURE", "UNSTABLE", "ABORTED"]}
-                }
-            },
-            "deploy": {
-                "metadata": {
-                    "side_effecting": True,
-                    "failure_when": {"pointer": "/status", "in": ["failed", "rolled_back"]},
-                }
-            },
-        }
+CONTRACT = {
+    "tools": {
+        "run_release_pipeline": {
+            "metadata": {
+                "failure_when": {"pointer": "/result", "in": ["FAILURE", "UNSTABLE", "ABORTED"]}
+            }
+        },
+        "deploy": {
+            "metadata": {
+                "side_effecting": True,
+                "failure_when": {"pointer": "/status", "in": ["failed", "rolled_back"]},
+            }
+        },
     }
-)
+}
+REGISTRY = ToolRegistry.from_dict(CONTRACT)
 
 
 def _spans(path: Path) -> list[dict]:
@@ -134,3 +141,40 @@ def test_multi_run_phoenix_export_is_split_per_trace(tmp_path):
 def test_spans_from_several_traces_are_rejected_not_merged():
     with pytest.raises(ValueError, match="different traces"):
         lint_otel_trace(_two_runs())
+
+
+def _jsonl(spans: list[dict]) -> str:
+    return "".join(f"{json.dumps(span)}\n" for span in spans)
+
+
+def test_span_per_line_phoenix_export_finds_the_defect_in_each_run(tmp_path):
+    # `spans.to_json("spans.jsonl", orient="records", lines=True)`: one span per line, two runs.
+    # 0.9 linted every line as its own one-span trace, so the failed-pipeline -> deploy defect
+    # (which spans steps) could never be seen.
+    export = tmp_path / "spans.jsonl"
+    export.write_text(_jsonl(_two_runs()), encoding="utf-8")
+    traces = load_source(export, "openinference")
+    reports = [lint_trace(trace, default_rules(), REGISTRY) for trace in traces]
+    assert len(reports) == 2
+    assert all(_rules(r, ConfidenceTier.HARD_DEFECT) == ["R2b"] for r in reports)
+
+
+def test_readme_ci_command_on_jsonl_fails_the_build(tmp_path, capsys):
+    # The README's CI step (`tracelint check traces/*.jsonl --format openinference --tools
+    # tools.json`), over a run whose spans a rotating exporter split across two files.
+    spans = _spans(PHOENIX)
+    traces = tmp_path / "traces"
+    traces.mkdir()
+    (traces / "a.jsonl").write_text(_jsonl(spans[: len(spans) // 2]), encoding="utf-8")
+    (traces / "b.jsonl").write_text(_jsonl(spans[len(spans) // 2 :]), encoding="utf-8")
+    tools = tmp_path / "tools.json"
+    tools.write_text(json.dumps(CONTRACT), encoding="utf-8")
+    sarif = tmp_path / "tracelint.sarif"
+
+    files = sorted(str(f) for f in traces.glob("*.jsonl"))
+    args = ["check", *files, "--format", "openinference", "--tools", str(tools)]
+    assert main([*args, "--sarif", str(sarif)]) == 2
+    assert capsys.readouterr().out.count("finding(s), exit") == 1  # one run, one report
+    results = json.loads(sarif.read_text(encoding="utf-8"))["runs"][0]["results"]
+    uris = {r["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for r in results}
+    assert uris == {files[0]}

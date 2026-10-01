@@ -25,7 +25,7 @@ from collections.abc import Sequence
 from tracelint.findings import EXIT_GATE, EXIT_HARD_DEFECT, EXIT_INPUT_ERROR, EXIT_OK
 from tracelint.report import render_report, reports_to_dict, write_json
 from tracelint.rules import lint_trace, rule_ids, select_rules
-from tracelint.sources import SUPPORTED_FORMATS, load_source
+from tracelint.sources import SUPPORTED_FORMATS, load_source, load_sources
 from tracelint.tools import ToolRegistry
 from tracelint.trace import Trace
 
@@ -179,11 +179,10 @@ def _cmd_check(args: argparse.Namespace) -> int:
     reports = []
     linted: list[Trace] = []
     uris: list[str] = []
-    for path in args.traces:
-        for trace in load_source(path, args.fmt):
-            reports.append(lint_trace(trace, rules, registry))
-            linted.append(trace)
-            uris.append(path)
+    for trace, path in load_sources(args.traces, args.fmt):
+        reports.append(lint_trace(trace, rules, registry))
+        linted.append(trace)
+        uris.append(path)
 
     if args.json_out:
         write_json(args.json_out, reports_to_dict(reports))

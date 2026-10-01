@@ -13,6 +13,7 @@ import pytest
 
 from tracelint import lint_langsmith_trace, lint_otel_trace, load_source
 from tracelint.findings import ConfidenceTier
+from tracelint.sources import load_sources
 from tracelint.trace import ResultStatus
 
 
@@ -101,6 +102,108 @@ def test_otel_jsonl_one_trace_per_line(tmp_path):
     assert len(traces) == 2
 
 
+def _write_jsonl(tmp_path, lines, name="spans.jsonl"):
+    p = tmp_path / name
+    p.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+    return str(p)
+
+
+def _calls(trace):
+    return [c.name for c in trace.tool_calls()]
+
+
+A1 = _tool_span("a1", "2024-01-01T00:00:01Z", "search", {"q": "x"}, {"hit": 1}, trace_id="run-a")
+B1 = _tool_span("b1", "2024-01-01T00:00:02Z", "lookup", {"id": "1"}, {"ok": True}, trace_id="run-b")
+A2 = _tool_span("a2", "2024-01-01T00:00:03Z", "book", {"id": "1"}, {"ok": True}, trace_id="run-a")
+
+
+def test_otel_jsonl_one_span_per_line_is_regrouped_into_runs(tmp_path):
+    # Exporters write one span per line (Phoenix's to_json(lines=True), OTel file exporters), and
+    # runs interleave. 0.9 linted each line as its own one-span trace, so no defect spanning two
+    # steps could ever be seen.
+    traces = load_source(_write_jsonl(tmp_path, [A1, B1, A2]), "openinference")
+    assert [(t.run_id, _calls(t)) for t in traces] == [
+        ("run-a", ["search", "book"]),
+        ("run-b", ["lookup"]),
+    ]
+
+
+def _otlp_span(span_id, trace_id, start, name):
+    attrs = {"openinference.span.kind": "TOOL", "tool.name": name, "input.value": "{}"}
+    return {
+        "spanId": span_id,
+        "traceId": trace_id,
+        "startTimeUnixNano": str(start),
+        "name": name,
+        "attributes": [{"key": k, "value": {"stringValue": v}} for k, v in attrs.items()],
+    }
+
+
+def test_otel_jsonl_otlp_batches_are_regrouped_into_runs(tmp_path):
+    # An OTel collector's file exporter writes one export batch per line: a batch can mix runs, and
+    # a run can span batches.
+    lines = [
+        {
+            "resourceSpans": [
+                {
+                    "scopeSpans": [
+                        {
+                            "spans": [
+                                _otlp_span("a1", "aa", 1, "search"),
+                                _otlp_span("b1", "bb", 2, "lookup"),
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {"resourceSpans": [{"scopeSpans": [{"spans": [_otlp_span("a2", "aa", 3, "book")]}]}]},
+    ]
+    traces = load_source(_write_jsonl(tmp_path, lines), "openinference")
+    assert [_calls(t) for t in traces] == [["search", "book"], ["lookup"]]
+
+
+def _without_trace_id(span):
+    return {k: v for k, v in span.items() if k != "trace_id"}
+
+
+def test_otel_jsonl_spans_without_trace_ids_are_one_run(tmp_path):
+    # One span per line and no ids: the file is one run, exactly like a JSON array of those spans.
+    lines = [_without_trace_id(A1), _without_trace_id(A2)]
+    traces = load_source(_write_jsonl(tmp_path, lines), "openinference")
+    assert [_calls(t) for t in traces] == [["search", "book"]]
+
+
+def test_otel_jsonl_whole_runs_without_trace_ids_stay_one_per_line(tmp_path):
+    # Nothing to regroup by, and each line holds a whole run: merging them would invent repeats.
+    lines = [[_without_trace_id(A1), _without_trace_id(A2)], [_without_trace_id(B1)]]
+    traces = load_source(_write_jsonl(tmp_path, lines), "openinference")
+    assert [_calls(t) for t in traces] == [["search", "book"], ["lookup"]]
+
+
+def test_a_run_split_across_files_is_merged(tmp_path):
+    # A rotating exporter, or a glob over batch files, can split one run across files.
+    first = _write_jsonl(tmp_path, [A1], "part-1.jsonl")
+    second = _write_jsonl(tmp_path, [A2, B1], "part-2.jsonl")
+    loaded = load_sources([first, second], "openinference")
+    assert [(t.run_id, _calls(t), path) for t, path in loaded] == [
+        ("run-a", ["search", "book"], first),
+        ("run-b", ["lookup"], second),
+    ]
+
+
+def test_the_same_file_twice_does_not_duplicate_calls(tmp_path):
+    path = _write_jsonl(tmp_path, [A1, A2])
+    loaded = load_sources([path, path], "openinference")
+    assert [_calls(t) for t, _ in loaded] == [["search", "book"]]
+
+
+def test_other_formats_keep_one_report_per_file_trace(tmp_path):
+    run = {"id": "lf1", "observations": [{"id": "o1", "type": "tool", "name": "search"}]}
+    path = _write(tmp_path, run)
+    assert [p for _, p in load_sources([path, path], "langfuse")] == [path, path]
+
+
 # --- OpenAI --------------------------------------------------------------------------
 
 
@@ -125,6 +228,43 @@ def test_openai_messages_object_wrapper(tmp_path):
     doc = {"run_id": "r9", "messages": [{"role": "user", "content": "hi"}]}
     traces = load_source(_write(tmp_path, doc), "openai")
     assert traces[0].run_id == "r9"
+
+
+def test_openai_jsonl_one_message_per_line_is_one_conversation(tmp_path):
+    # The docs promise "one message per line"; 0.9 made each message its own trace, so the tool
+    # result never met its call.
+    messages = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {"id": "c1", "function": {"name": "get", "arguments": json.dumps({"x": 1})}}
+            ],
+        },
+        {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+    ]
+    (trace,) = load_source(_write_jsonl(tmp_path, messages, "chat.jsonl"), "openai")
+    call = trace.tool_calls()[0]
+    assert trace.result_for(call).content == "ok"
+
+
+def test_openai_jsonl_one_conversation_per_line(tmp_path):
+    # The fine-tuning / batch format: one {"messages": [...]} per line, one trace each.
+    lines = [{"messages": [{"role": "user", "content": n}]} for n in ("a", "b")]
+    assert len(load_source(_write_jsonl(tmp_path, lines, "chats.jsonl"), "openai")) == 2
+
+
+def test_sharegpt_datasets_are_read_not_skipped(tmp_path):
+    # ShareGPT wraps each conversation as {"conversations": [...]} with `from`/`value` messages. The
+    # adapter reads them, but 0.9's loader recognized neither the wrapper nor `from`, so it loaded
+    # zero traces and exited 0 with no output at all.
+    conv = [{"from": "human", "value": "find shoes"}, {"from": "gpt", "value": "Found 3."}]
+    dataset = load_source(_write(tmp_path, [{"conversations": conv}] * 2), "openai")
+    per_line = load_source(_write_jsonl(tmp_path, [{"conversations": conv}] * 2), "openai")
+    per_message = load_source(_write_jsonl(tmp_path, conv, "messages.jsonl"), "openai")
+    assert [len(dataset), len(per_line), len(per_message)] == [2, 2, 1]
+    assert all(trace.steps for trace in dataset + per_line + per_message)
 
 
 # --- Langfuse ------------------------------------------------------------------------
