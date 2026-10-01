@@ -20,10 +20,13 @@ Equivalence is exact normalized arguments: two charges for *different* orders (d
 distinct idempotency key) are not flagged, while a repeat with the *same* arguments — including a
 reused idempotency key — is. Side-effect and idempotency status are read from declared metadata,
 never guessed from a name; an undeclared tool is not assumed to be a side effect, so R8 abstains on
-it rather than flag or wave it through.
+it rather than flag or wave it through. A repeated call whose arguments the trace did not record
+(redacted, positional, ...) cannot be compared either way, so it is disclosed as not checked.
 """
 
 from __future__ import annotations
+
+from collections import Counter
 
 from tracelint.findings import ConfidenceTier, Finding
 from tracelint.predicates import PredicateResult
@@ -48,9 +51,15 @@ class DuplicateSideEffectRule(Rule):
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         findings: list[Finding] = []
         seen: dict[tuple[str, str], ToolCall] = {}  # (tool, normalized args) -> anchor call
+        calls_per_tool = Counter(c.name for c in trace.tool_calls())
+        unknown: list[ToolCall] = []  # repeated calls whose arguments the trace did not record
         for call in trace.tool_calls():
             meta = registry.metadata_for(call.name)
             if not (meta and meta.side_effecting and not meta.idempotent):
+                continue
+            if call.args_unavailable is not None:
+                if calls_per_tool[call.name] > 1:
+                    unknown.append(call)  # may duplicate another call — or not; can't compare
                 continue
             key = (call.name, normalize_args(call.args))
             anchor = seen.get(key)
@@ -63,6 +72,9 @@ class DuplicateSideEffectRule(Rule):
                 continue
             findings.append(self._finding(anchor, call, outcome))
             seen[key] = call  # chain to the most recent equivalent call
+        disclosure = self.unknown_args_suppression(unknown, "duplicate side effects")
+        if disclosure is not None:
+            findings.append(disclosure)
         return findings
 
     def _first_outcome(self, result: ToolResult | None, meta: ToolMetadata) -> str:

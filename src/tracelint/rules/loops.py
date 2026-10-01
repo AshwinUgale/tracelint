@@ -17,6 +17,10 @@ re-fetch). Pagination differs by args and is not flagged; a refresh is legitimat
 Side-effect status is read from tool metadata, never guessed from a name; a tool *absent* from the
 registry has an unverifiable side-effect status, so the finding still surfaces (the result is
 byte-identical) but **discloses** the undeclared tool rather than silently assuming it inert.
+
+A call whose arguments the trace did not record (redacted, positional, ...) never matches another
+call — equality is unknowable — so where it could have formed a loop or a repeat, it is disclosed as
+not checked instead of silently passing.
 """
 
 from __future__ import annotations
@@ -26,8 +30,8 @@ from dataclasses import dataclass
 from tracelint.findings import ConfidenceTier, Finding
 from tracelint.rules.base import Rule
 from tracelint.signatures import (
+    call_args_key,
     is_waiting_class,
-    normalize_args,
     result_class,
     result_fingerprint,
 )
@@ -42,6 +46,7 @@ class _CallInfo:
     call: ToolCall
     args_key: str
     rclass: str
+    result_fp: str
     fingerprint: str
 
 
@@ -49,12 +54,15 @@ def _analyze(trace: Trace) -> list[_CallInfo]:
     infos: list[_CallInfo] = []
     for call in trace.tool_calls():
         result = trace.result_for(call)
+        args_key = call_args_key(call)
+        result_fp = result_fingerprint(result)
         infos.append(
             _CallInfo(
                 call=call,
-                args_key=normalize_args(call.args),
+                args_key=args_key,
                 rclass=result_class(result),
-                fingerprint=f"{call.name}|{normalize_args(call.args)}|{result_fingerprint(result)}",
+                result_fp=result_fp,
+                fingerprint=f"{call.name}|{args_key}|{result_fp}",
             )
         )
     return infos
@@ -93,7 +101,26 @@ class LoopRule(Rule):
             if run_len >= LOOP_THRESHOLD and not self._is_legit_poll(infos, i, j, registry):
                 findings.append(self._loop_finding(infos[i : j + 1]))
             i = j + 1
+        disclosure = self.unknown_args_suppression(self._unknown_in_runs(infos, registry), "loops")
+        if disclosure is not None:
+            findings.append(disclosure)
         return findings
+
+    def _unknown_in_runs(self, infos: list[_CallInfo], registry: ToolRegistry) -> list[ToolCall]:
+        """Calls with unknown arguments inside a run of ``LOOP_THRESHOLD``+ consecutive calls to one
+        (non-polling) tool in one result state — a loop R4 can neither confirm nor rule out."""
+        unknown: list[ToolCall] = []
+        i, n = 0, len(infos)
+        while i < n:
+            j = i
+            head = (infos[i].call.name, infos[i].rclass)
+            while j + 1 < n and (infos[j + 1].call.name, infos[j + 1].rclass) == head:
+                j += 1
+            meta = registry.metadata_for(head[0])
+            if j - i + 1 >= LOOP_THRESHOLD and not (meta and meta.polling):
+                unknown.extend(c.call for c in infos[i : j + 1] if c.call.args_unavailable)
+            i = j + 1
+        return unknown
 
     def _is_legit_poll(
         self, infos: list[_CallInfo], i: int, j: int, registry: ToolRegistry
@@ -164,7 +191,24 @@ class RedundantCallRule(Rule):
             undeclared = self._undeclared_between(infos, prev, pos, registry)
             findings.append(self._redundant_finding(infos[prev], info, undeclared))
             seen[info.fingerprint] = pos  # chain to the most recent occurrence
+        disclosure = self.unknown_args_suppression(self._unknown_in_repeats(infos), "redundancy")
+        if disclosure is not None:
+            findings.append(disclosure)
         return findings
+
+    def _unknown_in_repeats(self, infos: list[_CallInfo]) -> list[ToolCall]:
+        """Calls with unknown arguments to a tool that returned the identical result more than
+        once — a redundant repeat R5 can neither confirm nor rule out."""
+        same_result: dict[tuple[str, str], list[ToolCall]] = {}
+        for info in infos:
+            same_result.setdefault((info.call.name, info.result_fp), []).append(info.call)
+        return [
+            call
+            for calls in same_result.values()
+            if len(calls) > 1
+            for call in calls
+            if call.args_unavailable is not None
+        ]
 
     def _mutating_between(
         self, infos: list[_CallInfo], prev: int, pos: int, registry: ToolRegistry

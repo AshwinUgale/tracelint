@@ -18,10 +18,11 @@ the report, never silently skipped — a clean report with hidden suppressions w
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 
-from tracelint.findings import Coverage, Finding, LintReport
+from tracelint.findings import ARGS_UNKNOWN, ConfidenceTier, Coverage, Finding, LintReport
 from tracelint.tools import ToolRegistry
-from tracelint.trace import Trace
+from tracelint.trace import ToolCall, Trace
 
 
 class Rule(ABC):
@@ -53,6 +54,39 @@ class Rule(ABC):
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         """Produce findings for ``trace``. Called only when :meth:`applicable` returned ``None``."""
         raise NotImplementedError
+
+    def unknown_args_suppression(self, calls: Iterable[ToolCall], checked: str) -> Finding | None:
+        """One suppression for the ``calls`` this rule could not check because the trace did not
+        record their real arguments (:attr:`ToolCall.args_unavailable`), or ``None`` if none.
+
+        A rule that compares or traces argument values must skip such calls, and skipping them
+        silently would read as a clean pass. Pass only the calls where a finding was otherwise
+        possible; ``checked`` names what went unchecked (e.g. ``"duplicate side effects"``).
+        """
+        unknown = list({c.index: c for c in calls if c.args_unavailable is not None}.values())
+        if not unknown:
+            return None
+        unknown.sort(key=lambda c: c.index)
+        tools = sorted({c.name for c in unknown})
+        reasons = list(dict.fromkeys(str(c.args_unavailable) for c in unknown))
+        more = f" (+{len(reasons) - 1} other reason(s))" if len(reasons) > 1 else ""
+        n = len(unknown)
+        reason = (
+            f"{n} call{'s' if n != 1 else ''} to {', '.join(repr(t) for t in tools)} not checked "
+            f"for {checked} — arguments unknown: {reasons[0]}{more}"
+        )
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.CANDIDATE,
+            summary=f"rule {self.id} suppressed for {n} call{'s' if n != 1 else ''}: {reason}",
+            evidence={
+                "step_indices": [c.index for c in unknown],
+                "tools": tools,
+                "cause": ARGS_UNKNOWN,
+            },
+            suppressed_reason=reason,
+        )
 
 
 def lint_trace(

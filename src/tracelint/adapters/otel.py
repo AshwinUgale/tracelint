@@ -38,6 +38,7 @@ import ast
 import json
 from typing import Any
 
+from tracelint.adapters._common import ToolArgs, model_call_args, tool_input_args
 from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolResult, Trace
 
 _SPAN_KIND = "openinference.span.kind"
@@ -72,14 +73,30 @@ def _span_kind(span: dict[str, Any], attrs: dict[str, Any]) -> str:
     return ""
 
 
+def _first_present(attrs: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in attrs:
+            return attrs[key]
+    return None
+
+
 def _input_value(attrs: dict[str, Any]) -> Any:
-    """The tool/LLM input: OpenInference ``input.value`` or GenAI's plain ``input``."""
-    return attrs.get("input.value") if "input.value" in attrs else attrs.get("input")
+    """The tool/LLM input: OpenInference ``input.value``, the OTel GenAI tool convention's
+    ``gen_ai.tool.call.arguments``, or a plain ``input``."""
+    return _first_present(attrs, "input.value", "gen_ai.tool.call.arguments", "input")
 
 
 def _output_value(attrs: dict[str, Any]) -> Any:
-    """The tool/LLM output: OpenInference ``output.value`` or GenAI's plain ``output``."""
-    return attrs.get("output.value") if "output.value" in attrs else attrs.get("output")
+    """The tool/LLM output: OpenInference ``output.value``, the OTel GenAI tool convention's
+    ``gen_ai.tool.call.result``, or a plain ``output``."""
+    return _first_present(attrs, "output.value", "gen_ai.tool.call.result", "output")
+
+
+# OTel GenAI instrumentations record tool arguments/results only when content capture is enabled.
+_GENAI_CAPTURE_HINT = (
+    " — OTel GenAI instrumentations record tool content only when opted in (e.g. "
+    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true)"
+)
 
 
 def _otlp_value(v: Any) -> Any:
@@ -208,28 +225,6 @@ def _flatten_spans(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _unwrap_call_input(value: dict[str, Any]) -> dict[str, Any]:
-    """Unwrap a wrapped tool input (``{"args": [...], "kwargs": {...}}``) into a flat arg dict.
-
-    Real OpenInference exports (smolagents/Patronus in TRAIL) record a tool's arguments as
-    positional ``args`` + keyword ``kwargs`` (with occasional framework keys like
-    ``sanitize_inputs_outputs``). The real argument dict is ``kwargs`` merged with any positional
-    dict; anything else is returned unchanged.
-    """
-    if "kwargs" not in value and "args" not in value:
-        return value
-    merged: dict[str, Any] = {}
-    args = value.get("args")
-    if isinstance(args, list):
-        for a in args:
-            if isinstance(a, dict):
-                merged.update(a)
-    kwargs = value.get("kwargs")
-    if isinstance(kwargs, dict):
-        merged.update(kwargs)
-    return merged
-
-
 def _parse_value(raw: Any) -> tuple[Any, str | None]:
     """Parse an OpenInference ``*.value`` (often a JSON string). Return ``(value, raw_text)``.
 
@@ -277,18 +272,6 @@ def _unwrap_tool_message(value: Any) -> tuple[Any, str | None]:
         status = data.get("status")
         return content, (str(status).lower() if status is not None else None)
     return value, None
-
-
-def _args_from(raw: Any) -> tuple[dict[str, Any], str | None]:
-    value, raw_text = _parse_value(raw)
-    if isinstance(value, dict):
-        unwrapped = _unwrap_call_input(value)
-        if unwrapped:
-            return unwrapped, None
-        return {}, raw if isinstance(raw, str) else None
-    return {}, raw_text if isinstance(raw_text, str) else (
-        str(value) if value is not None else None
-    )
 
 
 def _status_fields(span: dict[str, Any]) -> tuple[str, str | None]:
@@ -456,31 +439,65 @@ def _genai_input_seed(attrs: dict[str, Any]) -> list[Message]:
     return seeded
 
 
-def _llm_tool_call_args(
-    parsed: list[tuple[dict[str, Any], dict[str, Any]]],
-) -> dict[str, list[dict[str, Any]]]:
-    """Structured tool-call arguments from LLM spans, indexed by tool name in span order.
+def _llm_tool_calls(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Every tool call the model emitted, in span order: ``{"id", "name", "raw"}``.
 
     Some instrumentors (LangChain / LangGraph) record a TOOL span's ``input.value`` as a *lossy bare
-    scalar* — e.g. ``"A100"`` instead of ``{"order_id": "A100"}`` — while the model's actual, valid
-    arguments live on the originating LLM span's ``tool_calls.*.tool_call.function.arguments``. A
-    TOOL span whose own input did not parse to an argument object recovers its arguments from here.
+    value* — ``"A100"`` instead of ``{"order_id": "A100"}`` — while the model's real arguments live
+    on the originating LLM span's ``tool_calls.*.tool_call.function.arguments``. A TOOL span whose
+    own input is not an argument object recovers the model's arguments from here (see
+    :func:`_match_llm_call`).
 
-    Only the LLM span's ``llm.output_messages`` (the newly emitted calls) are read — never the
-    replayed ``input_messages`` — so each call is indexed once, and only when its arguments parse to
-    a non-empty dict (a genuinely malformed model call yields nothing here, so R6 still fires).
+    Only ``llm.output_messages`` (the newly emitted calls) are read — never the replayed
+    ``input_messages`` — so each call appears once. Every call is kept, including ones with empty or
+    malformed arguments: dropping them is what misaligned positional pairing.
     """
-    by_tool: dict[str, list[dict[str, Any]]] = {}
+    calls: list[dict[str, Any]] = []
     for span, attrs in parsed:
         if _span_kind(span, attrs) != "LLM":
             continue
         for msg in _collect_messages(attrs, "llm.output_messages"):
             for _i, tc in sorted(msg.get("tool_calls", {}).items()):
-                name = str(tc.get("name", ""))
-                c_args, _ = _args_from(tc.get("arguments"))
-                if name and c_args:
-                    by_tool.setdefault(name, []).append(c_args)
-    return by_tool
+                name = str(tc.get("name") or "")
+                if name:
+                    calls.append(
+                        {"id": str(tc.get("id") or ""), "name": name, "raw": tc.get("arguments")}
+                    )
+    return calls
+
+
+def _tool_span_call_id(attrs: dict[str, Any]) -> str:
+    """The id of the model ``tool_call`` a TOOL span executed, when the trace records one: the OTel
+    GenAI ``gen_ai.tool.call.id``, or the ``tool_call_id`` LangChain writes into the span's output
+    ``ToolMessage``."""
+    for key in ("gen_ai.tool.call.id", "tool_call.id"):
+        if attrs.get(key):
+            return str(attrs[key])
+    output, _ = _parse_value(_output_value(attrs))
+    if isinstance(output, dict) and output.get("type") == "tool":
+        data = output.get("data")
+        if isinstance(data, dict) and data.get("tool_call_id"):
+            return str(data["tool_call_id"])
+    return ""
+
+
+def _match_llm_call(
+    calls: list[dict[str, Any]], claimed: set[int], call_id: str, name: str
+) -> dict[str, Any] | None:
+    """Claim the model ``tool_call`` a TOOL span executed: by id when the trace carries ids, else
+    the earliest unclaimed call to the same tool. Every TOOL span claims its call (even when its own
+    input was usable) so name-order pairing stays aligned for the spans after it."""
+    if call_id and any(c["id"] for c in calls):
+        for i, c in enumerate(calls):
+            if i not in claimed and c["id"] == call_id:
+                claimed.add(i)
+                return c
+        return None
+    for i, c in enumerate(calls):
+        if i not in claimed and c["name"] == name:
+            claimed.add(i)
+            return c
+    return None
 
 
 def _normalize_arg_schema(parsed: Any) -> dict[str, Any] | None:
@@ -558,8 +575,9 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
     ordered = sorted(flat_spans, key=lambda s: (_start_key(s), _span_id(s)))
     parsed = [(s, _attrs(s)) for s in ordered]
     has_tool_span = any(_span_kind(s, a) == "TOOL" for s, a in parsed)
-    # Only needed to repair lossy TOOL-span inputs (below); skip the work when there are no tools.
-    llm_args_by_tool = _llm_tool_call_args(parsed) if has_tool_span else {}
+    # Only needed to recover lossy TOOL-span inputs (below); skip the work when there are no tools.
+    llm_calls = _llm_tool_calls(parsed) if has_tool_span else []
+    claimed: set[int] = set()
     tool_schemas = _tool_schemas(parsed)  # discovery-only; feeds `tracelint init`, not the rules
 
     steps: list[Step] = []
@@ -580,21 +598,30 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
                 or span.get("name")
                 or ""
             )
-            args, raw_text = _args_from(_input_value(attrs))
-            if not args and name:
-                # Lossy TOOL-span input (e.g. LangChain's bare scalar): recover the model's real
-                # arguments from the matching LLM tool_call. Clearing raw_text prevents a false R6
-                # (the arguments were never malformed — the TOOL span just under-recorded them).
-                recovered = llm_args_by_tool.get(name)
-                if recovered:
-                    args, raw_text = recovered.pop(0), None
+            # What the tool received. When that is not an argument object (LangChain's bare value,
+            # a redacted or missing input), fall back to what the *model* emitted for this call; if
+            # neither is available the arguments are unknown — never `{}` posing as "no arguments".
+            raw_input = _input_value(attrs)
+            call_args = tool_input_args(raw_input)
+            emitted = (
+                _match_llm_call(llm_calls, claimed, _tool_span_call_id(attrs), name)
+                if llm_calls
+                else None
+            )
+            if call_args.unavailable is not None:
+                if emitted is not None:
+                    call_args = model_call_args(emitted["raw"])
+                elif raw_input is None and attrs.get(_GENAI_OP):
+                    hint = call_args.unavailable + _GENAI_CAPTURE_HINT
+                    call_args = ToolArgs({}, unavailable=hint)
             steps.append(
                 ToolCall(
                     call_id=call_id,
                     name=name,
-                    args=args,
-                    raw_text=raw_text,
+                    args=call_args.args,
+                    raw_text=call_args.raw_text,
                     schema=tool_schemas.get(name),
+                    args_unavailable=call_args.unavailable,
                 )
             )
             is_err, err_msg = _is_error_span(span, attrs)
@@ -615,14 +642,14 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
                     steps.append(Message(Role.ASSISTANT, msg["content"]))
                 if not has_tool_span:
                     for _i, tc in sorted(msg.get("tool_calls", {}).items()):
-                        c_args, c_raw = _args_from(tc.get("arguments"))
+                        emitted_args = model_call_args(tc.get("arguments"))
                         c_name = str(tc.get("name", ""))
                         steps.append(
                             ToolCall(
                                 call_id=str(tc.get("id", "")),
                                 name=c_name,
-                                args=c_args,
-                                raw_text=c_raw,
+                                args=emitted_args.args,
+                                raw_text=emitted_args.raw_text,
                                 schema=tool_schemas.get(c_name),
                             )
                         )

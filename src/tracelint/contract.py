@@ -140,7 +140,8 @@ def discover_contract(traces: Iterable[Trace]) -> ContractDraft:
             if name not in observed:
                 order.append(name)
                 observed[name] = []
-            observed[name].append(call.args or {})
+            if call.args_unavailable is None:  # unknown arguments say nothing about the schema
+                observed[name].append(call.args or {})
             if call.schema and name not in schemas:
                 schemas[name] = call.schema
 

@@ -83,6 +83,9 @@ tracelint demo --html demo.html
    **behavioral** recovery only ("did not crash"), a weaker claim than correctness.
 4. A trace is only as complete as its instrumentation. A rule whose required field is missing is
    **suppressed with a stated reason** — `tracelint` never lints a partial trace as if complete.
+   That includes a tool call's arguments: when the trace records them redacted, positionally, or
+   as a bare value, and doesn't hold the model's own call either, they are *unknown* (never read
+   as `{}`), and the checks that need them report those calls as not checked.
 
 ## Supported formats
 

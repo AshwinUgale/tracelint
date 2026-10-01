@@ -10,9 +10,9 @@ pretend the trace is complete.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
+from tracelint.adapters._common import tool_input_args
 from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolResult, Trace
 
 
@@ -40,42 +40,6 @@ def _get(data: dict[str, Any], *keys: str) -> Any:
 
 def _run_type(run: dict[str, Any]) -> str:
     return str(_get(run, "run_type", "runType") or "").lower()
-
-
-def _unwrap_args(raw: dict[str, Any]) -> dict[str, Any]:
-    if set(raw.keys()) <= {"args", "kwargs"}:
-        kwargs = raw.get("kwargs")
-        if isinstance(kwargs, dict) and kwargs:
-            return dict(kwargs)
-        args = raw.get("args")
-        if isinstance(args, list) and len(args) == 1 and isinstance(args[0], dict):
-            return dict(args[0])
-        if isinstance(args, list) and args:
-            # Positional-only args that don't flatten to a dict: preserve them under
-            # ``args`` rather than dropping the call's arguments to ``{}`` (which would
-            # make R1 false-positive a missing required field).
-            return {"args": list(args)}
-        if isinstance(kwargs, dict):
-            return dict(kwargs)
-    if set(raw.keys()) == {"input"} and isinstance(raw["input"], dict):
-        return dict(raw["input"])
-    return dict(raw)
-
-
-def _tool_args(raw: Any) -> tuple[dict[str, Any], str | None]:
-    if raw is None:
-        return {}, None
-    if isinstance(raw, dict):
-        return _unwrap_args(raw), None
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return {"input": raw}, raw
-        return (
-            (_unwrap_args(parsed), None) if isinstance(parsed, dict) else ({"input": parsed}, raw)
-        )
-    return {"input": raw}, str(raw)
 
 
 def _status_from_text(value: Any) -> ResultStatus:
@@ -200,10 +164,16 @@ def from_langsmith_run(run: Any, *, run_id: str | None = None, final: Any = None
         kind = _run_type(child)
         if kind == "tool":
             call_id = str(_get(child, "id", "run_id", "runId") or f"run-{len(steps)}")
-            args, raw_text = _tool_args(_get(child, "inputs", "input"))
+            # A tool run records what the tool *received*: unwrapped by the shared normalizer, and
+            # unknown — never `{}` or a made-up `{"input": ...}` — when bare, positional, or absent.
+            call_args = tool_input_args(_get(child, "inputs", "input"))
             steps.append(
                 ToolCall(
-                    call_id=call_id, name=str(child.get("name") or ""), args=args, raw_text=raw_text
+                    call_id=call_id,
+                    name=str(child.get("name") or ""),
+                    args=call_args.args,
+                    raw_text=call_args.raw_text,
+                    args_unavailable=call_args.unavailable,
                 )
             )
             status, error, http = _result_signals(child)
