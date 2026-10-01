@@ -6,6 +6,38 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: lossy argument records no longer fail CI — the arguments are *unknown*, not `{}`.**
+  Instrumentation often records a tool call's arguments lossily: as a bare value (LangChain
+  single-input and LCEL tools), redacted (`OPENINFERENCE_HIDE_INPUTS`), positionally with no
+  parameter names (`{"args": ["A100"], "kwargs": {}}` from smolagents, Langfuse `@observe`,
+  LangSmith), or not at all (OTel GenAI without content capture). The adapters turned these into
+  `{}` or a made-up object, so R1 reported every required field missing, R6 called the record
+  malformed JSON, and R8 compared made-up values: **exit 2 on valid runs**. Where the trace has the
+  real arguments (the `tool_call` the model emitted), they are recovered; otherwise the call carries
+  `ToolCall.args_unavailable` with the reason. R1 suppresses such a call with that reason, and R2b,
+  R3, R4, R5 and R8 disclose the calls they could not check, so an unknown never reads as a clean
+  pass.
+- **Changed: R6 is a hard defect only for text the model emitted.** Broken JSON in a tool's own
+  record, with no model call in the trace to confirm it, is now an R6 `candidate`: an exporter
+  truncating a long input (a coding agent's `write_file` content, say) leaves the same text, and
+  that failed CI on every such run.
+- **Fix: one argument normalizer for every adapter** (`adapters/_common.py`, the argument part of
+  #37). OpenInference/OTel, Langfuse and LangSmith now read the same record the same way. A
+  positional argument object keeps its names, and a real parameter named `args`
+  (`run_command(command, args)`) is no longer mistaken for a call envelope.
+- **Fix: a false R8 duplicate from mispaired calls.** LangChain records some TOOL inputs as bare
+  values and others as objects, and recovery paired a later bare span with an earlier call's
+  arguments — a "duplicate SMS" that never happened. Each TOOL span now claims its own model
+  `tool_call`: by id when the trace records one, else in order. Model calls with empty or malformed
+  arguments are kept in the pairing instead of dropped.
+- **Fix: OTel GenAI tool content.** `execute_tool` spans' `gen_ai.tool.call.arguments` and
+  `gen_ai.tool.call.result` are read; when content capture is off, the reason names the opt-in
+  (`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`).
+- Native JSON now round-trips a call's `args_unavailable` and discovered `schema`.
+- Regression fixtures: real lossy records in `tests/fixtures/lossy_args/` (LCEL string tool,
+  LangGraph with hidden inputs and outputs, hidden inputs only, optional arguments, a LangSmith LCEL
+  run), generated offline with a scripted model.
+
 ## [0.9.0]
 
 Found by running a real LangGraph 1.2 agent (openinference-instrumentation-langchain 0.1.76,

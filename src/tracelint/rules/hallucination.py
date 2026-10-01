@@ -43,6 +43,8 @@ class HallucinatedArgRule(Rule):
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         findings: list[Finding] = []
         for call in trace.tool_calls():
+            if call.args_unavailable is not None:
+                continue  # the real arguments are unknown — no values to trace (disclosed below)
             spec = registry.get(call.name)
             props = (spec.schema or {}).get("properties", {}) if spec and spec.schema else {}
             origins = spec.value_origins if spec else {}
@@ -54,6 +56,9 @@ class HallucinatedArgRule(Rule):
                 if graph.derive(value).derivable:
                     continue
                 findings.append(self._finding(call, field_name, value, origins.get(field_name)))
+        disclosure = self.unknown_args_suppression(trace.tool_calls(), "argument provenance")
+        if disclosure is not None:
+            findings.append(disclosure)
         return findings
 
     def _checkable(self, value: Any, subschema: dict[str, Any], origin: str | None) -> bool:

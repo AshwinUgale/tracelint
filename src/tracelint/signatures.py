@@ -21,7 +21,7 @@ import json
 import re
 from typing import Any
 
-from tracelint.trace import ResultStatus, ToolResult
+from tracelint.trace import ResultStatus, ToolCall, ToolResult
 from tracelint.valueutil import normalize
 
 # Result-class states that mean "still waiting" — a poll in progress, not a stuck loop.
@@ -66,6 +66,18 @@ def normalize_args(args: dict[str, Any]) -> str:
     """Canonical, volatile-field-stripped JSON of a call's arguments."""
     filtered = {k: v for k, v in args.items() if k.lower() not in VOLATILE_ARG_KEYS}
     return json.dumps(filtered, sort_keys=True, default=str)
+
+
+def call_args_key(call: ToolCall) -> str:
+    """The equality key the repeat rules (R4/R5) compare calls by.
+
+    A call whose real arguments the trace did not record gets a key unique to that call: two
+    *unknown* argument sets cannot be shown equal, so a redacted or uncaptured record must never
+    make a loop or a redundant call (the rules disclose those calls as not checked instead).
+    """
+    if call.args_unavailable is not None:
+        return f"\x00unknown-args:{call.index}:{call.call_id}"
+    return normalize_args(call.args)
 
 
 def result_class(result: ToolResult | None) -> str:

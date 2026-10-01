@@ -25,6 +25,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+#: ``evidence["cause"]`` of a suppression caused by call arguments the trace did not record — a gap
+#: in the record that a ``tools.json`` cannot fill (unlike a missing schema or contract).
+ARGS_UNKNOWN = "arguments_unknown"
+
 
 class ConfidenceTier(str, Enum):
     """How much to trust a finding. See module docstring."""

@@ -20,7 +20,9 @@ is expressed (Trap 3 — "what counts as an error is partly tool-specific"):
     legitimate error forwarding/logging), or a structured error the agent never retried before
     proceeding (judging whether a natural-language reply "acknowledged" it is not deterministic).
 
-Without tool metadata, R2b cannot reach the hard tier — no ground truth, no hard verdict.
+Without tool metadata, R2b cannot reach the hard tier — no ground truth, no hard verdict. A later
+call whose arguments the trace did not record cannot be checked for reuse, so it is disclosed as not
+checked rather than read as "no value reused".
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from tracelint.rules.base import Rule
 from tracelint.signatures import is_structured_error as _is_structured_error
 from tracelint.signatures import looks_empty as _looks_empty
 from tracelint.tools import ToolRegistry
-from tracelint.trace import ResultStatus, ToolResult, Trace
+from tracelint.trace import ResultStatus, ToolCall, ToolResult, Trace
 from tracelint.valueutil import significant_values as _significant_values
 
 # Heuristic markers for an exception-like string in a free-form (unknown-status) result. Kept
@@ -273,6 +275,7 @@ class ErrorHandlingRule(Rule):
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         findings: list[Finding] = []
         calls = trace.tool_calls()
+        unchecked: list[ToolCall] = []  # later calls whose unrecorded arguments may hold the value
         for result in trace.tool_results():
             errored_call = trace.call_for(result)
             meta = registry.metadata_for(errored_call.name) if errored_call else None
@@ -286,6 +289,10 @@ class ErrorHandlingRule(Rule):
             consumed: set[str] = set()
             for call in calls:
                 if call.index <= result.index:
+                    continue
+                if call.args_unavailable is not None:
+                    if err_vals:  # a value that could have flowed into the unrecorded arguments
+                        unchecked.append(call)
                     continue
                 common = err_vals & _significant_values(call.args)
                 if common:
@@ -303,6 +310,11 @@ class ErrorHandlingRule(Rule):
             retried = any(c.name == failing and c.index > result.index for c in calls)
             if not retried:
                 findings.append(self._unhandled(result, failing))
+        disclosure = self.unknown_args_suppression(
+            unchecked, "reuse of values from an earlier failed result"
+        )
+        if disclosure is not None:
+            findings.append(disclosure)
         return findings
 
     def _consumption(self, result, errored_call, consumer, consumed, registry) -> Finding:

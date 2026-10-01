@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from tracelint import ErrorHandlingRule, ToolErrorEventRule, from_langsmith_run, lint_trace
+from tracelint import (
+    ErrorHandlingRule,
+    ToolErrorEventRule,
+    default_rules,
+    from_langsmith_run,
+    lint_trace,
+)
 from tracelint.findings import ConfidenceTier
 from tracelint.tools import ToolRegistry
 from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult
@@ -111,13 +117,33 @@ def test_execution_order_integers_sort_numerically():
     assert [c.name for c in trace.tool_calls()] == ["t1", "t2", "t10"]
 
 
-def test_positional_tool_args_preserved_when_kwargs_empty():
-    # {"args": [...], "kwargs": {}} must not collapse the call's arguments to {}.
+def test_positional_tool_args_are_unknown_not_empty():
+    # {"args": ["Z999"], "kwargs": {}} records a positional value with no parameter name. It must
+    # not collapse to `{}` (read as "every required field missing") or a made-up {"args": [...]}:
+    # the arguments are unknown, and R1 discloses that instead of failing CI on a valid call.
     trace = from_langsmith_run(_tool_run("t", "do", {"args": ["Z999"], "kwargs": {}}))
 
     call = trace.tool_calls()[0]
-    assert call.args != {}
-    assert call.args.get("args") == ["Z999"]
+    assert call.args == {}
+    assert call.args_unavailable and "positionally" in call.args_unavailable
+
+    registry = ToolRegistry.from_dict(
+        {
+            "do": {
+                "schema": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                }
+            }
+        }
+    )
+    report = lint_trace(trace, default_rules(), registry)
+    assert not report.has_hard_defect
+    assert any(
+        f.rule == "R1" and "arguments unknown" in (f.suppressed_reason or "")
+        for f in report.suppressions
+    )
 
 
 def test_run_level_http_status_flags_error():

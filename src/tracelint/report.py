@@ -376,6 +376,14 @@ def _explainer() -> str:
     )
 
 
+def _args_text(call: ToolCall) -> str:
+    """A call's arguments for display — or, when the trace didn't record them, that they're unknown
+    (an empty ``()`` would wrongly read as a zero-argument call)."""
+    if call.args_unavailable is not None:
+        return "arguments unknown"
+    return ", ".join(f"{k}={v!r}" for k, v in (call.args or {}).items())
+
+
 def _step_line(step: object) -> str:
     if isinstance(step, Message):
         return (
@@ -383,7 +391,7 @@ def _step_line(step: object) -> str:
             f"<span class='lc'>{_esc(step.content or '')}</span></li>"
         )
     if isinstance(step, ToolCall):
-        args = ", ".join(f"{k}={v!r}" for k, v in (step.args or {}).items())
+        args = _args_text(step)
         return (
             "<li><span class='lm'>tool &rarr;</span>"
             f"<span class='lc'><code>{_esc(step.name)}</code>({_esc(args)})</span></li>"
@@ -612,7 +620,7 @@ def _tstep_row(step: object, hit_short: str, badge: str) -> str:
     if isinstance(step, Message):
         kind, body = step.role.value, f"<span class='tc'>{_esc(step.content or '')}</span>"
     elif isinstance(step, ToolCall):
-        args = ", ".join(f"{k}={v!r}" for k, v in (step.args or {}).items())
+        args = _args_text(step)
         kind = "tool →"
         body = f"<span class='tc'><code>{_esc(step.name)}</code>({_esc(args)})</span>"
     elif isinstance(step, ToolResult):

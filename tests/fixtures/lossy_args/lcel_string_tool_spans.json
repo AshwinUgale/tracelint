@@ -1,0 +1,87 @@
+[
+ {
+  "name": "PromptTemplate",
+  "span_id": "458fa4d8f9f97a9a",
+  "trace_id": "705314daa377b201e7927c30e07faacc",
+  "parent_id": "2f32641ae9ea97f0",
+  "start_time": 1790874762239984128,
+  "end_time": 1790874762240698112,
+  "status_code": "OK",
+  "attributes": {
+   "input.value": "What is the status of ticket TCK-9001?",
+   "output.value": "{\"text\": \"Extract the ticket id from: What is the status of ticket TCK-9001?\", \"type\": \"StringPromptValue\"}",
+   "output.mime_type": "application/json",
+   "llm.prompt_template.template": "Extract the ticket id from: {q}",
+   "llm.prompt_template.variables": "{\"q\": \"What is the status of ticket TCK-9001?\"}",
+   "openinference.span.kind": "PROMPT"
+  }
+ },
+ {
+  "name": "FakeListLLM",
+  "span_id": "d76d5a46dd5ffc37",
+  "trace_id": "705314daa377b201e7927c30e07faacc",
+  "parent_id": "2f32641ae9ea97f0",
+  "start_time": 1790874762242025984,
+  "end_time": 1790874762242696960,
+  "status_code": "OK",
+  "attributes": {
+   "input.value": "{\"prompts\": [\"Extract the ticket id from: What is the status of ticket TCK-9001?\"]}",
+   "input.mime_type": "application/json",
+   "output.value": "{\"generations\": [[{\"text\": \"TCK-9001\", \"generation_info\": null, \"type\": \"Generation\"}]], \"llm_output\": null, \"run\": null, \"type\": \"LLMResult\"}",
+   "output.mime_type": "application/json",
+   "llm.prompts": [
+    "Extract the ticket id from: What is the status of ticket TCK-9001?"
+   ],
+   "llm.invocation_parameters": "{\"responses\": [\"TCK-9001\"], \"_type\": \"fake-list\", \"stop\": null}",
+   "llm.provider": "fakelist",
+   "metadata": "{\"ls_provider\": \"fakelist\", \"ls_model_type\": \"llm\", \"lc_versions\": {\"langchain-core\": \"1.6.5\", \"langchain\": \"1.4.3\"}}",
+   "openinference.span.kind": "LLM"
+  }
+ },
+ {
+  "name": "StrOutputParser",
+  "span_id": "af5a876e3c66fea6",
+  "trace_id": "705314daa377b201e7927c30e07faacc",
+  "parent_id": "2f32641ae9ea97f0",
+  "start_time": 1790874762243369984,
+  "end_time": 1790874762243776000,
+  "status_code": "OK",
+  "attributes": {
+   "input.value": "TCK-9001",
+   "output.value": "TCK-9001",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "lookup_ticket",
+  "span_id": "18bd0f62a00bfa81",
+  "trace_id": "705314daa377b201e7927c30e07faacc",
+  "parent_id": "2f32641ae9ea97f0",
+  "start_time": 1790874762244096000,
+  "end_time": 1790874762244790016,
+  "status_code": "OK",
+  "attributes": {
+   "input.value": "TCK-9001",
+   "output.value": "{\"ticket_id\": \"TCK-9001\", \"state\": \"open\"}",
+   "output.mime_type": "application/json",
+   "tool.name": "lookup_ticket",
+   "tool.description": "Look up a support ticket by id.",
+   "openinference.span.kind": "TOOL"
+  }
+ },
+ {
+  "name": "RunnableSequence",
+  "span_id": "2f32641ae9ea97f0",
+  "trace_id": "705314daa377b201e7927c30e07faacc",
+  "parent_id": null,
+  "start_time": 1790874762239099904,
+  "end_time": 1790874762245008896,
+  "status_code": "OK",
+  "attributes": {
+   "input.value": "What is the status of ticket TCK-9001?",
+   "output.value": "{\"ticket_id\": \"TCK-9001\", \"state\": \"open\"}",
+   "output.mime_type": "application/json",
+   "openinference.span.kind": "CHAIN"
+  }
+ }
+]

@@ -160,6 +160,11 @@ class ToolCall:
     OpenInference ``tool.parameters`` / ``llm.tools.*.tool.json_schema``); it is discovery-only —
     rules validate against the operator's ``tools.json``, not this — and it lets ``tracelint init``
     bootstrap a starter contract.
+
+    ``args_unavailable`` is set when the trace does not record the call's real arguments (redacted,
+    not captured, recorded as a bare or positional value): it holds the reason, and ``args`` is then
+    ``{}`` *without* meaning "no arguments". Rules that would read the arguments disclose that
+    instead of asserting a defect — fail-closed applied to the data, not just to the rules.
     """
 
     call_id: str
@@ -170,6 +175,7 @@ class ToolCall:
     meta: StepMeta | None = None
     source: SourceRef | None = None
     schema: dict[str, Any] | None = None
+    args_unavailable: str | None = None
 
     kind = "tool_call"
 
@@ -180,6 +186,8 @@ class ToolCall:
             "name": self.name,
             "args": self.args,
         }
+        if self.args_unavailable is not None:
+            out["args_unavailable"] = self.args_unavailable
         if self.raw_text is not None:
             out["raw_text"] = self.raw_text
         if self.schema is not None:
@@ -256,6 +264,8 @@ def _step_from_dict(data: dict[str, Any]) -> Step:
             raise ValueError(
                 f"tool_call 'args' must be an object, got {type(args).__name__}"
             )
+        unavailable = data.get("args_unavailable")
+        schema = data.get("schema")
         return ToolCall(
             call_id=str(data["call_id"]),
             name=data["name"],
@@ -263,6 +273,8 @@ def _step_from_dict(data: dict[str, Any]) -> Step:
             raw_text=data.get("raw_text"),
             meta=meta,
             source=source,
+            schema=schema if isinstance(schema, dict) else None,
+            args_unavailable=str(unavailable) if unavailable else None,
         )
     if kind == ToolResult.kind:
         return ToolResult(

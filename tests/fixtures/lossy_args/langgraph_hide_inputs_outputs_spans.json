@@ -1,0 +1,403 @@
+[
+ {
+  "name": "Prompt",
+  "span_id": "49fc39defb08f5e5",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "ae930a715b462c3e",
+  "start_time": 1790874352709882880,
+  "end_time": 1790874352710190080,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 1, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\", \"checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "ScriptedModel",
+  "span_id": "c462fe84421104c0",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "ae930a715b462c3e",
+  "start_time": 1790874352712922112,
+  "end_time": 1790874352715828992,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "llm.invocation_parameters": "{\"_type\": \"fake-messages-list-chat-model\", \"stop\": null}",
+   "llm.provider": "scriptedmodel",
+   "metadata": "{\"ls_integration\": \"langchain_chat_model\", \"langgraph_step\": 1, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\", \"checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\", \"ls_provider\": \"scriptedmodel\", \"ls_model_type\": \"chat\", \"lc_versions\": {\"langchain-core\": \"1.6.5\", \"langchain\": \"1.4.3\"}}",
+   "openinference.span.kind": "LLM"
+  }
+ },
+ {
+  "name": "RunnableSequence",
+  "span_id": "ae930a715b462c3e",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "b7117a4eb86cfb90",
+  "start_time": 1790874352709338880,
+  "end_time": 1790874352716803072,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 1, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\", \"checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "call_model",
+  "span_id": "fa31390bc3af50c6",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "b7117a4eb86cfb90",
+  "start_time": 1790874352708254208,
+  "end_time": 1790874352717485056,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 1, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "should_continue",
+  "span_id": "0e1fa4751f6abf9f",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "b7117a4eb86cfb90",
+  "start_time": 1790874352718380032,
+  "end_time": 1790874352718839808,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 1, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "agent",
+  "span_id": "b7117a4eb86cfb90",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "300fbd2b549a9fd8",
+  "start_time": 1790874352707439872,
+  "end_time": 1790874352719680000,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 1, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:13bd0464-0b8a-7e98-4e2e-0cb0d1243dd6\"}",
+   "openinference.span.kind": "AGENT"
+  }
+ },
+ {
+  "name": "get_order",
+  "span_id": "40b729547f892f02",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "0c3d69e89bda78b3",
+  "start_time": 1790874352723359232,
+  "end_time": 1790874352724919040,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "tool.name": "get_order",
+   "tool.description": "Look up an order.",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 2, \"langgraph_node\": \"tools\", \"langgraph_triggers\": [\"__pregel_push\"], \"langgraph_path\": [\"__pregel_push\", 0, false], \"langgraph_checkpoint_ns\": \"tools:744ce3aa-cbc9-3289-103b-e367f20d2b96\", \"checkpoint_ns\": \"tools:744ce3aa-cbc9-3289-103b-e367f20d2b96\"}",
+   "openinference.span.kind": "TOOL"
+  }
+ },
+ {
+  "name": "tools",
+  "span_id": "0c3d69e89bda78b3",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "300fbd2b549a9fd8",
+  "start_time": 1790874352721165824,
+  "end_time": 1790874352726430976,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 2, \"langgraph_node\": \"tools\", \"langgraph_triggers\": [\"__pregel_push\"], \"langgraph_path\": [\"__pregel_push\", 0, false], \"langgraph_checkpoint_ns\": \"tools:744ce3aa-cbc9-3289-103b-e367f20d2b96\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "Prompt",
+  "span_id": "e3d82a8933338629",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "80fbe4f573460c46",
+  "start_time": 1790874352730225152,
+  "end_time": 1790874352730642944,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 3, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\", \"checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "ScriptedModel",
+  "span_id": "64c3618348293e38",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "80fbe4f573460c46",
+  "start_time": 1790874352731915008,
+  "end_time": 1790874352733124864,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "llm.invocation_parameters": "{\"_type\": \"fake-messages-list-chat-model\", \"stop\": null}",
+   "llm.provider": "scriptedmodel",
+   "metadata": "{\"ls_integration\": \"langchain_chat_model\", \"langgraph_step\": 3, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\", \"checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\", \"ls_provider\": \"scriptedmodel\", \"ls_model_type\": \"chat\", \"lc_versions\": {\"langchain-core\": \"1.6.5\", \"langchain\": \"1.4.3\"}}",
+   "openinference.span.kind": "LLM"
+  }
+ },
+ {
+  "name": "RunnableSequence",
+  "span_id": "80fbe4f573460c46",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "e403ef09c9ce1a96",
+  "start_time": 1790874352729656064,
+  "end_time": 1790874352734128896,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 3, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\", \"checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "call_model",
+  "span_id": "f79f149f0c958db8",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "e403ef09c9ce1a96",
+  "start_time": 1790874352728564992,
+  "end_time": 1790874352734856960,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 3, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "should_continue",
+  "span_id": "c9f3d8af3bff2c12",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "e403ef09c9ce1a96",
+  "start_time": 1790874352735822080,
+  "end_time": 1790874352736273920,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 3, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "agent",
+  "span_id": "e403ef09c9ce1a96",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "300fbd2b549a9fd8",
+  "start_time": 1790874352728022016,
+  "end_time": 1790874352737440000,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 3, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:eea691d1-3808-481f-2689-32bdaf1df06b\"}",
+   "openinference.span.kind": "AGENT"
+  }
+ },
+ {
+  "name": "refund_order",
+  "span_id": "2df342d4a752930b",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "c3ceb325026ed09f",
+  "start_time": 1790874352741076992,
+  "end_time": 1790874352743115776,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "tool.name": "refund_order",
+   "tool.description": "Refund an order.",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 4, \"langgraph_node\": \"tools\", \"langgraph_triggers\": [\"__pregel_push\"], \"langgraph_path\": [\"__pregel_push\", 0, false], \"langgraph_checkpoint_ns\": \"tools:5a8702b7-2915-de8b-76a5-05b9415f8ae9\", \"checkpoint_ns\": \"tools:5a8702b7-2915-de8b-76a5-05b9415f8ae9\"}",
+   "openinference.span.kind": "TOOL"
+  }
+ },
+ {
+  "name": "tools",
+  "span_id": "c3ceb325026ed09f",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "300fbd2b549a9fd8",
+  "start_time": 1790874352738828800,
+  "end_time": 1790874352744442880,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 4, \"langgraph_node\": \"tools\", \"langgraph_triggers\": [\"__pregel_push\"], \"langgraph_path\": [\"__pregel_push\", 0, false], \"langgraph_checkpoint_ns\": \"tools:5a8702b7-2915-de8b-76a5-05b9415f8ae9\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "Prompt",
+  "span_id": "ed28a313102cb591",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "e34d3fc318d4b8f3",
+  "start_time": 1790874352748264960,
+  "end_time": 1790874352748641024,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 5, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\", \"checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "ScriptedModel",
+  "span_id": "3f4cbdd8270bd0dd",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "e34d3fc318d4b8f3",
+  "start_time": 1790874352750007040,
+  "end_time": 1790874352751429120,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "llm.invocation_parameters": "{\"_type\": \"fake-messages-list-chat-model\", \"stop\": null}",
+   "llm.provider": "scriptedmodel",
+   "metadata": "{\"ls_integration\": \"langchain_chat_model\", \"langgraph_step\": 5, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\", \"checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\", \"ls_provider\": \"scriptedmodel\", \"ls_model_type\": \"chat\", \"lc_versions\": {\"langchain-core\": \"1.6.5\", \"langchain\": \"1.4.3\"}}",
+   "openinference.span.kind": "LLM"
+  }
+ },
+ {
+  "name": "RunnableSequence",
+  "span_id": "e34d3fc318d4b8f3",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "663a3540f74f7e1a",
+  "start_time": 1790874352747793920,
+  "end_time": 1790874352752273152,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 5, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\", \"checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "call_model",
+  "span_id": "83c0eef1f4f644bf",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "663a3540f74f7e1a",
+  "start_time": 1790874352746691840,
+  "end_time": 1790874352752867072,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 5, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "should_continue",
+  "span_id": "ccbab7ad6059b478",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "663a3540f74f7e1a",
+  "start_time": 1790874352753652992,
+  "end_time": 1790874352753969920,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 5, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ },
+ {
+  "name": "agent",
+  "span_id": "663a3540f74f7e1a",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": "300fbd2b549a9fd8",
+  "start_time": 1790874352745943040,
+  "end_time": 1790874352754492160,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\", \"langgraph_step\": 5, \"langgraph_node\": \"agent\", \"langgraph_triggers\": [\"branch:to:agent\"], \"langgraph_path\": [\"__pregel_pull\", \"agent\"], \"langgraph_checkpoint_ns\": \"agent:3ad2aa16-1d61-1f97-ad6b-464e53e8352b\"}",
+   "openinference.span.kind": "AGENT"
+  }
+ },
+ {
+  "name": "LangGraph",
+  "span_id": "300fbd2b549a9fd8",
+  "trace_id": "3ba4c231c1434b45e25deadfca574613",
+  "parent_id": null,
+  "start_time": 1790874352704532992,
+  "end_time": 1790874352755387904,
+  "status_code": "OK",
+  "status_message": null,
+  "events": [],
+  "attributes": {
+   "input.value": "__REDACTED__",
+   "output.value": "__REDACTED__",
+   "metadata": "{\"ls_integration\": \"langgraph\"}",
+   "openinference.span.kind": "CHAIN"
+  }
+ }
+]

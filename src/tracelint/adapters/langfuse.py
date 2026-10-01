@@ -40,6 +40,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from tracelint.adapters._common import tool_input_args
 from tracelint.trace import (
     Message,
     ResultStatus,
@@ -68,40 +69,6 @@ def _as_dict(trace: Any) -> dict[str, Any]:
         "from_langfuse_trace expects a Langfuse trace dict or an object exposing "
         ".model_dump()/.dict()"
     )
-
-
-def _unwrap_kwargs(d: dict[str, Any]) -> dict[str, Any]:
-    """Langfuse ``@observe`` records a wrapped function's inputs as ``{"args": [...],
-    "kwargs": {...}}``. The tool's real arguments live in ``kwargs`` (keyword call) or, when the
-    tool is called positionally with a single dict (``func({...})``), in ``args[0]`` — verified
-    against a real v4 trace where the arg dict landed in ``args[0]`` with an empty ``kwargs``.
-    Bounded to that exact shape so nothing else is second-guessed.
-    """
-    if set(d.keys()) <= {"args", "kwargs"}:
-        kwargs = d.get("kwargs")
-        if isinstance(kwargs, dict) and kwargs:
-            return dict(kwargs)
-        args = d.get("args")
-        if isinstance(args, list) and len(args) == 1 and isinstance(args[0], dict):
-            return dict(args[0])
-        if isinstance(kwargs, dict):
-            return dict(kwargs)
-    return d
-
-
-def _parse_tool_input(raw: Any) -> tuple[dict[str, Any], str | None]:
-    """Return ``(args, raw_text)`` for a tool observation's ``input`` (dict / JSON string)."""
-    if raw is None:
-        return {}, None
-    if isinstance(raw, dict):
-        return _unwrap_kwargs(raw), None
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
-            return {}, raw
-        return (_unwrap_kwargs(parsed), None) if isinstance(parsed, dict) else ({}, raw)
-    return {}, str(raw)
 
 
 def _parse_openai_arguments(raw: Any) -> tuple[dict[str, Any], str | None]:
@@ -265,14 +232,18 @@ def from_langfuse_trace(
         obs_id = str(obs["id"]) if obs.get("id") else None
         if _is_tool_observation(obs, known):
             call_id = str(obs.get("id") or f"obs-{len(steps)}")
-            args, raw_text = _parse_tool_input(obs.get("input"))
+            # The observation records what the tool *received* (``@observe`` wraps it as
+            # ``{"args": [...], "kwargs": {...}}``): unwrapped by the shared normalizer, and marked
+            # unknown — never `{}` — when it is a bare, positional, or missing value.
+            call_args = tool_input_args(obs.get("input"))
             steps.append(
                 ToolCall(
                     call_id=call_id,
                     name=str(obs.get("name") or ""),
-                    args=args,
-                    raw_text=raw_text,
+                    args=call_args.args,
+                    raw_text=call_args.raw_text,
                     source=_src(obs_id),
+                    args_unavailable=call_args.unavailable,
                 )
             )
             status, error, http = _result_signals(obs)

@@ -14,7 +14,8 @@ pytest.importorskip("opentelemetry.sdk")
 
 pytest_plugins = ["pytester"]
 
-# A helper the inner tests import to emit one OpenInference TOOL span on the capture's tracer.
+# Helpers the inner tests import to emit OpenInference spans on the capture's tracer: a TOOL span
+# (what a tool received) and an LLM span whose output is one tool call (what the model emitted).
 _EMIT = '''
 import json
 
@@ -24,6 +25,14 @@ def emit_tool_span(tracer, name, input_value, output):
         span.set_attribute("tool.name", name)
         span.set_attribute("input.value", input_value)
         span.set_attribute("output.value", json.dumps(output))
+
+def emit_model_tool_call(tracer, name, arguments):
+    with tracer.start_as_current_span("llm") as span:
+        span.set_attribute("openinference.span.kind", "LLM")
+        call = "llm.output_messages.0.message.tool_calls.0.tool_call."
+        span.set_attribute("llm.output_messages.0.message.role", "assistant")
+        span.set_attribute(call + "function.name", name)
+        span.set_attribute(call + "function.arguments", arguments)
 '''
 
 
@@ -56,12 +65,12 @@ def test_hard_defect_fails_the_test(pytester):
     pytester.makepyfile(
         emit=_EMIT,
         test_defect='''
-        from emit import emit_tool_span
+        from emit import emit_model_tool_call
 
         def test_agent_has_a_defect(trace_capture):
             with trace_capture() as cap:                       # framework=None: manual tracer
-                # A tool call whose arguments are not valid JSON -> R6 malformed_arguments (hard).
-                emit_tool_span(cap.tracer, "get_order", "{ not valid json", {"status": "ok"})
+                # The model emits a tool call whose arguments are not valid JSON -> R6 (hard).
+                emit_model_tool_call(cap.tracer, "get_order", "{ not valid json")
         ''',
     )
     result = pytester.runpytest()
@@ -74,11 +83,11 @@ def test_assert_clean_false_lets_the_test_inspect_instead(pytester):
     pytester.makepyfile(
         emit=_EMIT,
         test_inspect='''
-        from emit import emit_tool_span
+        from emit import emit_model_tool_call
 
         def test_agent_inspected(trace_capture):
             with trace_capture(assert_clean=False) as cap:     # do not auto-fail
-                emit_tool_span(cap.tracer, "get_order", "{ not valid json", {"status": "ok"})
+                emit_model_tool_call(cap.tracer, "get_order", "{ not valid json")
             # the hard defect did NOT fail the test; the report is ours to assert on
             assert cap.report.has_hard_defect
             assert cap.report.exit_code == 2

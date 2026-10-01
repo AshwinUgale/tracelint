@@ -1,0 +1,284 @@
+{
+ "id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+ "name": "RunnableSequence",
+ "start_time": "2026-10-01T17:27:07.277107+00:00",
+ "run_type": "chain",
+ "extra": {
+  "runtime": {
+   "library_version": "1.6.5",
+   "library": "langchain-core",
+   "platform": "Windows-11-10.0.26200-SP0",
+   "runtime": "python",
+   "runtime_version": "3.13.15"
+  }
+ },
+ "events": [
+  {
+   "name": "start",
+   "time": "2026-10-01T17:27:07.277107+00:00"
+  },
+  {
+   "name": "end",
+   "time": "2026-10-01T17:27:08.218460+00:00"
+  }
+ ],
+ "tags": [],
+ "attachments": {},
+ "session_name": "x",
+ "dotted_order": "20261001T172707277107Z01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+ "trace_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+ "dangerously_allow_filesystem": false,
+ "inputs": {
+  "q": "What is the status of ticket TCK-9001?"
+ },
+ "outputs": {
+  "output": "{\"ticket_id\": \"TCK-9001\", \"state\": \"open\"}"
+ },
+ "end_time": "2026-10-01T17:27:08.218460+00:00",
+ "child_runs": [
+  {
+   "id": "01a0f881-72b5-76c0-8d0e-c8ac97ca9078",
+   "name": "PromptTemplate",
+   "start_time": "2026-10-01T17:27:08.213635+00:00",
+   "run_type": "prompt",
+   "extra": {
+    "runtime": {
+     "library_version": "1.6.5",
+     "library": "langchain-core",
+     "platform": "Windows-11-10.0.26200-SP0",
+     "runtime": "python",
+     "runtime_version": "3.13.15"
+    }
+   },
+   "serialized": {
+    "lc": 1,
+    "type": "constructor",
+    "id": [
+     "langchain",
+     "prompts",
+     "prompt",
+     "PromptTemplate"
+    ],
+    "kwargs": {
+     "input_variables": [
+      "q"
+     ],
+     "template": "Extract the ticket id from: {q}",
+     "template_format": "f-string"
+    },
+    "name": "PromptTemplate"
+   },
+   "events": [
+    {
+     "name": "start",
+     "time": "2026-10-01T17:27:08.213635+00:00"
+    },
+    {
+     "name": "end",
+     "time": "2026-10-01T17:27:08.214679+00:00"
+    }
+   ],
+   "parent_run_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "tags": [
+    "seq:step:1"
+   ],
+   "attachments": {},
+   "session_name": "x",
+   "dotted_order": "20261001T172707277107Z01a0f881-6f0d-7950-8a71-b69f3bf8cfbf.20261001T172708213635Z01a0f881-72b5-76c0-8d0e-c8ac97ca9078",
+   "trace_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "dangerously_allow_filesystem": false,
+   "inputs": {
+    "q": "What is the status of ticket TCK-9001?"
+   },
+   "outputs": {
+    "output": {
+     "text": "Extract the ticket id from: What is the status of ticket TCK-9001?",
+     "type": "StringPromptValue"
+    }
+   },
+   "end_time": "2026-10-01T17:27:08.214679+00:00",
+   "child_runs": []
+  },
+  {
+   "id": "01a0f881-72b7-77f3-a3f3-d24b3611e3e9",
+   "name": "FakeListLLM",
+   "start_time": "2026-10-01T17:27:08.215317+00:00",
+   "run_type": "llm",
+   "extra": {
+    "invocation_params": {
+     "responses": [
+      "TCK-9001"
+     ],
+     "_type": "fake-list",
+     "stop": null
+    },
+    "options": {
+     "stop": null
+    },
+    "batch_size": 1,
+    "metadata": {
+     "ls_provider": "fakelist",
+     "ls_model_type": "llm",
+     "lc_versions": {
+      "langchain-core": "1.6.5",
+      "langchain": "1.4.3"
+     },
+     "responses": [
+      "TCK-9001"
+     ],
+     "_type": "fake-list",
+     "stop": null
+    },
+    "runtime": {
+     "library_version": "1.6.5",
+     "library": "langchain-core",
+     "platform": "Windows-11-10.0.26200-SP0",
+     "runtime": "python",
+     "runtime_version": "3.13.15"
+    }
+   },
+   "serialized": {
+    "lc": 1,
+    "type": "not_implemented",
+    "id": [
+     "langchain_core",
+     "language_models",
+     "fake",
+     "FakeListLLM"
+    ],
+    "repr": "FakeListLLM(metadata={'lc_versions': {'langchain-core': '1.6.5', 'langchain': '1.4.3'}}, responses=['TCK-9001'])",
+    "name": "FakeListLLM"
+   },
+   "events": [
+    {
+     "name": "start",
+     "time": "2026-10-01T17:27:08.215317+00:00"
+    },
+    {
+     "name": "end",
+     "time": "2026-10-01T17:27:08.215713+00:00"
+    }
+   ],
+   "parent_run_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "tags": [
+    "seq:step:2"
+   ],
+   "attachments": {},
+   "session_name": "x",
+   "dotted_order": "20261001T172707277107Z01a0f881-6f0d-7950-8a71-b69f3bf8cfbf.20261001T172708215317Z01a0f881-72b7-77f3-a3f3-d24b3611e3e9",
+   "trace_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "dangerously_allow_filesystem": false,
+   "inputs": {
+    "prompts": [
+     "Extract the ticket id from: What is the status of ticket TCK-9001?"
+    ]
+   },
+   "outputs": {
+    "generations": [
+     [
+      {
+       "text": "TCK-9001",
+       "generation_info": null,
+       "type": "Generation"
+      }
+     ]
+    ],
+    "llm_output": null,
+    "run": null,
+    "type": "LLMResult"
+   },
+   "end_time": "2026-10-01T17:27:08.215713+00:00",
+   "child_runs": []
+  },
+  {
+   "id": "01a0f881-72b7-77f3-a3f3-d25faad1a313",
+   "name": "StrOutputParser",
+   "start_time": "2026-10-01T17:27:08.215989+00:00",
+   "run_type": "parser",
+   "extra": {
+    "runtime": {
+     "library_version": "1.6.5",
+     "library": "langchain-core",
+     "platform": "Windows-11-10.0.26200-SP0",
+     "runtime": "python",
+     "runtime_version": "3.13.15"
+    }
+   },
+   "events": [
+    {
+     "name": "start",
+     "time": "2026-10-01T17:27:08.215989+00:00"
+    },
+    {
+     "name": "end",
+     "time": "2026-10-01T17:27:08.216374+00:00"
+    }
+   ],
+   "parent_run_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "tags": [
+    "seq:step:3"
+   ],
+   "attachments": {},
+   "session_name": "x",
+   "dotted_order": "20261001T172707277107Z01a0f881-6f0d-7950-8a71-b69f3bf8cfbf.20261001T172708215989Z01a0f881-72b7-77f3-a3f3-d25faad1a313",
+   "trace_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "dangerously_allow_filesystem": false,
+   "inputs": {
+    "input": "TCK-9001"
+   },
+   "outputs": {
+    "output": "TCK-9001"
+   },
+   "end_time": "2026-10-01T17:27:08.216374+00:00",
+   "child_runs": []
+  },
+  {
+   "id": "01a0f881-72b8-7fd3-84d9-fe81850dbf9d",
+   "name": "lookup_ticket",
+   "start_time": "2026-10-01T17:27:08.216553+00:00",
+   "run_type": "tool",
+   "extra": {
+    "color": "green",
+    "tool_call_id": null,
+    "runtime": {
+     "library_version": "1.6.5",
+     "library": "langchain-core",
+     "platform": "Windows-11-10.0.26200-SP0",
+     "runtime": "python",
+     "runtime_version": "3.13.15"
+    }
+   },
+   "serialized": {
+    "name": "lookup_ticket",
+    "description": "Look up a support ticket by id."
+   },
+   "events": [
+    {
+     "name": "start",
+     "time": "2026-10-01T17:27:08.216553+00:00"
+    },
+    {
+     "name": "end",
+     "time": "2026-10-01T17:27:08.218348+00:00"
+    }
+   ],
+   "parent_run_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "tags": [
+    "seq:step:4"
+   ],
+   "attachments": {},
+   "session_name": "x",
+   "dotted_order": "20261001T172707277107Z01a0f881-6f0d-7950-8a71-b69f3bf8cfbf.20261001T172708216553Z01a0f881-72b8-7fd3-84d9-fe81850dbf9d",
+   "trace_id": "01a0f881-6f0d-7950-8a71-b69f3bf8cfbf",
+   "dangerously_allow_filesystem": false,
+   "inputs": {
+    "input": "TCK-9001"
+   },
+   "outputs": {
+    "output": "{\"ticket_id\": \"TCK-9001\", \"state\": \"open\"}"
+   },
+   "end_time": "2026-10-01T17:27:08.218348+00:00",
+   "child_runs": []
+  }
+ ]
+}

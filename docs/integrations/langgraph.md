@@ -63,6 +63,9 @@ LangChain's instrumentation places the tool call's structured arguments on the *
 `tool_calls`, while the TOOL span records only a bare scalar input. tracelint's shared OpenInference
 adapter recovers the real arguments from the originating LLM tool_call, so a valid call is **not**
 mis-flagged as malformed (R6) or schema-violating (R1). This works with no LangGraph-specific code.
+When no LLM span recorded the call (a plain LCEL chain such as `prompt | llm | parser | tool`, or
+inputs hidden with `OPENINFERENCE_HIDE_INPUTS`), the arguments are reported as unknown, and the
+checks that need them list those calls as not checked rather than failing them.
 
 Reproduce it offline, no API key — from a clone of the [tracelint repo](https://github.com/AshwinUgale/tracelint)
 (the bundled example traces ship with the source, not the PyPI wheel):
