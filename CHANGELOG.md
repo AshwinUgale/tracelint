@@ -6,6 +6,27 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.10.0]
+
+A correctness release. An audit ran 0.9.0 on real framework traces and through every documented CI
+path, and found false passes (input linted as nothing, failures read as success) and false failures
+(missing data treated as evidence, value overlap read as dataflow). This release fixes them, so
+results change on existing traces; the change you may need to act on is marked **Behavior change**
+under R2b.
+
+- **The GitHub Action installs the version you pin.** `uses: AshwinUgale/tracelint@v0.10.0`
+  installed the latest tracelint on PyPI whatever the tag, so a pinned workflow changed when a
+  release came out. It now installs the code at the pinned ref; `version:` still installs a named
+  PyPI release. CI now runs the action itself.
+- Docs: the README rule table lists R8 and R6's candidate tier; the library example reads any format with `load_source`
+  (`Trace.load` reads only native traces, so it failed on a captured one); the README's links work
+  on PyPI; the Action and pre-commit examples pin v0.10.0 (pre-commit still said v0.4.1); the
+  Langfuse guides lead with `tracelint langfuse pull`; CONTRIBUTING describes the current layout and
+  what CI checks; `--rules` help shows real rule ids (`R2a`, not `R2`); the roadmap lists declared
+  preconditions.
+- Packaging: a `py.typed` marker; classifiers for Python 3.13 and 3.14 (CI now runs 3.10 to 3.14);
+  the license as an SPDX expression (`MIT`) instead of the whole license text; tracelint.com as the
+  homepage.
 - **Fix: R3 reads a value's digits from one number, compares numbers by value, and no longer
   slows down with the square of the trace.**
   - **Missed defects.** R3 joined every digit in a text, so a fabricated `ORD-58213` "derived" from

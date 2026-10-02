@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument(
         "--rules",
         type=_csv,
-        metavar="R1,R2,...",
+        metavar="R1,R2a,...",
         help=f"subset of rules to run (default: all — {', '.join(rule_ids())})",
     )
     check.add_argument("--json", dest="json_out", metavar="OUT", help="write findings as JSON")

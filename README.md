@@ -66,9 +66,10 @@ See [Add to CI](#add-to-ci) for the ready-made GitHub Action, SARIF code-scannin
 
 > The in-process capture helper covers the three in-process frameworks — **smolagents**,
 > **LangGraph / LangChain**, and **CrewAI**. Langflow is a running product, not a library you call,
-> so it uses the [OTel-to-file recipe](docs/integrations/langflow.md) instead (point its export at a
-> file, then `check` it). Already collect traces elsewhere? Any [supported format](#supported-formats)
-> works with no capture step.
+> so it uses the
+> [OTel-to-file recipe](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/langflow.md)
+> instead (point its export at a file, then `check` it). Already collect traces elsewhere? Any
+> [supported format](#supported-formats) works with no capture step.
 
 Prefer to see it work first, with no API key or agent? The keyless demo runs a validation suite and
 recovery scorecard end to end:
@@ -140,8 +141,9 @@ for report in lint_otel_traces(spans):   # spans: your OpenInference span export
 | R3 | hallucinated argument — value not derivable from provenance | `candidate`; `hard_defect` if the field is annotated `provided` |
 | R4 | loop — N identical no-progress calls (polls/retries excluded) | `candidate` |
 | R5 | redundant call — identical call + identical result, no mutation between | `candidate` |
-| R6 | malformed arguments — the emitted tool-call arguments are not valid JSON | `hard_defect` |
+| R6 | malformed arguments — tool-call arguments that are not valid JSON | `hard_defect` if the model emitted them; `candidate` in a tool's own record |
 | R7 | unknown tool — a call to a tool absent from the declared toolset (possible hallucinated tool) | `candidate` |
+| R8 | duplicate side effect — a non-idempotent side effect repeated with the same args after it succeeded | `hard_event`; `candidate` if the first result is unknown |
 
 `hard_event` and `hard_defect` are orthogonal to the finding kind: a tool-error event is a
 `hard_event` from a structured signal (the span's or run's own error status, a LangChain
@@ -222,19 +224,23 @@ rather than guessing, so an unhandled quirk degrades safely.
 ## Integrations & recipes
 
 tracelint reads the telemetry your stack already emits — one shared adapter reaches the whole
-ecosystem. [`docs/integrations/`](docs/integrations/README.md) has short, reproducible one-pagers,
-each validated on a **real captured trace**:
+ecosystem. [`docs/integrations/`](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/README.md)
+has short, reproducible one-pagers, each validated on a **real captured trace**:
 
-- **Frameworks (capture a trace in a test):** [smolagents](docs/integrations/smolagents.md) ·
-  [LangGraph / LangChain](docs/integrations/langgraph.md) · [CrewAI](docs/integrations/crewai.md) —
+- **Frameworks (capture a trace in a test):**
+  [smolagents](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/smolagents.md) ·
+  [LangGraph / LangChain](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/langgraph.md) ·
+  [CrewAI](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/crewai.md) —
   each captures via the helper above and lints via `--format openinference` with no
-  framework-specific code. [Langflow](docs/integrations/langflow.md) is a running product, so it
-  uses the OTel-to-file recipe instead of the in-process helper.
+  framework-specific code. [Langflow](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/langflow.md)
+  is a running product, so it uses the OTel-to-file recipe instead of the in-process helper.
 - **Platforms (already have traces?):** the always-works baseline is to **export the trace to a file
-  and `check` it** —  [Arize Phoenix](docs/integrations/phoenix.md) ·
-  [Langfuse](docs/integrations/langfuse.md) · [LangSmith](docs/integrations/langsmith.md) ·
-  [OpenLLMetry / Traceloop](docs/integrations/otel.md) ·
-  [OpenAI / ShareGPT message lists](docs/integrations/openai.md).
+  and `check` it** —
+  [Arize Phoenix](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/phoenix.md) ·
+  [Langfuse](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/langfuse.md) ·
+  [LangSmith](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/langsmith.md) ·
+  [OpenLLMetry / Traceloop](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/otel.md) ·
+  [OpenAI / ShareGPT message lists](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/openai.md).
 
 For Langfuse, `pull` is convenience sugar on top of that baseline — it fetches a trace straight to a
 file, so `pull` → `check` composes and the file doubles as a saved fixture:
@@ -278,10 +284,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # ... your step that runs the agent and writes traces to ./traces ...
-      - uses: AshwinUgale/tracelint@v0.9.0
+      - uses: AshwinUgale/tracelint@v0.10.0
         with:
           traces: "traces/*.jsonl"
-          format: "openinference"     # or native / openai / langfuse
+          format: "openinference"     # or native / openai / langfuse / langsmith
           tools: "tools.json"          # optional — lights up R1, R3, R2 predicates
 ```
 
@@ -310,7 +316,7 @@ gate, so an `if: always()` upload step runs even when a defect fails the job:
 ```yaml
 repos:
   - repo: https://github.com/AshwinUgale/tracelint
-    rev: v0.4.1
+    rev: v0.10.0
     hooks:
       - id: tracelint
         files: ^traces/.*\.jsonl$
@@ -320,15 +326,18 @@ repos:
 ## Library
 
 ```python
-from tracelint import lint_trace, default_rules, Trace, ToolRegistry
+from tracelint import ToolRegistry, default_rules, lint_trace, load_source
 
-trace = Trace.load("trace.json")
 registry = ToolRegistry.load("tools.json")
-report = lint_trace(trace, default_rules(), registry)
-print(report.exit_code)          # 0 or 2
-for f in report.active_findings:
-    print(f.rule, f.tier.value, f.summary)
+for trace in load_source("trace.json", "openinference"):   # or native / openai / langfuse / langsmith
+    report = lint_trace(trace, default_rules(), registry)
+    print(report.exit_code)      # 0 or 2
+    for f in report.active_findings:
+        print(f.rule, f.tier.value, f.summary)
 ```
+
+`load_source` returns every run in the file (a span export can hold several), in any supported
+format. `Trace.load` reads only tracelint's native trace format.
 
 See `examples/lint_openinference_phoenix.py` for an offline, keyless end-to-end run (Phoenix-shaped
 spans → findings, with and without a tool registry).

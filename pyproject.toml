@@ -4,11 +4,12 @@ build-backend = "hatchling.build"
 
 [project]
 name = "tracelint"
-version = "0.9.0"
+version = "0.10.0"
 description = "A linter for agent runs — reads the execution trace and flags structural bugs, deterministically."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Ashwin Ugale" }]
 keywords = [
     "agents", "llm", "tool-calling", "traces", "static-analysis",
@@ -16,11 +17,13 @@ keywords = [
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
@@ -58,9 +61,10 @@ dev = [
 tracelint = "tracelint.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/AshwinUgale/tracelint"
+Homepage = "https://tracelint.com"
 Repository = "https://github.com/AshwinUgale/tracelint"
 Issues = "https://github.com/AshwinUgale/tracelint/issues"
+Changelog = "https://github.com/AshwinUgale/tracelint/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tracelint"]

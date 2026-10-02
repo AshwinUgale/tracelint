@@ -27,8 +27,8 @@ encountering it on a real trace, not the suggestion itself.
 
 ### Unconfirmed side effect (the second half of the side-effect story; takes the next free rule id)
 
-Today R2 catches *known* failures: a tool returned an error and the agent proceeded (R2a/R2b), or an
-errored value was reused in a later side-effecting call. It does **not** catch the case where the
+Today R2 catches *known* failures: a tool returned an error and the agent proceeded (R2a/R2b), or a
+value only the failed result supplied was used in a later side-effecting call. It does **not** catch the case where the
 agent *never found out* whether a side-effecting action succeeded. Two shapes:
 
 1. **No terminal status.** A side-effecting call whose span just stops — no result, no error, no
@@ -54,6 +54,20 @@ Design constraints, so it stays in character with the rest of the tool:
 
 The two shapes are one theme — *a side effect nobody confirmed* — and should probably ship as one
 rule.
+
+### Declared preconditions
+
+R2b proves misuse only when a value flows from the failed result into the side-effecting call. When
+the agent acts on a failed prerequisite *without* taking anything from it, the trace looks like a
+legitimate action: `get_order(A100)` fails and the agent refunds `A100` anyway (the id came from the
+user), or a pipeline comes back `UNSTABLE` and the agent deploys `"latest"`. Since 0.10 these are R2b
+candidates, not defects.
+
+What tells them apart is a contract the trace doesn't carry: a refund needs a successful lookup of
+the same order first; an email after the same failed lookup does not. So the precondition would be
+declared per tool in `tools.json`, same model as `side_effecting` / `failure_when`, and the check is
+structural: a side-effecting call ran although its declared prerequisite failed or never ran. A tool
+that declares none is not checked.
 
 ## Exploratory
 

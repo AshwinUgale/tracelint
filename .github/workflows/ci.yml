@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -28,3 +28,46 @@ jobs:
         run: python -m pytest -q
       - name: Demo self-check (validation suite + scorecard, keyless)
         run: tracelint demo
+
+  action:
+    # The GitHub Action as users run it (uses: AshwinUgale/tracelint@vX), from this checkout.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: A clean trace passes
+        uses: ./
+        with:
+          traces: examples/traces/smolagents_trace.json
+          format: openinference
+      - name: A named release installs from PyPI
+        uses: ./
+        with:
+          traces: examples/traces/smolagents_trace.json
+          format: openinference
+          version: "0.9.0"
+      - name: Write the release agent's contract
+        run: |
+          cat > "$RUNNER_TEMP/release_tools.json" <<'EOF'
+          {"tools": {
+            "run_release_pipeline": {"metadata": {"failure_when": {"pointer": "/result", "in": ["FAILURE", "UNSTABLE", "ABORTED"]}}},
+            "deploy": {"metadata": {"side_effecting": true}}
+          }}
+          EOF
+      - name: A hard defect fails the step
+        id: defect
+        continue-on-error: true
+        uses: ./
+        with:
+          traces: examples/traces/langgraph_phoenix_trace.json
+          format: openinference
+          tools: ${{ runner.temp }}/release_tools.json
+          sarif: tracelint.sarif
+      - name: Check the defect failed the step and the SARIF was still written
+        env:
+          OUTCOME: ${{ steps.defect.outcome }}
+        run: |
+          test "$OUTCOME" = failure
+          test -s tracelint.sarif

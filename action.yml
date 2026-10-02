@@ -26,7 +26,7 @@ inputs:
     required: false
     default: ""
   version:
-    description: "tracelint version to install (e.g. '0.4.0'). Default: the latest release on PyPI."
+    description: "tracelint release to install from PyPI instead (e.g. '0.10.0'). Default: the tracelint at the ref you pinned this action to (@v0.10.0 runs 0.10.0)."
     required: false
     default: ""
   args:
@@ -43,8 +43,8 @@ runs:
         TL_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        spec="tracelint"
-        if [ -n "$TL_VERSION" ]; then spec="tracelint==$TL_VERSION"; fi
+        # The pinned ref is the version: install the action's own checkout, unless a release is named.
+        if [ -n "$TL_VERSION" ]; then spec="tracelint==$TL_VERSION"; else spec="$GITHUB_ACTION_PATH"; fi
         python3 -m pip install --quiet "$spec"
         python3 -m tracelint.cli --version
 

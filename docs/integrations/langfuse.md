@@ -1,27 +1,36 @@
 # tracelint + Langfuse
 
-[Langfuse](https://github.com/langfuse/langfuse) stores agent traces. tracelint has the deepest
-integration of any platform here: it can **fetch a trace from Langfuse, lint it, and write the
-findings back as Langfuse Scores** — so the deterministic verdict shows up next to the trace in the
-Langfuse UI.
+[Langfuse](https://github.com/langfuse/langfuse) stores agent traces. tracelint reads them: pull a
+trace to a file and lint it like any other input, locally or in CI.
 
-## Native fetch + write-back
+## Pull a trace, then check it
 
 ```bash
 pip install "tracelint[langfuse]"
 export LANGFUSE_PUBLIC_KEY=pk-...   # and LANGFUSE_SECRET_KEY (LANGFUSE_HOST if self-hosted)
 
-tracelint langfuse check --trace <trace-id> [--tools tools.json] [--write-back]
+tracelint langfuse pull <trace-id>                                    # writes <trace-id>.json
+tracelint check <trace-id>.json --format langfuse [--tools tools.json]
 ```
 
-`--write-back` posts the findings as Scores on that trace; omit it for a read-only lint. Reads the
-region-specific `LANGFUSE_*` env vars.
+The pulled file is an ordinary input, so it doubles as a saved regression fixture. `pull` reads the
+region-specific `LANGFUSE_*` env vars; `--tool-names a,b` treats those observations as tool calls
+(for span-based instrumentation), and `-o` names the output file.
 
 ## From a saved Langfuse trace file
 
 ```bash
 tracelint check trace.json --format langfuse
 ```
+
+## Advanced: lint in place and write the findings back
+
+```bash
+tracelint langfuse check --trace <trace-id> [--tools tools.json] [--write-back]
+```
+
+This fetches and lints in one step. `--write-back` posts the findings as Scores on that trace, so the
+deterministic verdict shows up next to it in the Langfuse UI; omit it for a read-only lint.
 
 ## Examples
 
@@ -40,5 +49,4 @@ and the behavioral rules; most other rules run without it.
 
 ## Scope
 
-tracelint consumes Langfuse traces and augments them with a deterministic score; it does not replace
-Langfuse. It is the verification layer on top of the traces Langfuse already stores.
+tracelint reads Langfuse traces and checks them deterministically; it does not replace Langfuse. It is the verification layer on top of the traces Langfuse already stores.
