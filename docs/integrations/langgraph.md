@@ -25,7 +25,7 @@ def test_agent_run_has_no_structural_defects(tmp_path):
     with capture(trace, framework="langgraph"):    # "langchain" works too — same instrumentor
         my_graph.invoke({"messages": [("user", "refund order A100")]})   # your agent, unchanged
 
-    report = lint_otel_trace(json.loads(trace.read_text()))
+    report = lint_otel_trace(json.loads(trace.read_text(encoding="utf-8")))
     assert not report.has_hard_defect              # a provable defect fails the test
 ```
 

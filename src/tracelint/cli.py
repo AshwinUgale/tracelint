@@ -9,7 +9,8 @@
 
 - ``0`` — linted cleanly (no ``hard_defect``).
 - ``2`` — a structurally-provable defect (``hard_defect``) was found.
-- ``3`` — an input error (missing/malformed trace or tools file, or an unknown rule).
+- ``3`` — an input error: a missing, malformed, empty or wrong-format trace or tools file, an
+  unknown rule, or a command-line usage error (argparse's own code, 2, would read as a defect).
 
 Heuristic ``candidate`` findings never fail CI on their own; a suppression (a rule that could not
 run) is disclosed but is not a defect.
@@ -21,6 +22,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from typing import NoReturn
 
 from tracelint.findings import EXIT_GATE, EXIT_HARD_DEFECT, EXIT_INPUT_ERROR, EXIT_OK
 from tracelint.report import render_report, reports_to_dict, write_json
@@ -34,8 +36,31 @@ def _csv(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+class _ArgumentParser(argparse.ArgumentParser):
+    """argparse exits 2 on a usage error — the code tracelint reserves for a hard defect, so a
+    mistyped flag in a CI step would read as "defect found". Usage errors exit 3 (input error).
+    Subcommand parsers inherit this class."""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(EXIT_INPUT_ERROR, f"{self.prog}: error: {message}\n")
+
+
+def _tolerate_unencodable_output() -> None:
+    """Never crash printing a report. Redirected output on Windows uses the locale code page, and a
+    report echoes the trace's own text (CJK, emoji), which that code page may not encode — the
+    UnicodeEncodeError used to turn a clean run into exit 3. Unencodable characters are escaped."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(errors="backslashreplace")
+            except (ValueError, OSError):  # a closed or non-reconfigurable stream: leave it be
+                pass
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _ArgumentParser(
         prog="tracelint",
         description="Deterministic, judge-free static analyzer for agent traces.",
     )
@@ -336,6 +361,7 @@ def _cmd_scorecard(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    _tolerate_unencodable_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None) or not getattr(args, "func", None):

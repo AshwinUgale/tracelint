@@ -196,9 +196,46 @@ def test_check_openinference_format_keyless_suppresses_and_passes(tmp_path, caps
 
 def test_check_unknown_format_is_input_error(tmp_path):
     sp = _write_openinference_spans(tmp_path)
-    # argparse rejects an out-of-choices --format with exit code 2 via SystemExit.
-    with pytest.raises(SystemExit):
+    # A usage error exits 3 (input error), not argparse's 2 — the code reserved for a hard defect.
+    with pytest.raises(SystemExit) as exc:
         main(["check", sp, "--format", "bogus"])
+    assert exc.value.code == 3
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["check", "trace.json", "--fromat", "openinference"],  # a mistyped flag
+        ["check"],  # a missing required argument
+        ["chek", "trace.json"],  # an unknown command
+        ["langfuse", "pull"],  # a nested subcommand's usage error
+    ],
+)
+def test_usage_errors_exit_three_not_two(argv, capsys):
+    # A misconfigured CI step must not read as "defect found" (exit 2).
+    with pytest.raises(SystemExit) as exc:
+        main(argv)
+    assert exc.value.code == 3
+    assert "error:" in capsys.readouterr().err
+
+
+def test_a_report_the_console_cannot_encode_does_not_crash(tmp_path, monkeypatch):
+    # Redirected output on Windows uses the locale code page; a trace's own text (CJK here) used to
+    # raise UnicodeEncodeError, which turned a clean run into exit 3.
+    import io
+    import sys
+
+    trace = {
+        "run_id": "予約-東京",
+        "steps": [{"type": "message", "role": "user", "content": "予約"}],
+    }
+    p = tmp_path / "trace.json"
+    p.write_text(json.dumps(trace, ensure_ascii=False), encoding="utf-8")
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
+    assert main(["check", str(p)]) == 0
+    sys.stdout.flush()
+    assert rb"\u4e88" in raw.getvalue()  # 予, escaped rather than a crash
 
 
 def test_check_span_file_with_the_default_format_is_an_input_error(tmp_path, capsys):

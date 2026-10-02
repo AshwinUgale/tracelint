@@ -26,7 +26,7 @@ def test_agent_run_has_no_structural_defects(tmp_path):
     with capture(trace, framework="smolagents"):
         run_my_agent("refund order A100")          # your agent under test, unchanged
 
-    report = lint_otel_trace(json.loads(trace.read_text()))
+    report = lint_otel_trace(json.loads(trace.read_text(encoding="utf-8")))
     assert not report.has_hard_defect              # a provable defect fails the test
 ```
 
