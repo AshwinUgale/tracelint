@@ -4,7 +4,9 @@ The text report leads with the exit-relevant facts (how many findings, the exit 
 active finding with its **exact trace location** and evidence, and always discloses suppressions
 in their own section — a clean report must never hide what could not be checked. Candidates are
 shown only with ``include_candidates=True`` ("candidate, not verdict": heuristics are opt-in
-detail, not the headline), while ``hard_event`` / ``hard_defect`` findings always show.
+detail, not the headline) or when they gate the run (``fail_on`` candidate), while ``hard_event`` /
+``hard_defect`` findings always show. Findings the project's configuration ignored are listed with
+their reasons.
 """
 
 from __future__ import annotations
@@ -26,7 +28,10 @@ def _location(finding: Finding) -> str:
 def render_report(report: LintReport, *, include_candidates: bool = False) -> str:
     """Render one :class:`LintReport` as text."""
     active = report.active_findings
-    shown = [f for f in active if include_candidates or f.tier is not ConfidenceTier.CANDIDATE]
+    gating = report.fail_on is ConfidenceTier.CANDIDATE  # candidates fail this run: never hide them
+    shown = [
+        f for f in active if include_candidates or gating or f.tier is not ConfidenceTier.CANDIDATE
+    ]
     lines = [f"{report.run_id}: {len(active)} finding(s), exit {report.exit_code}"]
 
     for f in shown:
@@ -40,6 +45,12 @@ def render_report(report: LintReport, *, include_candidates: bool = False) -> st
     hidden = len(active) - len(shown)
     if hidden:
         lines.append(f"  ({hidden} candidate(s) hidden; pass --include-candidates to show)")
+
+    if report.ignored:
+        lines.append(f"  ignored ({len(report.ignored)}) by config — not failing:")
+        for f in report.ignored:
+            where = f"{f.rule} {f.finding_type}  ({_location(f)})"
+            lines.append(f"    [{f.tier.value}] {where}: {f.ignored_reason}")
 
     if report.suppressions:
         lines.append(f"  suppressed ({len(report.suppressions)}) — not checked, not a clean pass:")
@@ -57,6 +68,8 @@ def render_report(report: LintReport, *, include_candidates: bool = False) -> st
                 "  no structural issues found — but some rules were suppressed above "
                 "(not checked); run `tracelint init` to generate a tools.json and enable them."
             )
+        elif report.ignored:
+            lines.append("  no structural issues found beyond the ignored ones above.")
         else:
             lines.append("  clean — no structural issues found.")
     return "\n".join(lines)

@@ -17,6 +17,10 @@ deliberately **orthogonal** (spec §II.4):
 A **suppression** is also a ``Finding`` (with ``suppressed_reason`` set and no evidence): when a
 rule cannot run because the trace lacks a field it needs, that absence is recorded and disclosed,
 never silently treated as a clean bill of health (deep-design Trap 1 / spec §II.9 fail-closed).
+
+An **ignored** finding is one the project's configuration accepted, with a reason
+(``ignored_reason``). It stays in the report, shown and counted, but no longer counts toward the
+exit code.
 """
 
 from __future__ import annotations
@@ -37,6 +41,14 @@ class ConfidenceTier(str, Enum):
     HARD_DEFECT = "hard_defect"
     CANDIDATE = "candidate"
 
+    @property
+    def rank(self) -> int:
+        """Severity order for a CI gate: candidate < hard_event < hard_defect."""
+        return _RANK[self]
+
+
+_RANK = {ConfidenceTier.CANDIDATE: 0, ConfidenceTier.HARD_EVENT: 1, ConfidenceTier.HARD_DEFECT: 2}
+
 
 @dataclass
 class Finding:
@@ -52,6 +64,8 @@ class Finding:
       (a real retry loop, a generated idempotency key), signalling extra caution to the reader.
     - ``suppressed_reason``: when set, this is a *suppression* record, not a defect — the named
       rule could not run because the trace was missing something, and that is disclosed here.
+    - ``ignored_reason``: when set, the project's configuration accepted this finding for the given
+      reason; it is still reported, but no longer counts toward the exit code.
     """
 
     rule: str
@@ -61,10 +75,15 @@ class Finding:
     evidence: dict[str, Any] = field(default_factory=dict)
     possible_false_positive: bool = False
     suppressed_reason: str | None = None
+    ignored_reason: str | None = None
 
     @property
     def is_suppression(self) -> bool:
         return self.suppressed_reason is not None
+
+    @property
+    def is_ignored(self) -> bool:
+        return self.ignored_reason is not None
 
     @property
     def step_indices(self) -> list[int]:
@@ -93,6 +112,8 @@ class Finding:
         }
         if self.suppressed_reason is not None:
             out["suppressed_reason"] = self.suppressed_reason
+        if self.ignored_reason is not None:
+            out["ignored_reason"] = self.ignored_reason
         return out
 
     @classmethod
@@ -105,12 +126,13 @@ class Finding:
             evidence=data.get("evidence") or {},
             possible_false_positive=bool(data.get("possible_false_positive", False)),
             suppressed_reason=data.get("suppressed_reason"),
+            ignored_reason=data.get("ignored_reason"),
         )
 
 
 # CI exit codes (spec §II.10: "exit 2 on hard_defect").
 EXIT_OK = 0
-EXIT_GATE = 1  # reserved: a configured gate (e.g. --fail-on candidate) was tripped.
+EXIT_GATE = 1  # a lower gate the caller opted into (--fail-on hard_event / candidate) was hit.
 EXIT_HARD_DEFECT = 2
 EXIT_INPUT_ERROR = 3  # bad/missing trace or tools file, unknown rule, malformed JSON.
 
@@ -148,20 +170,27 @@ class Coverage:
 class LintReport:
     """The result of linting one trace: all findings plus the run they describe.
 
-    ``active_findings`` are real observations; ``suppressions`` are the rules that could not run.
-    ``coverage`` records, per reporting rule, how many units it could evaluate (:class:`Coverage`).
-    ``exit_code`` implements the CI contract — a non-zero exit is driven by a ``hard_defect``,
-    exactly the tier reserved for structurally-provable defects, so CI never fails on a heuristic
-    candidate unless a caller explicitly opts in later.
+    ``active_findings`` are real observations; ``suppressions`` are the rules that could not run;
+    ``ignored`` are findings the project's configuration accepted (with a reason). ``coverage``
+    records, per reporting rule, how many units it could evaluate (:class:`Coverage`).
+    ``exit_code`` implements the CI contract: ``2`` on a ``hard_defect``, exactly the tier reserved
+    for structurally-provable defects; ``1`` when ``fail_on`` opts into a lower tier
+    (``hard_event`` or ``candidate``) and an active finding reaches it; else ``0``. By default CI
+    never fails on an event or a heuristic candidate.
     """
 
     run_id: str
     findings: list[Finding] = field(default_factory=list)
     coverage: list[Coverage] = field(default_factory=list)
+    fail_on: ConfidenceTier = ConfidenceTier.HARD_DEFECT
 
     @property
     def active_findings(self) -> list[Finding]:
-        return [f for f in self.findings if not f.is_suppression]
+        return [f for f in self.findings if not f.is_suppression and not f.is_ignored]
+
+    @property
+    def ignored(self) -> list[Finding]:
+        return [f for f in self.findings if f.is_ignored]
 
     @property
     def suppressions(self) -> list[Finding]:
@@ -176,14 +205,20 @@ class LintReport:
 
     @property
     def exit_code(self) -> int:
-        return EXIT_HARD_DEFECT if self.has_hard_defect else EXIT_OK
+        if self.has_hard_defect:
+            return EXIT_HARD_DEFECT
+        if any(f.tier.rank >= self.fail_on.rank for f in self.active_findings):
+            return EXIT_GATE
+        return EXIT_OK
 
     def to_dict(self) -> dict[str, Any]:
-        out = {
+        out: dict[str, Any] = {
             "run_id": self.run_id,
             "findings": [f.to_dict() for f in self.findings],
             "exit_code": self.exit_code,
         }
+        if self.fail_on is not ConfidenceTier.HARD_DEFECT:
+            out["fail_on"] = self.fail_on.value
         if self.coverage:
             out["coverage"] = [c.to_dict() for c in self.coverage]
         return out

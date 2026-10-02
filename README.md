@@ -48,11 +48,12 @@ capture that records nothing raises and says why, instead of writing an empty tr
 tracelint check trace.json --format openinference
 ```
 
-Exit codes: `0` clean · `2` a structurally-provable defect (`hard_defect`) · `3` an input error:
-a missing or unreadable file, an empty one, or input that doesn't match `--format` (the error
-names the format it looks like), so a misconfigured step never passes having checked nothing.
-Heuristic candidates never fail CI on their own; a suppression (a rule that couldn't run) is
-disclosed but is not a defect.
+Exit codes: `0` clean · `1` a finding at a tier you opted into with `fail_on` · `2` a
+structurally-provable defect (`hard_defect`) · `3` an input error: a missing or unreadable file, an
+empty one, input that doesn't match `--format` (the error names the format it looks like), or an
+invalid config, so a misconfigured step never passes having checked nothing.
+Heuristic candidates never fail CI unless you opt in (`fail_on`); a suppression (a rule that
+couldn't run) is disclosed but is not a defect.
 
 **3. Fail CI on a defect.** `check` returns `2` on a provable defect, so it gates a build directly:
 
@@ -271,7 +272,7 @@ Both Phoenix shapes are handled: the span-export JSON (top-level `span_kind`) an
 
 `tracelint check` returns exit `2` on a structurally-provable defect, so it gates a build directly.
 Point it at the traces your agent test job already produces — a defect fails the job; heuristic
-candidates never do.
+candidates never do unless you opt in (`fail_on`, below).
 
 **GitHub Actions** — the ready-made action:
 
@@ -322,6 +323,29 @@ repos:
         files: ^traces/.*\.jsonl$
         args: ["--format", "openinference", "--tools", "tools.json"]
 ```
+
+**One contract for every step** — put the settings in `[tool.tracelint]` in `pyproject.toml` (or a
+`tracelint.toml`), so the Action, pre-commit and any CI command share them. Flags override it.
+
+```toml
+[tool.tracelint]
+format = "openinference"
+tools = "tools.json"          # relative to this file
+fail_on = "hard_event"        # also fail (exit 1) on hard events; "candidate" for candidates too
+
+[[tool.tracelint.ignore]]     # accept a known finding, with the reason
+rule = "R3"
+tool = "add_to_cart"
+field = "note"
+reason = "free-text note the model writes"
+```
+
+Exit codes: `0` clean, `1` a finding at the `fail_on` tier you opted into, `2` a hard defect, `3` an
+input or configuration error. An ignore takes a rule and optionally a `tool`, a `field` or a `path`
+glob; the finding stays in the report with its reason but no longer fails the run, and an ignore
+that matches nothing prints a warning. A misspelled key or value fails the run (exit 3) instead of
+quietly loosening the gate. The nearest config file wins, searched up to the repository root;
+`--config FILE` names one.
 
 ## Library
 
