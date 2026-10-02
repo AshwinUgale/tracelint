@@ -136,7 +136,7 @@ for report in lint_otel_traces(spans):   # spans: your OpenInference span export
 |------|---------|-------|
 | R1 | schema violation — args fail the tool's JSON Schema | `hard_defect` |
 | R2a | tool returned an error | `hard_event` (structured signal) / `candidate` (heuristic) |
-| R2b | an errored result's value reused by a later side-effecting call | `hard_defect` / `candidate` |
+| R2b | a value only a failed result supplied, used by a later side-effecting call | `hard_defect` / `candidate` |
 | R3 | hallucinated argument — value not derivable from provenance | `candidate`; `hard_defect` if the field is annotated `provided` |
 | R4 | loop — N identical no-progress calls (polls/retries excluded) | `candidate` |
 | R5 | redundant call — identical call + identical result, no mutation between | `candidate` |
@@ -149,6 +149,12 @@ for report in lint_otel_traces(spans):   # spans: your OpenInference span export
 from a convention or an exception-like string. Fields inside a result, such as `status` or
 `status_code`, are the tool's data: a link checker reports `status_code: 404` for a page it checked
 successfully. They stay candidates until `failure_when` declares what failure looks like.
+
+R2b follows the data, not repeated text. A failed result often echoes its inputs, so a value counts
+only when nothing else the agent saw supplied it: an order id the user gave is not from the failure,
+even when the error repeats it. Retrying the failed tool is handling the error, not misusing it. If
+a call the value was passed to returns it again (a lookup that may have confirmed it), the use is a
+`candidate`.
 
 ## Input format
 

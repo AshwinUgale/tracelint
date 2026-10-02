@@ -6,6 +6,26 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: R2b follows the data, so handling an error no longer fails CI.** R2b read any later call
+  that shared a value with a failed result as using it, and a failed result often echoes its inputs.
+  On real LangGraph runs, retrying a timed-out cancellation with the same id, and emailing a receipt
+  alongside a fraud check that failed, were hard defects (exit 2); so was charging the backup card
+  the user named after a decline. Now a value counts only when nothing else the agent observed
+  supplied it, give or take case and separators (`A-100` is `A100`), and retries and recoveries of
+  the failed tool are skipped. Another failed result is not a source (a retry that fails again
+  repeats the value), and neither is a call the value was passed to.
+  - **Missed defects.** Only the first call sharing a value was examined, so a logging call hid
+    the side-effecting transfer after it (a candidate); it is now a hard defect. Each misuse is
+    reported once, against the first failure that supplied it.
+  - **Behavior change.** A side-effecting call after a failed lookup that uses only an id the user
+    gave (`get_order(A100)` fails, then `refund_order(A100)`) is no longer a hard defect: the refund
+    used none of the failure's data, and R2b reports the failure as not retried (a candidate).
+    Whether a refund needed that lookup to succeed is a precondition, not dataflow; declared
+    preconditions are planned. When a call the value was passed to returned it (a lookup that may
+    have confirmed it, or a log that echoed it), the use is a candidate naming that call.
+  - The Phoenix, Langfuse and Traceloop examples and notebooks planted the old shape. Their failed
+    `get_order` now returns a cached payment method that the refund uses, so they still exit 2, for
+    a reason R2b can prove.
 - **Fix: one rule for reading a tool's result, in every adapter** (the result half of #37). Each
   adapter unwrapped results, and decided what counts as an error, on its own, and they had drifted:
   - **Missed defects.** A declined charge followed by shipping failed CI from OTel and an OpenAI

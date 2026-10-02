@@ -16,6 +16,15 @@ is expressed (Trap 3 — "what counts as an error is partly tool-specific"):
   - ``hard_defect`` (structurally provable): a value from a **structured-errored** result is reused
     as an argument to a later **side-effecting** tool call (metadata) — the agent fed data from a
     failed call into a real-world action with no fallback (the spec's ``send_itinerary`` case).
+    "From" means dataflow, not overlap: the value must be one nothing else the agent observed
+    supplies (an order id from the user's own request, echoed back in the error, is not from the
+    failure). Another failed result is not such a source (a retry that fails again repeats the
+    value, it does not confirm it), and neither is a call the agent passed the value to; but if that
+    call handed the value back, it may have confirmed it (a lookup) or only echoed it (a log), so
+    the use is a candidate. Retries and recoveries of the failed tool itself are how agents handle
+    an error, not a misuse of it, so they are skipped. Every later call is checked, so a harmless
+    logging call cannot hide the side effect after it, and a call that misuses a failure is
+    reported once.
   - ``candidate`` otherwise: the same consumption into a non-side-effecting tool (could be
     legitimate error forwarding/logging), or a structured error the agent never retried before
     proceeding (judging whether a natural-language reply "acknowledged" it is not deterministic).
@@ -28,10 +37,13 @@ checked rather than read as "no value reused".
 from __future__ import annotations
 
 import re
-from typing import Any
+from collections.abc import Callable
+from functools import cache
+from typing import Any, NamedTuple
 
 from tracelint.findings import ConfidenceTier, Coverage, Finding
 from tracelint.predicates import PredicateResult
+from tracelint.provenance import build_provenance
 from tracelint.rules.base import Rule
 from tracelint.signatures import is_structured_error as _is_structured_error
 from tracelint.signatures import looks_empty as _looks_empty
@@ -269,6 +281,26 @@ class ToolErrorEventRule(Rule):
         )
 
 
+def _failed(trace: Trace, result: ToolResult, registry: ToolRegistry) -> bool:
+    """A structured error, or a result matching its tool's declared ``failure_when``."""
+    call = trace.call_for(result)
+    meta = registry.metadata_for(call.name) if call else None
+    predicate = meta.failure_when if meta else None
+    return _is_structured_error(result) or (
+        predicate is not None and predicate.matches(result.content)
+    )
+
+
+class _Use(NamedTuple):
+    """A later call that used values only a failed result supplied."""
+
+    call: ToolCall
+    values: set[str]
+    # Calls that were given those values and whose results handed every one of them back: an echo
+    # (a log) or a confirmation (a lookup). The trace cannot tell which, so the use is not certain.
+    echoed_by: list[str]
+
+
 class ErrorHandlingRule(Rule):
     """R2b: a structured error consumed by / ignored before a later action."""
 
@@ -283,35 +315,26 @@ class ErrorHandlingRule(Rule):
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         findings: list[Finding] = []
         calls = trace.tool_calls()
+        failures = [result for result in trace.tool_results() if _failed(trace, result, registry)]
+        # Where the agent saw each value, outside failed results: a retry that fails again repeats
+        # the cached value, it does not confirm it.
+        failed_steps = {result.index for result in failures}
+        observed = build_provenance(
+            [step for step in trace.steps if step.index not in failed_steps], len(trace.steps)
+        )
+        sources = cache(observed.sources_of)
+        reported: set[int] = set()  # calls already reported as using an earlier failure's value
         unchecked: list[ToolCall] = []  # later calls whose unrecorded arguments may hold the value
-        for result in trace.tool_results():
+        for result in failures:
             errored_call = trace.call_for(result)
-            meta = registry.metadata_for(errored_call.name) if errored_call else None
-            predicate = meta.failure_when if meta else None
-            declared_failure = predicate is not None and predicate.matches(result.content)
-            if not (_is_structured_error(result) or declared_failure):
-                continue
             err_vals = _significant_values(result.content) | _significant_values(result.error or "")
-
-            consumer = None
-            consumed: set[str] = set()
-            for call in calls:
-                if call.index <= result.index:
-                    continue
-                if call.args_unavailable is not None:
-                    if err_vals:  # a value that could have flowed into the unrecorded arguments
-                        unchecked.append(call)
-                    continue
-                common = err_vals & _significant_values(call.args)
-                if common:
-                    consumer, consumed = call, common
-                    break
-
-            if consumer is not None:
-                findings.append(
-                    self._consumption(result, errored_call, consumer, consumed, registry)
-                )
-                continue
+            uses = self._uses(trace, result, errored_call, err_vals, sources, unchecked)
+            if uses:
+                new = [use for use in uses if use.call.index not in reported]
+                if new:
+                    findings.append(self._consumption(result, errored_call, new, registry))
+                    reported.update(use.call.index for use in new)
+                continue  # used: reported here, or with the earlier failure it repeats
 
             # Not consumed — was the failing tool retried afterwards? If not, it may be ignored.
             failing = errored_call.name if errored_call else None
@@ -325,28 +348,97 @@ class ErrorHandlingRule(Rule):
             findings.append(disclosure)
         return findings
 
-    def _consumption(self, result, errored_call, consumer, consumed, registry) -> Finding:
-        meta = registry.metadata_for(consumer.name)
-        is_side_effecting = bool(meta and meta.side_effecting)
+    def _uses(
+        self,
+        trace: Trace,
+        result: ToolResult,
+        errored_call: ToolCall | None,
+        err_vals: set[str],
+        sources: Callable[[str], list[int] | None],
+        unchecked: list[ToolCall],
+    ) -> list[_Use]:
+        """Later calls that use a value only the failed ``result`` supplied, in trace order."""
+        if not err_vals:
+            return []
+        failing = errored_call.name if errored_call else None
+        fed: dict[int, ToolCall] = {}  # results of calls given the failed value -> those calls
+        uses: list[_Use] = []
+        for call in trace.tool_calls():
+            if call.index <= result.index or call.name == failing:
+                continue  # before the failure, or a retry / recovery of the failed tool
+            if call.args_unavailable is not None:
+                unchecked.append(call)  # a value could be in the unrecorded arguments
+                continue
+            # Where had the agent seen each shared value by now? A call it passed the value to does
+            # not count: that only hands the value back.
+            seen: dict[str, list[int]] = {}
+            for value in err_vals & _significant_values(call.args):
+                steps = sources(value)
+                if steps is not None:  # None: too trivial to trace
+                    seen[value] = [step for step in steps if step < call.index]
+            from_failure = {value for value, steps in seen.items() if set(steps) <= fed.keys()}
+            if not from_failure:
+                continue
+            echoed = all(seen[value] for value in from_failure)
+            echoed_by = sorted({fed[seen[v][0]].name for v in from_failure}) if echoed else []
+            uses.append(_Use(call, from_failure, echoed_by))
+            downstream = trace.result_for(call)
+            if downstream is not None:
+                fed[downstream.index] = call
+        return uses
+
+    def _consumption(
+        self,
+        result: ToolResult,
+        errored_call: ToolCall | None,
+        uses: list[_Use],
+        registry: ToolRegistry,
+    ) -> Finding:
+        def side_effecting(call: ToolCall) -> bool:
+            meta = registry.metadata_for(call.name)
+            return bool(meta and meta.side_effecting)
+
+        def severity(use: _Use) -> int:
+            if not side_effecting(use.call):
+                return 0
+            return 1 if use.echoed_by else 2
+
+        use = max(uses, key=severity)  # the most severe use; the first of equals
+        is_side_effecting = side_effecting(use.call)
+        hard = is_side_effecting and not use.echoed_by
         errored_tool = errored_call.name if errored_call else "?"
-        values = ", ".join(sorted(consumed))
+        values = ", ".join(sorted(use.values))
+        evidence: dict[str, Any] = {
+            "step_indices": [result.index, use.call.index],
+            "errored_tool": errored_tool,
+            "consumer": use.call.name,
+            "consumed_values": sorted(use.values),
+            "side_effecting": is_side_effecting,
+        }
+        if use.echoed_by:
+            evidence["echoed_by"] = use.echoed_by
+        also = [other.call.name for other in uses if other is not use]
+        if also:
+            evidence["also_used_by"] = also
+        summary = (
+            f"value(s) from the errored {errored_tool!r} result ({values}) reused as arguments "
+            f"to {use.call.name!r}"
+        )
+        if hard:
+            summary += " (a side-effecting action, no fallback)"
+        elif is_side_effecting:
+            echoes = ", ".join(repr(name) for name in use.echoed_by)
+            summary += (
+                f" (a side-effecting action, but {echoes} returned the value when given it, which "
+                "may confirm it)"
+            )
         return Finding(
             rule=self.id,
             finding_type=self.finding_type,
-            tier=ConfidenceTier.HARD_DEFECT if is_side_effecting else ConfidenceTier.CANDIDATE,
-            summary=(
-                f"value(s) from the errored {errored_tool!r} result ({values}) reused as arguments "
-                f"to {consumer.name!r}"
-                + (" (a side-effecting action, no fallback)" if is_side_effecting else "")
-            ),
-            evidence={
-                "step_indices": [result.index, consumer.index],
-                "errored_tool": errored_tool,
-                "consumer": consumer.name,
-                "consumed_values": sorted(consumed),
-                "side_effecting": is_side_effecting,
-            },
-            possible_false_positive=not is_side_effecting,
+            tier=ConfidenceTier.HARD_DEFECT if hard else ConfidenceTier.CANDIDATE,
+            summary=summary,
+            evidence=evidence,
+            possible_false_positive=not hard,
         )
 
     def _unhandled(self, result, failing) -> Finding:

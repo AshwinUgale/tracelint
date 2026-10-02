@@ -74,9 +74,10 @@ def _tool_span(
 
 def build_genai_spans() -> list[dict[str, Any]]:
     """An illustrative agent trace, constructed in OTel GenAI format (not a captured run), with
-    three planted defects: the user asks to refund order A100, ``get_order`` **errors**, and the
-    agent refunds anyway using the errored id (R2b hard_defect) — twice (R8). The opening ``chat``
-    span carries ``gen_ai.input.messages`` so provenance (R3) sees the id came from the user."""
+    three planted defects: the user asks to refund order A100 to the card on file, ``get_order``
+    **errors** but its response still carries a cached payment method, and the agent refunds to it
+    (R2b hard_defect: a value only the failed call returned) — twice (R8). The opening ``chat`` span
+    carries ``gen_ai.input.messages`` so provenance (R3) sees the id came from the user."""
     return [
         {
             "span_id": "s0",
@@ -90,7 +91,10 @@ def build_genai_spans() -> list[dict[str, Any]]:
                         {
                             "role": "user",
                             "parts": [
-                                {"type": "text", "content": "Refund order A100."}
+                                {
+                                    "type": "text",
+                                    "content": "Refund order A100 to the card on file.",
+                                }
                             ],
                         }
                     ]
@@ -99,13 +103,15 @@ def build_genai_spans() -> list[dict[str, Any]]:
         },
         _tool_span(
             "s1", "1", "get_order", {"order_id": "A100"},
-            {"order_id": "A100", "status": "error"}, errored=True,
+            {"order_id": "A100", "status": "error", "payment_method": "pm_7731"}, errored=True,
         ),
         _tool_span(
-            "s2", "2", "refund_order", {"order_id": "A100"}, {"refunded": True}, errored=False
+            "s2", "2", "refund_order", {"order_id": "A100", "payment_method": "pm_7731"},
+            {"refunded": True}, errored=False,
         ),
         _tool_span(
-            "s3", "3", "refund_order", {"order_id": "A100"}, {"refunded": True}, errored=False
+            "s3", "3", "refund_order", {"order_id": "A100", "payment_method": "pm_7731"},
+            {"refunded": True}, errored=False,
         ),
     ]
 

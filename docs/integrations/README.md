@@ -50,8 +50,8 @@ with `--format openai` (see [openai.md](openai.md)).
 
 ## What tracelint proves vs. suggests
 
-- **hard_defect** (fails CI, exit 2): schema violation (R1), error-value reused by a side-effecting
-  call (R2b), malformed arguments (R6).
+- **hard_defect** (fails CI, exit 2): schema violation (R1), a value only a failed call returned,
+  used by a side-effecting call (R2b), malformed arguments (R6).
 - **hard_event** (a certain fact, never fails CI): a tool returned an error (R2a), a non-idempotent
   side effect repeated after success (R8).
 - **candidate** (heuristic, never fails CI): hallucinated arg (R3), loop (R4), redundant call (R5),
