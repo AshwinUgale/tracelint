@@ -308,5 +308,7 @@ def test_strict_derivation_asks_whether_the_value_itself_was_seen():
     # Not part of a longer token, and not assembled from pieces.
     for value in ["aker", "12345", "7731-1234", "BakerStreet7731"]:
         assert not available(value), value
-    # The lenient test still accepts digits found anywhere in the text.
-    assert graph.derive("7731-1234").derivable
+    # The lenient test (R3's) still accepts digits inside one number of the text, but not digits
+    # assembled from two numbers.
+    assert graph.derive("12345").derivable
+    assert not graph.derive("7731-1234").derivable

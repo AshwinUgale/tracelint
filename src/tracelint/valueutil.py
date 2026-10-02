@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from decimal import Decimal
 from typing import Any
 
 _WS = re.compile(r"\s+")
@@ -43,6 +44,37 @@ def digits(value: Any) -> str:
 def compact(value: Any) -> str:
     """Letters and digits only, case-folded (so ``A-100``, ``a100`` and ``A 100`` compare equal)."""
     return _NON_ALNUM.sub("", str(value).casefold())
+
+
+_DECIMAL = r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"  # 1200, 1,200, -3.5
+_NUMBER_VALUE = re.compile(rf"[$€£¥]?\s*({_DECIMAL})")
+# A number written in text: not part of a word or a dotted version (v1.2.3).
+_NUMBER_IN_TEXT = re.compile(rf"(?<![\w.]){_DECIMAL}(?!\w|\.\d)")
+
+
+def number(value: Any) -> Decimal | None:
+    """``value`` as an exact number if it is one (``1200``, ``1200.0``, ``"1,200"``,
+    ``"$1,200.00"`` are all 1200), else ``None``."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        found = Decimal(value)
+    elif isinstance(value, float):
+        found = Decimal(repr(value))  # the shortest decimal that round-trips, not binary noise
+    elif isinstance(value, str):
+        match = _NUMBER_VALUE.fullmatch(value.strip())
+        if match is None:
+            return None
+        found = Decimal(match.group(1).replace(",", ""))
+    else:
+        return None
+    return found if found.is_finite() else None
+
+
+def numbers_in(text: str) -> Iterator[Decimal]:
+    """The numbers written in ``text``."""
+    for match in _NUMBER_IN_TEXT.finditer(text):
+        yield Decimal(match.group().replace(",", ""))
 
 
 def iter_scalars(obj: Any) -> Iterator[Any]:
