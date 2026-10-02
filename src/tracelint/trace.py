@@ -27,6 +27,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from tracelint.valueutil import http_status_code
+
 
 class Role(str, Enum):
     """The author of a :class:`Message` turn."""
@@ -277,12 +279,15 @@ def _step_from_dict(data: dict[str, Any]) -> Step:
             args_unavailable=str(unavailable) if unavailable else None,
         )
     if kind == ToolResult.kind:
+        error = data.get("error")
+        http = data.get("http_status")
         return ToolResult(
             call_id=str(data["call_id"]),
             content=data.get("content"),
             status=ResultStatus.parse(data.get("status")),
-            error=data.get("error"),
-            http_status=data.get("http_status"),
+            # "error": false / "" mean no error; an HTTP status may arrive as a string ("404").
+            error=str(error) if error else None,
+            http_status=http_status_code(http) if http is not None else None,
             meta=meta,
             source=source,
         )

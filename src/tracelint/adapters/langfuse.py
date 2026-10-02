@@ -40,7 +40,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from tracelint.adapters._common import tool_input_args
+from tracelint.adapters._common import content_error, tool_input_args, tool_result_content
 from tracelint.trace import (
     Message,
     ResultStatus,
@@ -105,35 +105,26 @@ def _is_tool_observation(obs: dict[str, Any], known_names: set[str]) -> bool:
     return False
 
 
-def _result_signals(obs: dict[str, Any]) -> tuple[ResultStatus, str | None, int | None]:
-    """Extract ``(status, error, http_status)`` from a tool obs — structured signals only."""
+def _result_signals(obs: dict[str, Any]) -> tuple[Any, ResultStatus, str | None]:
+    """``(content, status, error)`` for a tool observation — structured signals only.
+
+    The content is the tool's own result, unwrapped from the ``ToolMessage`` that Langfuse's
+    LangChain integration records. An error is the observation's ``level: ERROR``, a ``ToolMessage``
+    with ``status: "error"``, or a truthy ``error`` field in the result; the result's other fields
+    (``status``, ``http_status``) are its data, read by R2a as a convention, not as an error.
+    """
+    content, message_status = tool_result_content(obs.get("output"))
     level = str(obs.get("level") or "").upper()
     # The fetched SDK shape is snake_case (status_message); the public API is camelCase.
-    status_message = obs.get("statusMessage") or obs.get("status_message")
-    out = obs.get("output")
-    error: str | None = None
-    http: int | None = None
-    status_field: str | None = None
-    if isinstance(out, dict):
-        if out.get("error") is not None:
-            error = str(out.get("error"))
-        candidate_http = out.get("http_status", out.get("status_code"))
-        if isinstance(candidate_http, int):
-            http = candidate_http
-        if isinstance(out.get("status"), str):
-            status_field = out["status"]
-
+    status_message = obs.get("statusMessage") or obs.get("status_message") or None
+    error = content_error(content)
     if level == "ERROR":
-        return ResultStatus.ERROR, error or (status_message or None), http
+        return content, ResultStatus.ERROR, error or status_message
+    if message_status == "error":
+        return content, ResultStatus.ERROR, error or status_message or "tool message status: error"
     if error is not None:
-        return ResultStatus.ERROR, error, http
-    if isinstance(http, int) and http >= 400:
-        return ResultStatus.ERROR, status_message, http
-    if status_field is not None:
-        parsed = ResultStatus.parse(status_field)
-        if parsed is not ResultStatus.UNKNOWN:
-            return parsed, error, http
-    return ResultStatus.UNKNOWN, error, http
+        return content, ResultStatus.ERROR, error
+    return content, ResultStatus.UNKNOWN, None
 
 
 def _generation_text(output: Any) -> str | None:
@@ -246,14 +237,13 @@ def from_langfuse_trace(
                     args_unavailable=call_args.unavailable,
                 )
             )
-            status, error, http = _result_signals(obs)
+            content, status, error = _result_signals(obs)
             steps.append(
                 ToolResult(
                     call_id=call_id,
-                    content=obs.get("output"),
+                    content=content,
                     status=status,
                     error=error,
-                    http_status=http,
                     source=_src(obs_id),
                 )
             )

@@ -33,8 +33,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from tracelint.adapters._common import content_error, tool_result_content
 from tracelint.tools import ToolMetadata, ToolRegistry, ToolSpec
 from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolResult, Trace
+from tracelint.valueutil import http_status_code
 
 # ShareGPT / alternate role names → the canonical role.
 _ROLE_ALIASES = {
@@ -120,15 +122,25 @@ def _parse_arguments(raw: Any) -> tuple[dict[str, Any], str | None]:
     return {}, str(raw)
 
 
-def _result_status(msg: dict[str, Any]) -> ResultStatus:
+def _result_signals(msg: dict[str, Any]) -> tuple[Any, ResultStatus, str | None, int | None]:
+    """``(content, status, error, http_status)`` for a tool message — structured signals only.
+
+    A tool message's ``content`` is usually the tool's JSON result *as a string*; it is parsed, so
+    a ``failure_when`` pointer reads the same value as from any other source. An error is the
+    message's own ``status`` / ``error`` / ``http_status >= 400`` fields, or a truthy ``error``
+    field in the result; the result's other fields are its data (R2a reads them as a convention).
+    """
+    content, _ = tool_result_content(_result_content(msg))
+    error = msg.get("error") or None
+    error = str(error) if error is not None else content_error(content)
+    http = http_status_code(msg.get("http_status"))
     if "status" in msg:
-        return ResultStatus.parse(msg.get("status"))
-    if msg.get("error") is not None:
-        return ResultStatus.ERROR
-    http = msg.get("http_status")
-    if isinstance(http, int) and http >= 400:
-        return ResultStatus.ERROR
-    return ResultStatus.UNKNOWN
+        status = ResultStatus.parse(msg.get("status"))
+    elif error is not None or (http is not None and http >= 400):
+        status = ResultStatus.ERROR
+    else:
+        status = ResultStatus.UNKNOWN
+    return content, status, error, http
 
 
 def _coerce_messages(messages: Any) -> list[dict[str, Any]]:
@@ -170,13 +182,14 @@ def from_openai_messages(
     for msg in messages:
         role = _role_of(msg)
         if role == "tool":
+            content, status, error, http = _result_signals(msg)
             steps.append(
                 ToolResult(
                     call_id=str(msg.get("tool_call_id", "")),
-                    content=_result_content(msg),
-                    status=_result_status(msg),
-                    error=msg.get("error"),
-                    http_status=msg.get("http_status"),
+                    content=content,
+                    status=status,
+                    error=error,
+                    http_status=http,
                 )
             )
             continue

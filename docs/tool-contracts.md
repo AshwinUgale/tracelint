@@ -42,6 +42,11 @@ A contract has four parts, each backed by an existing declaration:
 }
 ```
 
+The pointer reads the tool's own result, the same way from every source: tracelint first unwraps a
+LangChain `ToolMessage` (as OpenInference, Langfuse and LangSmith record it) and parses a result
+recorded as a JSON string (as OpenAI tool messages carry it), so `/status` reaches `"declined"`
+wherever the trace came from.
+
 Read it back as one coherent contract:
 
 ```python

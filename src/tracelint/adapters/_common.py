@@ -1,4 +1,5 @@
-"""Shared argument normalization for the adapters — one implementation, so they cannot drift.
+"""Shared argument and result normalization for the adapters — one implementation, so they
+cannot drift.
 
 Every adapter turns a provider's record of a tool call into canonical arguments, and real
 instrumentation records them in several lossy ways:
@@ -16,6 +17,11 @@ empty dict reads as "the model omitted every required field" to a schema check, 
 call again" to the repeat rules, so a lossy record would fail CI on a valid run. :class:`ToolArgs`
 carries that distinction: ``unavailable`` holds the reason, and the rules suppress (and say why)
 instead of asserting.
+
+Tool results get the same treatment (:func:`tool_result_content`, :func:`content_error`): the
+tool's own result is unwrapped from the envelope its framework records (a LangChain ``ToolMessage``)
+and parsed when serialized (an OpenAI tool message's JSON string), so a ``failure_when`` pointer
+reads the same value from every source. What counts as a *structured* error is fixed in one place.
 
 Two sources are kept apart on purpose. :func:`model_call_args` parses what the **model emitted**
 (an LLM ``tool_call``'s arguments): an unparseable string there is genuine evidence of a malformed
@@ -195,3 +201,61 @@ def model_call_args(raw: Any, *, lenient: bool = True) -> ToolArgs:
             return ToolArgs(dict(value))
         return ToolArgs({}, raw_text=raw)
     return ToolArgs({}, raw_text=str(raw))
+
+
+# --- Tool results -------------------------------------------------------------------------------
+
+
+def result_value(raw: Any) -> Any:
+    """A serialized tool result parsed into the value it encodes: JSON, or a Python-literal object
+    (``str(dict)``); anything else — plain text — is returned unchanged."""
+    if not isinstance(raw, str):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    try:
+        value = ast.literal_eval(raw)
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        return raw
+    return value if isinstance(value, (dict, list)) else raw
+
+
+def tool_result_content(raw: Any) -> tuple[Any, str | None]:
+    """The tool's own result in a recorded output, and the wrapping ``ToolMessage``'s status.
+
+    LangChain records a tool's result as a serialized ``ToolMessage`` — nested under ``data`` as
+    OpenInference stores it (``{"type": "tool", "data": {"content": ...}}``), or flat as Langfuse
+    and LangSmith do (``{"type": "tool", "content": ..., "tool_call_id": ...}``) — with the result
+    itself usually a JSON string. Both are unwrapped and the content parsed, so a ``failure_when``
+    pointer reads the tool's result rather than the envelope. Returns ``(content, status)``;
+    ``status`` is the message's ``"success"`` / ``"error"`` (lower-cased) when there was one.
+    """
+    # The envelope itself may arrive serialized (OpenInference's output.value is a JSON string).
+    value = result_value(raw)
+    if isinstance(value, dict) and value.get("type") == "tool":
+        message = value["data"] if isinstance(value.get("data"), dict) else value
+        if "content" in message:
+            status = message.get("status")
+            return result_value(message["content"]), (
+                str(status).lower() if status is not None else None
+            )
+    return value, None
+
+
+def content_error(content: Any) -> str | None:
+    """The error a tool's own result reports in a top-level ``error`` field, when it is truthy.
+
+    ``"error": false`` / ``""`` / ``null`` mean "no error" and are not one. The result's other
+    fields (``status``, ``http_status``, ``status_code``) are its data — a link checker reports
+    ``status_code: 404`` for a page it checked successfully — so they are never read as an error
+    here; R2a shows them as a candidate convention, and ``failure_when`` makes one a fact.
+    """
+    if not isinstance(content, dict):
+        return None
+    error = content.get("error")
+    if not error:
+        return None
+    return error if isinstance(error, str) else json.dumps(error, default=str)
+

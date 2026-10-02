@@ -42,7 +42,8 @@ def test_nested_run_tree_orders_by_start_time_and_preserves_error():
                 "order not found", {"status": "missing"},
             ),
             ("tool_call", "cancel_order", {"order_id": "Z999"}),
-            # LangSmith's explicit status field maps "ok" -> OK (a bare OTel span stays UNKNOWN).
-            ("tool_result", "cancel_order", "ok", None, None, {"status": "ok"}),
+            # A status inside the tool's result is its data in every adapter (R2a reads it as a
+            # convention); LangSmith's structured status is the run's own `status` field.
+            ("tool_result", "cancel_order", "unknown", None, None, {"status": "ok"}),
         ],
     )

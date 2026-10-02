@@ -29,7 +29,9 @@ def test_standard_chat_with_tool_call_and_result():
             ("message", "user", "find shoes"),
             ("tool_call", "search", {"q": "shoes"}),
             # A plain OpenAI tool message carries no status signal → UNKNOWN (fail-closed default).
-            ("tool_result", "search", "unknown", None, None, "[]"),
+            # A tool message's content is usually the tool's JSON result as a string; it is
+            # parsed, so failure_when pointers read the same value as from any other source.
+            ("tool_result", "search", "unknown", None, None, []),
             ("message", "assistant", "none found"),
         ],
     )

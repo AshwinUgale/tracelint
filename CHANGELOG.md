@@ -6,6 +6,22 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: one rule for reading a tool's result, in every adapter** (the result half of #37). Each
+  adapter unwrapped results, and decided what counts as an error, on its own, and they had drifted:
+  - **Missed defects.** A declined charge followed by shipping failed CI from OTel and an OpenAI
+    dict, but passed from an OpenAI JSON-string result, Langfuse, and LangSmith (including a real
+    LangSmith trace): the `failure_when` pointer never reached the result. LangChain's
+    `ToolMessage` (nested in OpenInference, flat in Langfuse and LangSmith, inside LangSmith's
+    `{"output": ...}`) is now unwrapped everywhere, and a JSON-string result is parsed.
+  - **False failures.** `"error": false` or `""` counted as an error, and so did a status code in
+    the result's body (a link checker's `status_code: 404`), failing CI on correct runs. Now an
+    error is the span's or run's own error status, a `ToolMessage` with `status: "error"`, or a
+    non-empty `error` field in the result. A `status`, `http_status` or `status_code` inside the
+    result is the tool's data: R2a shows a failure-looking value as a candidate that names
+    `failure_when`, which makes it a fact. LangSmith and Langfuse no longer read a `status` inside
+    the result as structured (OTel and OpenAI never did); LangSmith's run-level `status` still is.
+  - **Crash.** An `http_status` recorded as a string (`"404"`) raised a `TypeError` and exited 3;
+    it is read as a number.
 - **Fix: `capture` no longer breaks your own tracing, and never passes on an empty capture.** If the
   framework was already instrumented (a Phoenix or Langfuse setup, as smolagents' telemetry docs
   show), capture recorded **0 spans**, and its `uninstrument()` on exit removed the shared

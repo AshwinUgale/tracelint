@@ -38,7 +38,13 @@ import ast
 import json
 from typing import Any
 
-from tracelint.adapters._common import ToolArgs, model_call_args, tool_input_args
+from tracelint.adapters._common import (
+    ToolArgs,
+    content_error,
+    model_call_args,
+    tool_input_args,
+    tool_result_content,
+)
 from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolResult, Trace
 
 _SPAN_KIND = "openinference.span.kind"
@@ -251,29 +257,6 @@ def _parse_value(raw: Any) -> tuple[Any, str | None]:
     return raw, None
 
 
-def _unwrap_tool_message(value: Any) -> tuple[Any, str | None]:
-    """Unwrap a serialized LangChain ``ToolMessage`` into ``(tool result, message status)``.
-
-    LangChain / LangGraph's OpenInference instrumentation records a TOOL span's ``output.value``
-    as the whole serialized message — ``{"type": "tool", "data": {"content": "<the tool's
-    result>", "status": "success" | "error", ...}}`` — so the tool's actual result sits one level
-    down, usually as a JSON string. Left wrapped, a ``failure_when`` pointer into the result can
-    never match (the "acted on a failed result" defect goes unseen) and the message's structured
-    ``status`` is unread. Anything that isn't exactly this envelope is returned unchanged.
-    """
-    if (
-        isinstance(value, dict)
-        and value.get("type") == "tool"
-        and isinstance(value.get("data"), dict)
-        and "content" in value["data"]
-    ):
-        data = value["data"]
-        content, _ = _parse_value(data.get("content"))
-        status = data.get("status")
-        return content, (str(status).lower() if status is not None else None)
-    return value, None
-
-
 def _status_fields(span: dict[str, Any]) -> tuple[str, str | None]:
     """The span's status code (upper-cased) and message across the shapes exports actually use.
 
@@ -294,7 +277,13 @@ def _status_fields(span: dict[str, Any]) -> tuple[str, str | None]:
     return str(code if code is not None else "").upper(), (str(message) if message else None)
 
 
-def _is_error_span(span: dict[str, Any], attrs: dict[str, Any]) -> tuple[bool, str | None]:
+def _is_error_span(
+    span: dict[str, Any], message_status: str | None, content: Any
+) -> tuple[bool, str | None]:
+    """Whether a TOOL span records a structured error: an OTel ERROR status, an exception event, a
+    LangChain ``ToolMessage`` with ``status: "error"``, or a truthy ``error`` field in the result.
+    The result's other fields are its data (see :func:`tracelint.adapters._common.content_error`).
+    """
     status, message = _status_fields(span)
     # "ERROR" covers the plain code and OTLP's "STATUS_CODE_ERROR"; "2" is OTLP's numeric ERROR.
     if "ERROR" in status or status == "2":
@@ -308,17 +297,11 @@ def _is_error_span(span: dict[str, Any], attrs: dict[str, Any]) -> tuple[bool, s
             if isinstance(ev_attrs, list):
                 ev_attrs = {i.get("key"): _otlp_value(i.get("value")) for i in ev_attrs}
             return True, str(ev_attrs.get("exception.message") or "exception")
-    out = _output_value(attrs)
-    parsed, _ = _parse_value(out)
-    parsed, message_status = _unwrap_tool_message(parsed)
     if message_status == "error":  # LangChain ToolMessage(status="error"): a structured signal
-        return True, message or "tool message status: error"
-    if isinstance(parsed, dict):
-        http = parsed.get("http_status", parsed.get("status_code"))
-        if isinstance(http, int) and http >= 400:
-            return True, str(parsed.get("detail") or message or "")
-        if parsed.get("error") is not None:
-            return True, str(parsed["error"])
+        return True, message or content_error(content) or "tool message status: error"
+    error = content_error(content)
+    if error is not None:
+        return True, error
     return False, None
 
 
@@ -624,8 +607,8 @@ def from_otel_spans(spans: list[dict[str, Any]], *, run_id: str | None = None) -
                     args_unavailable=call_args.unavailable,
                 )
             )
-            is_err, err_msg = _is_error_span(span, attrs)
-            content, _ = _unwrap_tool_message(_parse_value(_output_value(attrs))[0])
+            content, message_status = tool_result_content(_output_value(attrs))
+            is_err, err_msg = _is_error_span(span, message_status, content)
             steps.append(
                 ToolResult(
                     call_id=call_id,
