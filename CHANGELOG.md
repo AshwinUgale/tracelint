@@ -6,6 +6,21 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: R3 reads a value's digits from one number, compares numbers by value, and no longer
+  slows down with the square of the trace.**
+  - **Missed defects.** R3 joined every digit in a text, so a fabricated `ORD-58213` "derived" from
+    a result with a total of 58 and a quantity of 213, even on a field annotated `provided`; two
+    observed numbers could also be run together (58 and 213 as 58213). A value's digits must now
+    come from one number in the text (a phone number written with separators still counts), and
+    two numbers are never joined without a separator.
+  - **False failures.** The same number written differently was underivable: `1200.0` against
+    `$1,200`, a float `4906.0` against `4906`, `12` in "order 12 items". On a `provided` field that
+    was a hard defect on a correct call. Numbers now compare by value.
+  - **Cost.** R3 rebuilt the provenance graph for every call and compared every pair of observed
+    values for each argument. One 1,000-row tool result with two free-text arguments took about a
+    minute, and so did a run of 1,000 small calls. One graph is now grown through the trace, with
+    its values indexed: both take a fraction of a second. `ProvenanceGraph.observe(step)` adds a
+    step to a graph.
 - **Fix: R2b follows the data, so handling an error no longer fails CI.** R2b read any later call
   that shared a value with a failed result as using it, and a failed result often echoes its inputs.
   On real LangGraph runs, retrying a timed-out cancellation with the same id, and emailing a receipt

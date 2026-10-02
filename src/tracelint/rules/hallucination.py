@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from tracelint.findings import ConfidenceTier, Finding
-from tracelint.provenance import build_provenance
+from tracelint.provenance import ProvenanceGraph
 from tracelint.rules.base import Rule
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ToolCall, Trace
@@ -42,13 +42,18 @@ class HallucinatedArgRule(Rule):
 
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         findings: list[Finding] = []
+        graph = ProvenanceGraph()  # grown step by step: each call sees what came before it
+        steps = iter(trace.steps)
+        upcoming = next(steps, None)
         for call in trace.tool_calls():
+            while upcoming is not None and upcoming.index < call.index:
+                graph.observe(upcoming)
+                upcoming = next(steps, None)
             if call.args_unavailable is not None:
                 continue  # the real arguments are unknown — no values to trace (disclosed below)
             spec = registry.get(call.name)
             props = (spec.schema or {}).get("properties", {}) if spec and spec.schema else {}
             origins = spec.value_origins if spec else {}
-            graph = build_provenance(trace.steps, call.index)
 
             for field_name, value in call.args.items():
                 if not self._checkable(value, props.get(field_name, {}), origins.get(field_name)):
