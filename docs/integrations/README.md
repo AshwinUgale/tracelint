@@ -30,7 +30,7 @@ ecosystem rather than one vendor. Each has a one-pager:
 |---|---|---|
 | `openinference` | Arize **Phoenix**, OTLP, OpenInference instrumentors | [phoenix.md](phoenix.md) |
 | `otel` | **OpenLLMetry / Traceloop** (OTel GenAI semconv) | [otel.md](otel.md) |
-| `langfuse` | **Langfuse** (+ native fetch & Score write-back) | [langfuse.md](langfuse.md) |
+| `langfuse` | **Langfuse** (+ `tracelint langfuse pull` to fetch a trace) | [langfuse.md](langfuse.md) |
 | `langsmith` | **LangSmith** run tree | [langsmith.md](langsmith.md) |
 | `openai` | **OpenAI** chat message list, incl. **ShareGPT** | [openai.md](openai.md) |
 | `native` | tracelint's own JSON | — |
@@ -41,8 +41,9 @@ Two quick entry points:
 # OpenInference / OTel spans you already collect (Phoenix, OpenLLMetry, …):
 tracelint check spans.json --format openinference
 
-# Langfuse — fetch a trace, lint it, and write findings back as Scores:
-tracelint langfuse check --trace <trace-id> --write-back
+# Langfuse — pull a trace to a file, then lint it:
+tracelint langfuse pull <trace-id>
+tracelint check <trace-id>.json --format langfuse
 ```
 
 The lowest-friction path needs no tracing stack at all — lint a raw OpenAI/ShareGPT message list
@@ -51,11 +52,11 @@ with `--format openai` (see [openai.md](openai.md)).
 ## What tracelint proves vs. suggests
 
 - **hard_defect** (fails CI, exit 2): schema violation (R1), a value only a failed call returned,
-  used by a side-effecting call (R2b), malformed arguments (R6).
+  used by a side-effecting call (R2b), malformed arguments the model emitted (R6).
 - **hard_event** (a certain fact, never fails CI): a tool returned an error (R2a), a non-idempotent
   side effect repeated after success (R8).
 - **candidate** (heuristic, never fails CI): hallucinated arg (R3), loop (R4), redundant call (R5),
-  unknown tool (R7).
+  malformed JSON in a tool's own record (R6), unknown tool (R7).
 
 When a rule can't run (missing data) it is **suppressed with a reason** — never a silent pass — and
 tracelint reports per-rule verification coverage.

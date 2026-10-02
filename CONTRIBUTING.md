@@ -5,11 +5,14 @@ for agent runs** that reads a tool-calling agent's execution trace and flags str
 bugs with exact evidence, *without a second model judging it*. Contributions that keep it
 *trustworthy, deterministic, and simple* are very welcome.
 
-New to the codebase? The `src/tracelint/` modules: `trace.py` (the canonical trace schema)
-· `findings.py` / `signatures.py` (the deterministic lint rules) · `provenance.py`
-(argument provenance for the hallucinated-arg check) · `injection.py` (the fault injector)
-· `scorecard.py` (recovery scoring) · `nondeterminism.py` · `adapters/` (otel / openai /
-langfuse) · `report.py` · `cli.py`.
+New to the codebase? The `src/tracelint/` layout: `trace.py` (the canonical trace schema) ·
+`rules/` (the lint rules R1–R8, one module per family, on the `Rule` base class in
+`rules/base.py`) · `findings.py` (the finding and report shapes) · `provenance.py` (where an
+argument value could have come from, for R3 and R2b) · `adapters/` (OTel / OpenInference, OpenAI,
+Langfuse, LangSmith, with shared readers in `_common.py`) · `sources.py` (loading a file in a
+format) · `capture.py` / `pytest_plugin.py` (recording a run) · `report.py` / `sarif.py` · `cli.py`.
+`injection.py` and `scorecard.py` are the fault injector and recovery scorecard behind
+`tracelint demo`.
 
 ## Found a trace that breaks it?
 
@@ -32,27 +35,31 @@ Before opening a PR, run what CI runs:
 
 ```bash
 ruff check src tests examples    # lint
-ruff format src tests examples   # auto-format (CI checks this)
 pytest -q                        # unit + validation-suite tests
 tracelint demo                   # the keyless self-check must stay green
 ```
 
-The agent that *generates* traces (`[real-agent]`) and the Langfuse integration
-(`[langfuse]`) are optional extras. **The linter and its whole test/validation path run
+CI doesn't check formatting, and the tree isn't fully `ruff format`-clean yet, so format only the
+files you change (`ruff format <files>`).
+
+The agent that *generates* traces (`[real-agent]`), the Langfuse integration (`[langfuse]`) and
+the capture helpers (`[capture-*]`) are optional extras. **The linter and its whole test/validation path run
 offline and keyless** — please keep it that way.
 
 ## Good first contributions
 
 - **A new lint rule** — the highest-value, smallest surface. Add a deterministic detector
   next to the existing ones (schema-violating call, ignored tool error, hallucinated arg,
-  loop, redundant call) in `findings.py`/`signatures.py`, with the exact trace evidence it
-  reports. Ideas: unbounded retry without backoff, tool called before its dependency,
+  loop, redundant call, duplicate side effect) in `rules/`, registered in `rules/__init__.py`,
+  with the exact trace evidence it reports. Ideas: unbounded retry without backoff, tool called before its dependency,
   final answer contradicting a tool result.
-- **A new trace adapter** — follow `adapters/otel.py` / `openai.py` / `langfuse.py` (e.g.
-  OpenInference, LangSmith, or a generic JSON adapter). Never lint a partial trace as if it
-  were complete — suppress the checks that need missing fields and say so.
-- **A new injected fault** — extend `injection.py` (e.g. partial/streamed tool output,
-  reordered results) and score recovery in `scorecard.py`.
+- **A new input format** — follow an existing adapter in `adapters/` and reuse the shared
+  readers in `_common.py`. Formats that read as zero tool calls today: OpenAI Responses API
+  items, Anthropic `tool_use` blocks, a raw chat-completion response. Never lint a partial trace
+  as if it were complete: mark what's missing (`args_unavailable`, an unknown result status) so
+  the rules disclose it instead of guessing.
+- **A real-framework regression fixture** — a trace captured from a framework or instrumentor
+  version we don't cover yet, generated offline, with the command and the answer you expected.
 - **Docs & examples** — a new example trace with a planted defect, a walkthrough.
 
 Browse issues labeled **`good first issue`** and **`help wanted`**. For anything larger
@@ -77,7 +84,7 @@ than a single rule/adapter/fault, open an issue first so we agree on the shape.
 ## Pull request checklist
 
 - [ ] `pytest -q` passes and new behavior has a test
-- [ ] `ruff check src tests examples` and `ruff format …` are clean
+- [ ] `ruff check src tests examples` is clean
 - [ ] `tracelint demo` still runs green (offline / keyless)
 - [ ] `CHANGELOG.md` updated (for user-visible changes)
 - [ ] docs / README touched if the change is user-facing
