@@ -12,19 +12,20 @@ Then capture and lint an agent run inside a test:
             agent.run("refund order A100")     # your agent under test, unchanged
         # on exit the run's trace is linted; a hard defect fails the test
 
-It's a thin wrapper over :func:`tracelint.capture.capture` (which records the run) and
-:func:`tracelint.lint_otel_trace` (which lints the captured spans). Capturing a real framework needs
-that framework's extra, e.g. ``pip install "tracelint[capture-smolagents]"``.
+It's a thin wrapper over :func:`tracelint.capture.capture` (which records the run) and the same
+loader ``tracelint check --format openinference`` uses (which lints each captured run). Capturing a
+real framework needs that framework's extra, e.g. ``pip install "tracelint[capture-smolagents]"``.
 
 The fixture auto-fails the test on a **hard defect**; heuristic candidates never fail it. Pass
 ``assert_clean=False`` to inspect the report yourself instead, and read it from the handle's
-``.report`` after the block. For a manual/advanced run (no framework), omit ``framework`` and emit
-spans on the handle's ``.tracer``.
+``.report`` after the block (``.reports`` holds one per run when the block ran the agent more than
+once). A capture with nothing to lint fails the test too — an empty capture is a broken setup, not
+a clean run. For a manual/advanced run (no framework), omit ``framework`` and emit spans on the
+handle's ``.tracer``.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -32,9 +33,10 @@ from typing import Any
 
 import pytest
 
-from tracelint import lint_otel_trace
 from tracelint.capture import capture
 from tracelint.findings import ConfidenceTier, LintReport
+from tracelint.rules import default_rules, lint_trace
+from tracelint.sources import OPENINFERENCE, load_source
 from tracelint.tools import ToolRegistry
 
 
@@ -42,13 +44,23 @@ class TraceCapture:
     """Handle yielded inside the ``with`` block.
 
     ``tracer`` is the OpenTelemetry tracer for the capture (useful only for a manual run with no
-    ``framework``); ``report`` is the :class:`~tracelint.findings.LintReport`, populated once the
-    block exits and the captured trace has been linted.
+    ``framework``). ``reports`` holds one :class:`~tracelint.findings.LintReport` per captured run,
+    populated once the block exits; ``report`` is the report of the block's one run.
     """
 
     def __init__(self, tracer: Any) -> None:
         self.tracer = tracer
-        self.report: LintReport | None = None
+        self.reports: list[LintReport] = []
+
+    @property
+    def report(self) -> LintReport | None:
+        """The run's report (``None`` until the block exits). A block that ran the agent more than
+        once has one report per run in :attr:`reports`."""
+        if len(self.reports) > 1:
+            raise ValueError(
+                f"this capture recorded {len(self.reports)} runs — read .reports (one per run)"
+            )
+        return self.reports[0] if self.reports else None
 
 
 @pytest.fixture
@@ -56,9 +68,9 @@ def trace_capture(tmp_path: Path):
     """Capture an agent run and lint it; a hard defect fails the test.
 
     Yields a factory — ``trace_capture(framework=..., assert_clean=True, registry=None)`` returns a
-    context manager. On exit the captured trace is linted with :func:`tracelint.lint_otel_trace`;
-    unless ``assert_clean=False`` a hard defect raises ``AssertionError`` (failing the test). The
-    report is available as the handle's ``.report`` afterwards.
+    context manager. On exit each captured run is linted; unless ``assert_clean=False`` a hard
+    defect in any run raises ``AssertionError`` (failing the test), as does a capture with nothing
+    to lint. The reports are on the handle afterwards (``.report``, or ``.reports`` per run).
     """
     counter = {"n": 0}
 
@@ -72,15 +84,19 @@ def trace_capture(tmp_path: Path):
         counter["n"] += 1
         path = tmp_path / f"trace_{counter['n']}.json"
         handle = TraceCapture(tracer=None)
+        # capture() raises if it recorded nothing; once the block closes the spans are on disk.
         with capture(path, framework=framework) as tracer:
             handle.tracer = tracer
             yield handle
-        # The capture block has closed, so the spans are on disk — lint them now.
-        spans = json.loads(path.read_text(encoding="utf-8"))
-        handle.report = lint_otel_trace(spans, registry=registry)
-        if assert_clean and handle.report.has_hard_defect:
-            hard = handle.report.by_tier(ConfidenceTier.HARD_DEFECT)
-            detail = "; ".join(f"{f.rule} {f.summary}" for f in hard) or "see the report"
+        try:
+            traces = load_source(path, OPENINFERENCE)  # one per run, as `tracelint check` reads it
+        except ValueError as exc:  # spans, but no tool calls or messages among them
+            message = f"tracelint: the captured run has nothing to lint ({exc})"
+            raise AssertionError(message) from exc
+        handle.reports = [lint_trace(trace, default_rules(), registry) for trace in traces]
+        hard = [f for r in handle.reports for f in r.by_tier(ConfidenceTier.HARD_DEFECT)]
+        if assert_clean and hard:
+            detail = "; ".join(f"{f.rule} {f.summary}" for f in hard)
             raise AssertionError(f"tracelint: the agent trace has a hard defect ({detail})")
 
     return _trace_capture

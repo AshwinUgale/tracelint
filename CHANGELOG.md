@@ -6,6 +6,26 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: `capture` no longer breaks your own tracing, and never passes on an empty capture.** If the
+  framework was already instrumented (a Phoenix or Langfuse setup, as smolagents' telemetry docs
+  show), capture recorded **0 spans**, and its `uninstrument()` on exit removed the shared
+  instrumentor, so **your own backend got nothing from every later run**. The 0.8.0 note said
+  existing tracing was left untouched; it was not. Now capture never uninstruments what it did not
+  instrument, and records from the global tracer provider (which `phoenix.otel.register()` sets).
+  Verified on the real smolagents and LangChain instrumentors: with a global provider the run is
+  captured and your tracing keeps working; with a provider capture can't reach it raises and names
+  the fix. A capture that records nothing raises instead of writing `[]`, which linted as a clean
+  run; an exception from the agent itself still propagates unchanged.
+- **Fix: the `trace_capture` fixture lints every run in the block** (`.reports`, one per run;
+  `.report` still works for one run). It used to fail with "use `lint_otel_traces`", a call only
+  the fixture could make. A capture with nothing to lint now fails the test instead of passing.
+- **Fix: usage errors exit 3, not 2.** argparse's own code, 2, is the one tracelint reserves for a
+  hard defect, so a mistyped flag in a CI step read as "defect found".
+- **Fix: no crash printing text the console can't encode.** Redirected output on Windows uses the
+  locale code page, and a report echoes the trace's own text (CJK, emoji): a clean run exited 3
+  with a `'charmap' codec` error. Such characters are now escaped (`\u6771`).
+- `pip install "tracelint[capture]"` is now named when the OpenTelemetry SDK is missing, instead of
+  a raw `ModuleNotFoundError`. The integration guides' snippets read traces as UTF-8.
 - **Fix: the wrong `--format`, or an empty file, is an input error instead of a clean pass.**
   The CLI's default format (and the GitHub Action's) is `native`. Read as native, a span file
   became one empty "trace" per span and exited 0 having checked nothing; the same happened for

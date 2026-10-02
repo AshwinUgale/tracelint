@@ -38,6 +38,10 @@ with capture("trace.json", framework="smolagents"):
     agent.run("...")            # your agent, unchanged
 ```
 
+If your app already instruments the framework (a Phoenix or Langfuse setup), `capture` leaves that
+tracing alone and records from the global tracer provider, which `phoenix.otel.register()` sets. A
+capture that records nothing raises and says why, instead of writing an empty trace.
+
 **2. Lint it.**
 
 ```bash
@@ -334,8 +338,10 @@ def test_agent(trace_capture):
         agent.run("refund order A100")   # a hard defect in the trace fails this test
 ```
 
-Pass `assert_clean=False` to inspect `cap.report` yourself instead of auto-failing. It's a thin
-wrapper over the capture helper, so the same `capture-<framework>` extra applies.
+Pass `assert_clean=False` to inspect `cap.report` yourself instead of auto-failing (`cap.reports`
+has one report per run when the block runs the agent more than once). A capture with nothing to
+lint fails the test rather than passing as clean. It's a thin wrapper over the capture helper, so
+the same `capture-<framework>` extra applies.
 
 **Recovery scorecard & fault injection.** Measure how an agent behaves under injected faults, scored
 against deterministic success oracles:

@@ -18,7 +18,12 @@ only per-framework knowledge here is a name → instrumentor lookup (:data:`_INS
 capture mechanism itself is uniform.
 
 The provider is local and never installed globally, so a user's own tracing (Phoenix, Langfuse) is
-untouched while capture runs. The OpenTelemetry SDK is an optional dependency
+untouched while capture runs. If the framework is **already instrumented** in the process (by that
+tracing), capture leaves the instrumentation alone (instrumentors are process-wide singletons, so
+re-instrumenting is a silent no-op and uninstrumenting would tear the user's tracing down) and
+listens on the global tracer provider instead, which is where ``phoenix.otel.register()`` sends
+spans. A capture that records **nothing** raises, saying why, rather than leaving an empty file
+that lints as a clean run. The OpenTelemetry SDK is an optional dependency
 (``pip install "tracelint[capture]"``) plus the per-framework instrumentor
 (``tracelint[capture-smolagents]`` / ``[capture-langchain]`` / ``[capture-crewai]``); both are
 imported lazily, so importing tracelint never requires them.
@@ -32,6 +37,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import weakref
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -119,17 +125,73 @@ def _load_instrumentor(framework: str) -> Any:
     return getattr(module, class_name)()
 
 
-def _new_provider() -> Any:
-    """A fresh, local ``TracerProvider`` — never the global one, so real tracing is untouched."""
+def _otel_sdk() -> tuple[Any, Any]:
+    """The OpenTelemetry SDK's ``TracerProvider`` and ``SimpleSpanProcessor``, or how to install
+    them."""
     try:
         from opentelemetry.sdk.trace import TracerProvider
-    except ImportError as exc:  # pragma: no cover - exercised only without the extra installed
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    except ImportError as exc:
         raise RuntimeError(
             "capture needs the OpenTelemetry SDK — install it with "
             '`pip install "tracelint[capture]"` (or a per-framework extra like '
             '"tracelint[capture-smolagents]")'
         ) from exc
-    return TracerProvider()
+    return TracerProvider, SimpleSpanProcessor
+
+
+# One tee per provider that a caller's own instrumentation writes to, reused across captures: the
+# SDK can add a span processor to a provider but never remove one, so the tee stays attached and is
+# pointed at the active capture (and back at nothing) instead.
+_TEES: weakref.WeakKeyDictionary[Any, Any] = weakref.WeakKeyDictionary()
+
+
+def _global_tee() -> Any | None:
+    """A span processor on the global SDK tracer provider that forwards finished spans to its
+    ``target``, or ``None`` when the global provider is not an SDK provider (nothing to attach to).
+    """
+    from opentelemetry import trace as trace_api
+    from opentelemetry.sdk.trace import SpanProcessor
+
+    provider = trace_api.get_tracer_provider()
+    if not hasattr(provider, "add_span_processor"):
+        return None
+    tee = _TEES.get(provider)
+    if tee is None:
+
+        class _Tee(SpanProcessor):
+            target: Any = None
+
+            def on_end(self, span: Any) -> None:
+                if self.target is not None:
+                    self.target.on_end(span)
+
+        tee = _Tee()
+        provider.add_span_processor(tee)
+        _TEES[provider] = tee
+    return tee
+
+
+def _nothing_captured(framework: str | None, *, already_instrumented: bool) -> RuntimeError:
+    """Why a capture recorded no spans, and what to do about it."""
+    if framework is None:
+        return RuntimeError(
+            "capture recorded no spans — emit spans on the yielded tracer, or pass framework= "
+            "to capture an agent run"
+        )
+    if already_instrumented:
+        return RuntimeError(
+            f"capture recorded no spans: {framework} is already instrumented in this process by "
+            "your own tracing setup (left untouched), and its spans do not reach the global tracer "
+            "provider that capture listens on. Make that setup's provider the global one "
+            "(phoenix.otel.register() does; otherwise opentelemetry.trace.set_tracer_provider("
+            "provider)), or export the run's spans from your backend and lint them with "
+            "`tracelint check --format openinference`."
+        )
+    return RuntimeError(
+        f"capture recorded no spans from {framework}: was a {framework} agent run inside the "
+        "`with` block?"
+    )
 
 
 @contextmanager
@@ -141,7 +203,10 @@ def capture(path: str | Path, framework: str | None = None) -> Iterator[Any]:
     no instrumentor is activated and the yielded tracer captures only spans emitted on it directly.
 
     The written file is a JSON array of flat OpenInference spans. The provider is local and torn
-    down on exit; any tracing the caller already had configured is left in place.
+    down on exit; any tracing the caller already had configured is left in place — including an
+    existing instrumentation of ``framework``, whose spans are then read from the global tracer
+    provider. Raises :class:`RuntimeError` when nothing was captured (after writing the file); an
+    exception from the block itself propagates unchanged.
     """
     if framework is not None and framework not in _INSTRUMENTORS:
         raise ValueError(
@@ -149,22 +214,36 @@ def capture(path: str | Path, framework: str | None = None) -> Iterator[Any]:
             "(or omit it and emit spans on the yielded tracer)"
         )
 
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-
-    provider = _new_provider()
+    tracer_provider_cls, simple_span_processor_cls = _otel_sdk()
+    provider = tracer_provider_cls()
     exporter = _make_file_exporter()
     # SimpleSpanProcessor exports each span as it finishes — deterministic for short test runs,
     # unlike the batch processor which may drop spans if the process exits before its flush.
-    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    processor = simple_span_processor_cls(exporter)
+    provider.add_span_processor(processor)
 
     instrumentor = _load_instrumentor(framework) if framework is not None else None
-    if instrumentor is not None:
+    # Instrumentors are process-wide singletons: if the caller already instrumented this framework,
+    # instrumenting again is a silent no-op and uninstrumenting would remove *their* tracing. Leave
+    # it alone and listen where their spans most likely go: the global tracer provider.
+    already_instrumented = bool(getattr(instrumentor, "is_instrumented_by_opentelemetry", False))
+    tee = previous_target = None
+    if already_instrumented:
+        tee = _global_tee()
+        if tee is not None:
+            previous_target, tee.target = tee.target, processor
+    elif instrumentor is not None:
         instrumentor.instrument(tracer_provider=provider)
     try:
         yield provider.get_tracer("tracelint.capture")
     finally:
-        if instrumentor is not None:
+        if instrumentor is not None and not already_instrumented:
             instrumentor.uninstrument()
+        if tee is not None:
+            tee.target = previous_target
         provider.force_flush()
         Path(path).write_text(json.dumps(exporter.spans, indent=2) + "\n", encoding="utf-8")
         provider.shutdown()
+    # Only reached when the block completed: an empty capture would lint as a clean run.
+    if not exporter.spans:
+        raise _nothing_captured(framework, already_instrumented=already_instrumented)

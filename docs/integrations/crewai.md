@@ -25,7 +25,7 @@ def test_crew_run_has_no_structural_defects(tmp_path):
     with capture(trace, framework="crewai"):
         my_crew.kickoff()                          # your crew, unchanged
 
-    report = lint_otel_trace(json.loads(trace.read_text()))
+    report = lint_otel_trace(json.loads(trace.read_text(encoding="utf-8")))
     assert not report.has_hard_defect              # a provable defect fails the test
 ```
 
