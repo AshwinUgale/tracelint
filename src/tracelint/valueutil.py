@@ -15,6 +15,7 @@ from typing import Any
 
 _WS = re.compile(r"\s+")
 _NON_DIGIT = re.compile(r"\D")
+_NON_ALNUM = re.compile(r"[\W_]+")
 
 
 def http_status_code(value: Any) -> int | None:
@@ -37,6 +38,11 @@ def normalize(value: Any) -> str:
 def digits(value: Any) -> str:
     """The digit string of a value (so ``1,234.56`` and ``1234.56`` compare equal by digits)."""
     return _NON_DIGIT.sub("", str(value))
+
+
+def compact(value: Any) -> str:
+    """Letters and digits only, case-folded (so ``A-100``, ``a100`` and ``A 100`` compare equal)."""
+    return _NON_ALNUM.sub("", str(value).casefold())
 
 
 def iter_scalars(obj: Any) -> Iterator[Any]:

@@ -15,8 +15,9 @@ from tracelint.integrations.langfuse import LangfuseIntegration
 from tracelint.sources import load_source
 from tracelint.tools import ToolRegistry
 
-# A trace with two planted, *certain* defects: get_order errors, its value A100 is reused by a
-# side-effecting refund_order (R2b hard_defect), which then runs twice (R8 hard_event).
+# A trace with two planted, *certain* defects: get_order errors, and the side-effecting
+# refund_order uses the payment method that only the failed response returned (R2b hard_defect),
+# then runs twice (R8 hard_event).
 TRACE = {
     "id": "trace-xyz",
     "input": "Refund order A100.",
@@ -25,17 +26,19 @@ TRACE = {
         {
             "id": "o1", "type": "tool", "name": "get_order",
             "input": {"order_id": "A100"},
-            "output": {"order_id": "A100", "status": "error"},
+            "output": {"order_id": "A100", "status": "error", "payment_method": "pm_7731"},
             "level": "ERROR", "statusMessage": "500", "startTime": "2024-01-01T00:00:01Z",
         },
         {
             "id": "o2", "type": "tool", "name": "refund_order",
-            "input": {"order_id": "A100"}, "output": {"refunded": True},
+            "input": {"order_id": "A100", "payment_method": "pm_7731"},
+            "output": {"refunded": True},
             "startTime": "2024-01-01T00:00:02Z",
         },
         {
             "id": "o3", "type": "tool", "name": "refund_order",
-            "input": {"order_id": "A100"}, "output": {"refunded": True},
+            "input": {"order_id": "A100", "payment_method": "pm_7731"},
+            "output": {"refunded": True},
             "startTime": "2024-01-01T00:00:03Z",
         },
     ],

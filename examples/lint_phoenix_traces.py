@@ -79,13 +79,15 @@ def build_phoenix_spans() -> list[dict[str, Any]]:
     The user asks to refund order A100. Then:
       1. ``get_order`` **errors** (500) — but the run continues (R2a: a hard_event from the OTel
          ERROR status).
-      2. the errored order id is **reused** as the argument to a side-effecting ``refund_order``
-         (R2b: a hard_defect — data from a failed call fed into a real-world action, no fallback).
+      2. the failed response still carries a cached payment method (``pm_7731``), and the agent
+         **refunds to it**: a side-effecting ``refund_order`` fed a value only the failed call
+         returned (R2b: a hard_defect — data from a failed call fed into a real-world action).
       3. ``refund_order`` is called **twice** with the same arguments and the first succeeded
          (R8: a hard_event — a duplicate side effect, i.e. a double refund).
 
     The opening LLM span carries ``llm.input_messages`` — what the model was asked — so provenance
-    (R3) can see the order id came from the user and does not flag it.
+    (R3) can see the order id came from the user and does not flag it, and R2b can tell that the
+    payment method came only from the failed lookup.
     """
     return [
         {
@@ -102,15 +104,16 @@ def build_phoenix_spans() -> list[dict[str, Any]]:
         },
         _tool_span(
             "s1", "2024-06-01T10:00:01Z", "get_order", {"order_id": "A100"},
-            {"order_id": "A100", "status": "error"}, error="500 internal error",
+            {"order_id": "A100", "status": "error", "payment_method": "pm_7731"},
+            error="500 internal error",
         ),
         _tool_span(
-            "s2", "2024-06-01T10:00:02Z", "refund_order", {"order_id": "A100"},
-            {"refunded": True}, error=None,
+            "s2", "2024-06-01T10:00:02Z", "refund_order",
+            {"order_id": "A100", "payment_method": "pm_7731"}, {"refunded": True}, error=None,
         ),
         _tool_span(
-            "s3", "2024-06-01T10:00:03Z", "refund_order", {"order_id": "A100"},
-            {"refunded": True}, error=None,
+            "s3", "2024-06-01T10:00:03Z", "refund_order",
+            {"order_id": "A100", "payment_method": "pm_7731"}, {"refunded": True}, error=None,
         ),
     ]
 

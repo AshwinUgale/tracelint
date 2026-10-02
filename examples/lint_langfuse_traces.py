@@ -51,13 +51,15 @@ def build_langfuse_trace() -> dict[str, Any]:
     The user asks to refund order A100. Then:
       1. `get_order` **errors** (Langfuse `level == "ERROR"`) — but the run continues (R2a: a
          hard_event read straight from the structured error level).
-      2. the errored order id is **reused** as the argument to a side-effecting `refund_order`
-         (R2b: a hard_defect — data from a failed call fed into a real-world action, no fallback).
+      2. the failed response still carries a cached payment method (`pm_7731`), and the agent
+         **refunds to it**: a side-effecting `refund_order` fed a value only the failed call
+         returned (R2b: a hard_defect — data from a failed call fed into a real-world action).
       3. `refund_order` is called **twice** with the same arguments and the first succeeded
          (R8: a hard_event — a duplicate side effect, i.e. a double refund).
 
     The trace-level `input` (the user's request) seeds provenance, so R3 sees the order id came
-    from the user and does not flag it.
+    from the user and does not flag it, and R2b can tell that the payment method came only from the
+    failed lookup.
     """
     return {
         "id": "support-run",
@@ -67,18 +69,20 @@ def build_langfuse_trace() -> dict[str, Any]:
             {
                 "id": "o1", "type": "tool", "name": "get_order",
                 "input": {"order_id": "A100"},
-                "output": {"order_id": "A100", "status": "error"},
+                "output": {"order_id": "A100", "status": "error", "payment_method": "pm_7731"},
                 "level": "ERROR", "statusMessage": "500 internal error",
                 "startTime": "2024-06-01T10:00:01Z",
             },
             {
                 "id": "o2", "type": "tool", "name": "refund_order",
-                "input": {"order_id": "A100"}, "output": {"refunded": True},
+                "input": {"order_id": "A100", "payment_method": "pm_7731"},
+                "output": {"refunded": True},
                 "startTime": "2024-06-01T10:00:02Z",
             },
             {
                 "id": "o3", "type": "tool", "name": "refund_order",
-                "input": {"order_id": "A100"}, "output": {"refunded": True},
+                "input": {"order_id": "A100", "payment_method": "pm_7731"},
+                "output": {"refunded": True},
                 "startTime": "2024-06-01T10:00:03Z",
             },
         ],

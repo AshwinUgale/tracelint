@@ -64,6 +64,16 @@ def test_nested_tool_runs_become_ordered_calls_and_results():
     assert result.error == "order not found"
 
 
+def _failed_lookup_then_cancel() -> dict:
+    # lookup_order fails, but its response still carries a payment reference that the
+    # side-effecting cancel_order then uses: a value that came only from the failed result.
+    run = _langsmith_run()
+    lookup, cancel = run["child_runs"][1], run["child_runs"][0]
+    lookup["outputs"] = {"order_id": "Z999", "status": "missing", "payment_ref": "pay_4410"}
+    cancel["inputs"] = {"order_id": "Z999", "payment_ref": "pay_4410"}
+    return run
+
+
 def test_tool_error_survives_adapter_for_r2_localization():
     registry = ToolRegistry.from_dict(
         {
@@ -74,7 +84,7 @@ def test_tool_error_survives_adapter_for_r2_localization():
         }
     )
     report = lint_trace(
-        from_langsmith_run(_langsmith_run()),
+        from_langsmith_run(_failed_lookup_then_cancel()),
         [ToolErrorEventRule(), ErrorHandlingRule()],
         registry,
     )

@@ -21,12 +21,14 @@ Two honesty constraints from learning-doc 02 §2 shape the design:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum
+from functools import lru_cache
 from typing import Any
 
 from tracelint.trace import Message, Role, Step, ToolResult
-from tracelint.valueutil import digits, iter_scalars, normalize
+from tracelint.valueutil import compact, digits, iter_scalars, normalize
 
 
 class SourceType(str, Enum):
@@ -74,6 +76,10 @@ class ProvenanceGraph:
 
     nodes: list[ProvenanceNode] = field(default_factory=list)
     _texts: list[_TextBlob] = field(default_factory=list)
+    _key_index: dict[str, list[ProvenanceNode]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    _keyed: int = field(default=-1, repr=False, compare=False)  # len(nodes) when indexed
 
     def add_value(self, value: Any, source_type: SourceType, step: int, path: str = "") -> None:
         self.nodes.append(ProvenanceNode(value, source_type, step, path))
@@ -81,12 +87,20 @@ class ProvenanceGraph:
     def add_text(self, text: str, source_type: SourceType, step: int) -> None:
         self._texts.append(_TextBlob(normalize(text), digits(text), source_type, step))
 
-    def derive(self, value: Any) -> Derivability:
-        """Test whether ``value`` traces to some non-generated source via a bounded transform."""
+    def derive(self, value: Any, *, strict: bool = False) -> Derivability:
+        """Test whether ``value`` traces to some non-generated source via a bounded transform.
+
+        ``strict`` asks only whether this value itself was available, give or take case and
+        separators (``A-100`` for ``A100``): equal to an observed value, or in observed text as a
+        whole token rather than part of a longer one (``1200`` is not in ``12000``). It skips the
+        digit and concatenation matches, which say a value *could be assembled* from what was seen.
+        """
         vn = normalize(value)
         if len(vn) < 2:
             # Too short/trivial to call a fabrication (a units flag, a single digit).
             return Derivability(True, "trivial")
+        if strict:
+            return self._available(value)
         vd = digits(value)
 
         # 1. Exact / normalized match to a tracked value.
@@ -131,6 +145,57 @@ class ProvenanceGraph:
                         return Derivability(True, "concat", a.source_step, a.source_type.value)
 
         return Derivability(False)
+
+    def sources_of(self, value: Any) -> list[int] | None:
+        """Every step where ``value`` itself was observed, in order: what ``derive(value,
+        strict=True)`` looks for, all of it. ``None`` for a value too trivial to trace."""
+        key = compact(value)
+        if len(normalize(value)) < 2 or not key:
+            return None
+        return sorted(self._hits(key))
+
+    def _available(self, value: Any) -> Derivability:
+        """``derive(strict=True)``: was this value itself observed, ignoring case and separators?"""
+        key = compact(value)
+        if not key:
+            return Derivability(True, "trivial")  # separators only
+        hits = self._hits(key)
+        if not hits:
+            return Derivability(False)
+        step = min(hits)
+        operation, source_type = hits[step]
+        return Derivability(True, operation, step, source_type.value)
+
+    def _hits(self, key: str) -> dict[int, tuple[str, SourceType]]:
+        """Step -> (operation, source type) for each source holding the value whose letters and
+        digits are ``key``: an equal value, or a whole token of text."""
+        hits = {
+            node.source_step: ("exact", node.source_type) for node in self._by_key().get(key, [])
+        }
+        token = _token(key)
+        for blob in self._texts:
+            if blob.source_type is SourceType.GENERATED or blob.step in hits:
+                continue
+            if token.search(blob.norm):
+                hits[blob.step] = ("substring", blob.source_type)
+        return hits
+
+    def _by_key(self) -> dict[str, list[ProvenanceNode]]:
+        """Non-generated nodes by their letters and digits, rebuilt when nodes have been added."""
+        if self._keyed != len(self.nodes):
+            index: dict[str, list[ProvenanceNode]] = {}
+            for node in self.nodes:
+                if node.source_type is not SourceType.GENERATED:
+                    index.setdefault(compact(node.value), []).append(node)
+            self._key_index, self._keyed = index, len(self.nodes)
+        return self._key_index
+
+
+@lru_cache(maxsize=1024)
+def _token(key: str) -> re.Pattern[str]:
+    """``key``'s letters and digits in order, at most a few separators apart, and not part of a
+    longer run of letters or digits."""
+    return re.compile(r"(?<![^\W_])" + r"[\W_]{0,3}".join(map(re.escape, key)) + r"(?![^\W_])")
 
 
 def build_provenance(steps: list[Step], up_to_index: int) -> ProvenanceGraph:
