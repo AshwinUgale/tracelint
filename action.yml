@@ -14,9 +14,9 @@ inputs:
     required: false
     default: ""
   format:
-    description: "Input format: native | openinference | otel | openai | langfuse | langsmith. Input that doesn't match it fails the step (exit 3), naming the format it looks like."
+    description: "Input format: native | openinference | otel | openai | langfuse | langsmith. Input that doesn't match it fails the step (exit 3), naming the format it looks like. Default: the project config's format, else native."
     required: false
-    default: "native"
+    default: ""
   rules:
     description: "Comma-separated subset of rules to run (e.g. R1,R2a). Default: all."
     required: false

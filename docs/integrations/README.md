@@ -53,10 +53,10 @@ with `--format openai` (see [openai.md](openai.md)).
 
 - **hard_defect** (fails CI, exit 2): schema violation (R1), a value only a failed call returned,
   used by a side-effecting call (R2b), malformed arguments the model emitted (R6).
-- **hard_event** (a certain fact, never fails CI): a tool returned an error (R2a), a non-idempotent
-  side effect repeated after success (R8).
-- **candidate** (heuristic, never fails CI): hallucinated arg (R3), loop (R4), redundant call (R5),
-  malformed JSON in a tool's own record (R6), unknown tool (R7).
+- **hard_event** (a certain fact; fails CI only if you opt in with `fail_on`): a tool returned an
+  error (R2a), a non-idempotent side effect repeated after success (R8).
+- **candidate** (heuristic; fails CI only if you opt in with `fail_on`): hallucinated arg (R3), loop
+  (R4), redundant call (R5), malformed JSON in a tool's own record (R6), unknown tool (R7).
 
 When a rule can't run (missing data) it is **suppressed with a reason** — never a silent pass — and
 tracelint reports per-rule verification coverage.

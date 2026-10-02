@@ -6,6 +6,24 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: a project config file, `--fail-on`, and ignores with reasons** (the first half of the CI
+  contract). Every setting had to be repeated on each CI command, nothing below a hard defect could
+  fail a build, and the only way to accept a known finding was to turn its rule off.
+  - `[tool.tracelint]` in `pyproject.toml`, or a `tracelint.toml`, sets `format`, `tools` (relative
+    to the file), `rules` and `fail_on`. The nearest file wins, searched up to the repository root;
+    `--config FILE` names one; flags override it. The GitHub Action's `format` input now defaults to
+    the config's.
+  - `fail_on = "hard_event"` (or `--fail-on hard_event`) also fails the run on hard events, and
+    `"candidate"` on candidates too, with **exit 1**; a hard defect still exits 2. A candidate that
+    fails the run is always shown in the text report.
+  - `[[tool.tracelint.ignore]]` accepts one rule's findings, optionally narrowed to a `tool`, an
+    argument `field` or a trace `path` glob, and requires a `reason`. An ignored finding stays in
+    the report (text: an "ignored" section with the reason; JSON: `ignored_reason`) but no longer
+    counts toward the exit code. An ignore that matches nothing prints a warning.
+  - A misspelled key, an unknown rule or tier, an ignore without a reason, or invalid TOML is an
+    input error (exit 3), so a typo can't quietly loosen the gate.
+  - Python 3.10 reads the config with `tomli` (added as a dependency there); 3.11+ uses `tomllib`.
+
 ## [0.10.0]
 
 A correctness release. An audit ran 0.9.0 on real framework traces and through every documented CI

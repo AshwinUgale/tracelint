@@ -8,12 +8,15 @@
 ``check`` lints one or more traces and returns a CI-usable exit code:
 
 - ``0`` — linted cleanly (no ``hard_defect``).
+- ``1`` — a lower gate the project opted into (``--fail-on hard_event`` or ``candidate``) was hit.
 - ``2`` — a structurally-provable defect (``hard_defect``) was found.
 - ``3`` — an input error: a missing, malformed, empty or wrong-format trace or tools file, an
-  unknown rule, or a command-line usage error (argparse's own code, 2, would read as a defect).
+  invalid configuration, an unknown rule, or a command-line usage error (argparse's own code, 2,
+  would read as a defect).
 
-Heuristic ``candidate`` findings never fail CI on their own; a suppression (a rule that could not
-run) is disclosed but is not a defect.
+Heuristic ``candidate`` findings never fail CI unless ``--fail-on candidate`` asks; a suppression (a
+rule that could not run) is disclosed but is not a defect. Settings can live in the project's
+``[tool.tracelint]`` or ``tracelint.toml`` (:mod:`tracelint.config`), with flags overriding them.
 """
 
 from __future__ import annotations
@@ -24,7 +27,13 @@ import sys
 from collections.abc import Sequence
 from typing import NoReturn
 
-from tracelint.findings import EXIT_GATE, EXIT_HARD_DEFECT, EXIT_INPUT_ERROR, EXIT_OK
+from tracelint.findings import (
+    EXIT_GATE,
+    EXIT_HARD_DEFECT,
+    EXIT_INPUT_ERROR,
+    EXIT_OK,
+    ConfidenceTier,
+)
 from tracelint.report import render_report, reports_to_dict, write_json
 from tracelint.rules import lint_trace, rule_ids, select_rules
 from tracelint.sources import SUPPORTED_FORMATS, load_source, load_sources
@@ -74,10 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--format",
         dest="fmt",
         choices=list(SUPPORTED_FORMATS),
-        default="native",
+        default=None,
         help=(
-            "input format (default: native tracelint JSON). openinference/otel reads "
-            "OpenTelemetry/OpenInference spans (Phoenix, OTLP, TRAIL); openai reads a chat "
+            "input format (default: the config's, else native tracelint JSON). openinference/otel "
+            "reads OpenTelemetry/OpenInference spans (Phoenix, OTLP, TRAIL); openai reads a chat "
             "message list; langfuse reads a Langfuse trace; langsmith reads a LangSmith run"
         ),
     )
@@ -86,6 +95,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=_csv,
         metavar="R1,R2a,...",
         help=f"subset of rules to run (default: all — {', '.join(rule_ids())})",
+    )
+    check.add_argument(
+        "--fail-on",
+        choices=[t.value for t in (ConfidenceTier.HARD_EVENT, ConfidenceTier.CANDIDATE)],
+        help=(
+            "also fail (exit 1) when a finding of this tier or above is found: hard_event, or "
+            "candidate (default: only a hard_defect fails, with exit 2)"
+        ),
+    )
+    check.add_argument(
+        "--config",
+        metavar="FILE",
+        help="read settings from this file (default: the nearest tracelint.toml or "
+        "pyproject.toml with [tool.tracelint])",
     )
     check.add_argument("--json", dest="json_out", metavar="OUT", help="write findings as JSON")
     check.add_argument(
@@ -198,16 +221,36 @@ def _version() -> str:
 
 
 def _cmd_check(args: argparse.Namespace) -> int:
-    registry = ToolRegistry.load(args.tools) if args.tools else ToolRegistry()
-    rules = select_rules(args.rules)
+    from pathlib import Path
+
+    from tracelint.config import Config, apply_ignores, find_config, load_config
+
+    config_path = Path(args.config) if args.config else find_config()
+    config = load_config(config_path) if config_path else Config()
+    tools = args.tools or (str(config.tools) if config.tools else None)
+    registry = ToolRegistry.load(tools) if tools else ToolRegistry()
+    rules = select_rules(args.rules or config.rules)
+    fail_on = ConfidenceTier(args.fail_on) if args.fail_on else config.fail_on
 
     reports = []
     linted: list[Trace] = []
     uris: list[str] = []
-    for trace, path in load_sources(args.traces, args.fmt):
-        reports.append(lint_trace(trace, rules, registry))
+    used: set[int] = set()
+    for trace, path in load_sources(args.traces, args.fmt or config.format or "native"):
+        report = lint_trace(trace, rules, registry)
+        used |= apply_ignores(report, config.ignores, path)
+        if fail_on is not None:
+            report.fail_on = fail_on
+        reports.append(report)
         linted.append(trace)
         uris.append(path)
+    for n, ignore in enumerate(config.ignores):
+        if n not in used:
+            print(
+                f"tracelint: warning: {_shown_path(config.source)}: ignore #{n + 1} "
+                f"({ignore.describe()}) matched no finding",
+                file=sys.stderr,
+            )
 
     if args.json_out:
         write_json(args.json_out, reports_to_dict(reports))
@@ -227,7 +270,17 @@ def _cmd_check(args: argparse.Namespace) -> int:
         for report in reports:
             print(render_report(report, include_candidates=args.include_candidates))
 
-    return EXIT_HARD_DEFECT if any(r.has_hard_defect for r in reports) else EXIT_OK
+    return max((r.exit_code for r in reports), default=EXIT_OK)
+
+
+def _shown_path(path: object) -> str:
+    """``path`` relative to the working directory when that is shorter to read."""
+    import os
+
+    try:
+        return os.path.relpath(str(path))
+    except ValueError:  # another drive on Windows
+        return str(path)
 
 
 def _safe_filename(name: str) -> str:

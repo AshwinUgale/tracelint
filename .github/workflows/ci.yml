@@ -71,3 +71,20 @@ jobs:
         run: |
           test "$OUTCOME" = failure
           test -s tracelint.sarif
+      - name: Write a project config (format, tools, a lower gate)
+        run: |
+          cat > tracelint.toml <<EOF
+          format = "openinference"
+          tools = "$RUNNER_TEMP/release_tools.json"
+          fail_on = "hard_event"
+          EOF
+      - name: The config drives the action
+        id: configured
+        continue-on-error: true
+        uses: ./
+        with:
+          traces: examples/traces/langgraph_phoenix_trace.json
+      - name: Check the configured run failed on the defect
+        env:
+          OUTCOME: ${{ steps.configured.outcome }}
+        run: test "$OUTCOME" = failure

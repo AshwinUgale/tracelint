@@ -29,9 +29,11 @@ classifiers = [
     "Topic :: Software Development :: Testing",
 ]
 
-# Light core: jsonschema + stdlib only. Heavy integrations live behind extras.
+# Light core: jsonschema + stdlib only (tomli backports tomllib on 3.10). Heavy integrations live
+# behind extras.
 dependencies = [
     "jsonschema>=4.0",
+    "tomli>=1.1; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
