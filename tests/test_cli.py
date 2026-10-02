@@ -199,3 +199,25 @@ def test_check_unknown_format_is_input_error(tmp_path):
     # argparse rejects an out-of-choices --format with exit code 2 via SystemExit.
     with pytest.raises(SystemExit):
         main(["check", sp, "--format", "bogus"])
+
+
+def test_check_span_file_with_the_default_format_is_an_input_error(tmp_path, capsys):
+    # No --format means native — also the GitHub Action's default. A span file read as native used
+    # to lint as one empty trace per span and exit 0; now it fails the step and names the fix.
+    sp = _write_openinference_spans(tmp_path)
+    assert main(["check", sp]) == 3
+    err = capsys.readouterr().err
+    assert "it looks like OpenInference / OTel spans: use --format openinference" in err
+
+
+def test_check_empty_trace_file_is_an_input_error(tmp_path, capsys):
+    p = tmp_path / "traces.jsonl"
+    p.write_text("", encoding="utf-8")
+    assert main(["check", str(p), "--format", "openinference"]) == 3
+    assert "no traces found" in capsys.readouterr().err
+
+
+def test_init_on_the_wrong_format_is_an_input_error(tmp_path, capsys):
+    sp = _write_openinference_spans(tmp_path)
+    assert main(["init", sp]) == 3
+    assert "use --format openinference" in capsys.readouterr().err
