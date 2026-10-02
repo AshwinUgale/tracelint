@@ -91,14 +91,16 @@ def test_error_from_level_is_structured_error_with_message():
     assert result.error == "order not found"
 
 
-def test_error_from_structured_http_status():
+def test_http_status_in_the_result_is_data_not_an_error():
+    # The same rule as every adapter: a status code inside the tool's own result is its data
+    # (R2a shows it as a candidate convention); an error is level=ERROR or a truthy `error` field.
     obs = _tool_obs(
         "o1", "lookup_order", {"order_id": "Z"}, {"http_status": 404, "detail": "missing"}
     )
     trace = from_langfuse_trace({"id": "t", "observations": [obs]})
     result = trace.tool_results()[0]
-    assert result.status is ResultStatus.ERROR
-    assert result.http_status == 404
+    assert result.status is ResultStatus.UNKNOWN
+    assert result.content == {"http_status": 404, "detail": "missing"}
 
 
 def test_result_without_signals_is_unknown_not_guessed():

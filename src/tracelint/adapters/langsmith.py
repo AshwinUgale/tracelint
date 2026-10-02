@@ -12,8 +12,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from tracelint.adapters._common import tool_input_args
+from tracelint.adapters._common import content_error, tool_input_args, tool_result_content
 from tracelint.trace import Message, ResultStatus, Role, Step, ToolCall, ToolResult, Trace
+from tracelint.valueutil import http_status_code
 
 
 def _as_dict(run: Any) -> dict[str, Any]:
@@ -51,35 +52,33 @@ def _status_from_text(value: Any) -> ResultStatus:
     return ResultStatus.UNKNOWN
 
 
-def _result_signals(run: dict[str, Any]) -> tuple[ResultStatus, str | None, int | None]:
-    outputs = _get(run, "outputs", "output")
-    error = _get(run, "error", "error_message", "errorMessage")
-    http: int | None = None
-    if isinstance(outputs, dict):
-        if error is None and outputs.get("error") is not None:
-            error = outputs["error"]
-        candidate_http = _get(outputs, "http_status", "httpStatus", "status_code", "statusCode")
-        if isinstance(candidate_http, int):
-            http = candidate_http
-        status = _status_from_text(outputs.get("status"))
-        if error is not None:
-            return ResultStatus.ERROR, str(error), http
-        if isinstance(http, int) and http >= 400:
-            return ResultStatus.ERROR, None, http
-        if status is not ResultStatus.UNKNOWN:
-            return status, None, http
+def _result_signals(run: dict[str, Any]) -> tuple[Any, ResultStatus, str | None, int | None]:
+    """``(content, status, error, http_status)`` for a tool run — structured signals only.
 
+    The content is the tool's own result: LangChain's tracer records it as ``{"output": ...}``,
+    usually a serialized ``ToolMessage`` around a JSON string, all unwrapped here. Errors come from
+    the run itself (its ``error``, an HTTP status >= 400, ``status: error``), a ``ToolMessage`` with
+    ``status: "error"``, or a truthy ``error`` field in the result; the result's other fields
+    (``status``, ``http_status``) are its data, read by R2a as a convention, not as an error.
+    """
+    outputs = _get(run, "outputs", "output")
+    if isinstance(outputs, dict) and set(outputs) == {"output"}:
+        outputs = outputs["output"]
+    content, message_status = tool_result_content(outputs)
+    run_error = _get(run, "error", "error_message", "errorMessage") or None
+    run_status = _get(run, "status", "status_code", "statusCode")
+    http = http_status_code(_get(run, "http_status", "httpStatus", "status_code", "statusCode"))
+    if run_error is not None:
+        return content, ResultStatus.ERROR, str(run_error), http
+    if http is not None and http >= 400:
+        return content, ResultStatus.ERROR, None, http
+    if message_status == "error":
+        error = content_error(content) or "tool message status: error"
+        return content, ResultStatus.ERROR, error, http
+    error = content_error(content)
     if error is not None:
-        return ResultStatus.ERROR, str(error), http
-    run_http = _get(run, "http_status", "httpStatus", "status_code", "statusCode")
-    if isinstance(run_http, int):
-        # A numeric HTTP status at the run level is an error signal too (>= 400),
-        # mirroring the ``outputs`` branch; ``_status_from_text`` only reads words.
-        http = run_http
-        if run_http >= 400:
-            return ResultStatus.ERROR, None, http
-    status = _status_from_text(_get(run, "status", "status_code", "statusCode"))
-    return status, None, http
+        return content, ResultStatus.ERROR, error, http
+    return content, _status_from_text(run_status), None, http
 
 
 def _first_text(value: Any) -> str | None:
@@ -176,11 +175,11 @@ def from_langsmith_run(run: Any, *, run_id: str | None = None, final: Any = None
                     args_unavailable=call_args.unavailable,
                 )
             )
-            status, error, http = _result_signals(child)
+            content, status, error, http = _result_signals(child)
             steps.append(
                 ToolResult(
                     call_id=call_id,
-                    content=_get(child, "outputs", "output"),
+                    content=content,
                     status=status,
                     error=error,
                     http_status=http,

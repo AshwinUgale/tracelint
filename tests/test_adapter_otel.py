@@ -426,10 +426,14 @@ def test_error_from_exception_event():
     assert "refund failed" in (result.error or "")
 
 
-def test_error_from_structured_output_http_status():
+def test_http_status_in_the_result_is_data_not_an_error():
+    # A status code inside the tool's own result is its data: a link checker reports
+    # status_code 404 for a page it checked successfully. Only a declared failure_when makes it a
+    # failure, so it is not a structured error (R2a shows it as a candidate convention instead).
     span = _tool_span("s1", "lookup_order", "{}", {"http_status": 404, "detail": "missing"})
     result = from_otel_spans([span]).tool_results()[0]
-    assert result.status is ResultStatus.ERROR
+    assert result.status is ResultStatus.UNKNOWN
+    assert result.error is None
 
 
 def test_otlp_attribute_list_form_is_normalized():

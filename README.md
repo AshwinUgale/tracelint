@@ -144,8 +144,11 @@ for report in lint_otel_traces(spans):   # spans: your OpenInference span export
 | R7 | unknown tool — a call to a tool absent from the declared toolset (possible hallucinated tool) | `candidate` |
 
 `hard_event` and `hard_defect` are orthogonal to the finding kind: a tool-error event is a
-`hard_event` from a structured status field but a `candidate` from an exception-like string in
-free-form content.
+`hard_event` from a structured signal (the span's or run's own error status, a LangChain
+`ToolMessage` with `status: "error"`, or a non-empty `error` field in the result) but a `candidate`
+from a convention or an exception-like string. Fields inside a result, such as `status` or
+`status_code`, are the tool's data: a link checker reports `status_code: 404` for a page it checked
+successfully. They stay candidates until `failure_when` declares what failure looks like.
 
 ## Input format
 

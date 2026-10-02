@@ -17,6 +17,18 @@ _WS = re.compile(r"\s+")
 _NON_DIGIT = re.compile(r"\D")
 
 
+def http_status_code(value: Any) -> int | None:
+    """An HTTP status as an int — ``404`` or ``"404"``; anything else (``True``, ``"n/a"``) is not
+    a status."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 def normalize(value: Any) -> str:
     """Case-fold, strip, and collapse whitespace — the canonical form for equality."""
     return _WS.sub(" ", str(value).strip().casefold())

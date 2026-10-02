@@ -37,6 +37,7 @@ from tracelint.signatures import is_structured_error as _is_structured_error
 from tracelint.signatures import looks_empty as _looks_empty
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ResultStatus, ToolCall, ToolResult, Trace
+from tracelint.valueutil import http_status_code
 from tracelint.valueutil import significant_values as _significant_values
 
 # Heuristic markers for an exception-like string in a free-form (unknown-status) result. Kept
@@ -70,6 +71,13 @@ def _convention_failure_marker(content: Any) -> str | None:
         status = content.get("status")
         if isinstance(status, str) and status.strip().lower() in _CONVENTION_FAIL_STATES:
             return f"status={status!r}"
+        # A status code in the body is data too: a link checker reports ``status_code: 404`` for a
+        # page it checked successfully, while an API wrapper's 404 is a failure. Only a declared
+        # failure_when can tell them apart, so it is a hint, never a fact.
+        for key in ("http_status", "status_code"):
+            code = http_status_code(content.get(key))
+            if code is not None and code >= 400:
+                return f"{key}={code}"
     return None
 
 

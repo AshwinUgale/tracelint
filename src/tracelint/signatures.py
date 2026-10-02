@@ -48,9 +48,10 @@ def is_structured_error(result: ToolResult) -> bool:
     """True iff the result carries an unambiguous, structured error signal (shared with R2)."""
     if result.status is ResultStatus.ERROR:
         return True
-    if result.http_status is not None and result.http_status >= 400:
+    http = result.http_status
+    if isinstance(http, int) and not isinstance(http, bool) and http >= 400:
         return True
-    return result.error is not None
+    return bool(result.error)
 
 
 def looks_empty(content: Any) -> bool:
