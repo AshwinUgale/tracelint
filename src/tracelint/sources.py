@@ -25,6 +25,10 @@ so a ``.jsonl`` file is read as one span collection and regrouped by trace id, a
 a run whose spans are split across files. For OpenAI, a ``.jsonl`` file of single messages is one
 conversation; one ``{"messages": [...]}`` (or ShareGPT ``{"conversations": [...]}``) per line is
 one conversation per line.
+
+A file that yields nothing to lint is an input error, never a clean pass: an empty file, or one in
+which nothing reads as a trace in the requested format — the wrong ``--format``, which the error
+names (read as native, the default, a span file used to become one empty "trace" per span).
 """
 
 from __future__ import annotations
@@ -41,7 +45,7 @@ from tracelint.findings import LintReport
 from tracelint.rules import default_rules, lint_trace
 from tracelint.rules.base import Rule
 from tracelint.tools import ToolRegistry
-from tracelint.trace import Trace, load_traces
+from tracelint.trace import Trace
 
 # --- Format identifiers -------------------------------------------------------------
 NATIVE = "native"
@@ -142,21 +146,30 @@ def load_source(
 ) -> list[Trace]:
     """Load ``path`` in ``fmt`` and return every :class:`Trace` it contains.
 
-    ``native`` uses :func:`~tracelint.trace.load_traces` (unchanged behaviour). For a provider
-    format the file is parsed as one JSON document (``.json``) or one document per line
-    (``.jsonl``), then handed to the matching adapter; span formats regroup the file's spans by
-    trace id (see the module docstring). ``tool_names`` is forwarded to the Langfuse adapter only.
+    The file is parsed as one JSON document (``.json``) or one document per line (``.jsonl``),
+    then handed to the matching adapter; span formats regroup the file's spans by trace id (see
+    the module docstring). ``tool_names`` is forwarded to the Langfuse adapter only.
+
+    Raises :class:`ValueError` when the file holds nothing to lint — it is empty, a native
+    document is not a native trace, or nothing in it reads as ``fmt`` (the message names the format
+    it looks like).
     """
-    if fmt in (NATIVE, None):
-        return load_traces(path)
+    if fmt is None:
+        fmt = NATIVE
     if fmt not in SUPPORTED_FORMATS:
         raise ValueError(f"unknown --format {fmt!r}; choose from {', '.join(SUPPORTED_FORMATS)}")
-    if fmt in (OPENINFERENCE, OTEL):
-        return [from_otel_spans(spans) for spans in _span_groups(path) if spans]
-
-    traces: list[Trace] = []
-    for doc in _read_docs(path, fmt):
-        traces.extend(_traces_from_doc(doc, fmt, tool_names=tool_names))
+    if fmt == NATIVE:
+        traces = _native_traces(path)
+    elif fmt in (OPENINFERENCE, OTEL):
+        traces = [from_otel_spans(spans) for spans in _span_groups(path) if spans]
+    else:
+        traces = [
+            trace
+            for doc in _read_docs(path, fmt)
+            for trace in _traces_from_doc(doc, fmt, tool_names=tool_names)
+        ]
+    if not any(trace.steps for trace in traces):
+        raise _nothing_to_lint(path, fmt)
     return traces
 
 
@@ -184,17 +197,26 @@ def load_sources(
 
     runs: dict[str, list[dict[str, Any]]] = {}
     first_seen: dict[str, str] = {}
+    contributed: dict[str, list[str]] = {}  # path -> the runs its spans belong to
     for path in paths:
+        keys = contributed.setdefault(str(path), [])
         for i, spans in enumerate(_span_groups(path)):
             trace_id = next((tid for tid in map(_span_trace_id, spans) if tid), "")
             # A run without a trace id can't be matched to another file's, so it never merges.
             key = trace_id or f"\x00{path}#{i}"
+            keys.append(key)
             if key not in runs:
                 runs[key], first_seen[key] = list(spans), str(path)
                 continue
             seen = {_span_key(span) for span in runs[key]}
             runs[key].extend(span for span in spans if _span_key(span) not in seen)
-    return [(from_otel_spans(spans), first_seen[key]) for key, spans in runs.items() if spans]
+    traces = {key: from_otel_spans(spans) for key, spans in runs.items()}
+    # Checked per file, after merging: a file holding only part of a run is fine when the run as a
+    # whole has something to lint.
+    for path, keys in contributed.items():
+        if not any(traces[key].steps for key in keys):
+            raise _nothing_to_lint(path, fmt)
+    return [(traces[key], first_seen[key]) for key in runs]
 
 
 def _read_docs(path: str | Path, fmt: str) -> list[Any]:
@@ -207,6 +229,97 @@ def _read_docs(path: str | Path, fmt: str) -> list[Any]:
     if fmt == OPENAI and docs and all(_is_lone_message(doc) for doc in docs):
         return [docs]  # one message per line: the file is a single conversation
     return docs
+
+
+def _native_traces(path: str | Path) -> list[Trace]:
+    """Native traces from ``path`` — each a JSON object with a ``steps`` list (one per line in a
+    ``.jsonl``; a ``.json`` file may hold one or a JSON array of them). Anything else is not a
+    native trace and is rejected, naming the format it looks like, rather than read as an empty
+    trace."""
+    jsonl = Path(path).suffix == ".jsonl"
+    docs = _read_docs(path, NATIVE)
+    if jsonl:
+        units = docs
+    else:
+        units = [unit for doc in docs for unit in (doc if isinstance(doc, list) else [doc])]
+    for i, unit in enumerate(units):
+        if not (isinstance(unit, dict) and isinstance(unit.get("steps"), list)):
+            where = f"{path}, line {i + 1}" if jsonl else str(path)
+            raise _wrong_format(where, NATIVE, unit)
+    return [Trace.from_dict(unit) for unit in units]
+
+
+# What each --format reads, for error messages.
+_FORMAT_NAMES = {
+    NATIVE: "native tracelint traces",
+    OPENINFERENCE: "OpenInference / OTel spans",
+    OTEL: "OpenInference / OTel spans",
+    OPENAI: "OpenAI chat messages",
+    LANGFUSE: "Langfuse traces",
+    LANGSMITH: "LangSmith runs",
+}
+
+# Keys only a span record carries (flat Phoenix columns, OTel SDK / OTLP spans, TRAIL). A trace id
+# alone is no evidence: Langfuse observations and LangSmith runs carry one too.
+_SPAN_KEYS = frozenset(
+    {
+        "span_id",
+        "spanId",
+        "context.span_id",
+        "context",
+        "span_kind",
+        "attributes",
+        "span_attributes",
+    }
+)
+
+
+def _looks_like(doc: Any) -> str | None:
+    """Which ``--format`` ``doc`` appears to be in — only to name it in an error, never to choose
+    one (shapes overlap, so a guess must not decide what the rules read)."""
+    if isinstance(doc, list):
+        return next((fmt for fmt in map(_looks_like, doc) if fmt), None)
+    if not isinstance(doc, dict):
+        return None
+    if isinstance(doc.get("steps"), list):
+        return NATIVE
+    if "resourceSpans" in doc or "resource_spans" in doc:
+        return OPENINFERENCE
+    if "observations" in doc:
+        return LANGFUSE
+    if any(key in doc for key in ("run_type", "runType", "child_runs", "childRuns")):
+        return LANGSMITH
+    if _conversation(doc) is not None or _is_lone_message(doc):
+        return OPENAI
+    if any(key in _SPAN_KEYS or str(key).startswith("attributes.") for key in doc):
+        return OPENINFERENCE
+    return None
+
+
+def _wrong_format(where: str, fmt: str, doc: Any) -> ValueError:
+    """The error for input that is not ``fmt``: what it looks like, and the flag to read it."""
+    looks = _looks_like(doc)
+    if looks is None or _FORMAT_NAMES[looks] == _FORMAT_NAMES[fmt]:
+        hint = "check --format (" + ", ".join(SUPPORTED_FORMATS) + ")"
+    elif looks == NATIVE:
+        hint = "it looks like a native tracelint trace: omit --format (native is the default)"
+    else:
+        hint = f"it looks like {_FORMAT_NAMES[looks]}: use --format {looks}"
+    return ValueError(f"{where}: not readable as {_FORMAT_NAMES[fmt]} (--format {fmt}); {hint}")
+
+
+def _nothing_to_lint(path: str | Path, fmt: str) -> ValueError:
+    """The error for a file that yields no tool calls or messages when read as ``fmt``."""
+    docs = _read_docs(path, fmt)
+    if not any(docs):  # no lines, ``[]``, ``{}``
+        return ValueError(f"{path}: no traces found — the file is empty")
+    looks = _looks_like(docs)
+    if looks is not None and _FORMAT_NAMES[looks] != _FORMAT_NAMES[fmt]:
+        return _wrong_format(str(path), fmt, docs)
+    return ValueError(
+        f"{path}: nothing to lint — no tool calls or messages found reading it as "
+        f"{_FORMAT_NAMES[fmt]} (--format {fmt})"
+    )
 
 
 def _traces_from_doc(doc: Any, fmt: str, *, tool_names: list[str] | set[str] | None) -> list[Trace]:

@@ -314,9 +314,9 @@ def test_unknown_format_raises(tmp_path):
 
 
 def test_native_format_unchanged(tmp_path):
-    from tracelint.trace import Trace
+    from tracelint.trace import Message, Role, Trace
 
-    native = Trace(run_id="n1", steps=[]).to_dict()
+    native = Trace(run_id="n1", steps=[Message(Role.USER, "hi")]).to_dict()
     traces = load_source(_write(tmp_path, native), "native")
     assert len(traces) == 1 and traces[0].run_id == "n1"
 
@@ -342,3 +342,112 @@ def test_lint_langsmith_trace_flags_tool_error():
     )
     events = report.by_tier(ConfidenceTier.HARD_EVENT)
     assert any(f.rule == "R2a" for f in events)
+
+
+# --- Nothing to lint is an input error, never a clean pass ---------------------------
+
+SPANS = [
+    _tool_span("s1", "2024-01-01T00:00:01Z", "search", {"q": "x"}, {"hit": 1}),
+    _tool_span("s2", "2024-01-01T00:00:02Z", "book", {"id": "1"}, {"ok": True}),
+]
+OPENAI_MESSAGES = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+LANGFUSE_TRACE = {"id": "lf1", "observations": [{"id": "o1", "type": "tool", "name": "search"}]}
+LANGSMITH_RUN = {"id": "r1", "run_type": "chain", "child_runs": []}
+NATIVE_TRACE = {"run_id": "n1", "steps": [{"type": "message", "role": "user", "content": "hi"}]}
+
+
+def test_span_file_read_as_native_names_the_right_format(tmp_path):
+    # The CLI's (and the GitHub Action's) default format is native. 0.9 read each span as an empty
+    # native "trace" and exited 0 having checked nothing.
+    with pytest.raises(ValueError, match="OpenInference / OTel spans: use --format openinference"):
+        load_source(_write(tmp_path, SPANS), "native")
+
+
+def test_span_per_line_file_read_as_native_names_the_line(tmp_path):
+    path = _write_jsonl(tmp_path, SPANS)
+    with pytest.raises(ValueError, match=r"line 1: not readable as native tracelint traces"):
+        load_source(path, "native")
+
+
+@pytest.mark.parametrize(
+    ("doc", "fmt", "hint"),
+    [
+        (OPENAI_MESSAGES, "native", "use --format openai"),
+        (LANGFUSE_TRACE, "native", "use --format langfuse"),
+        (LANGSMITH_RUN, "native", "use --format langsmith"),
+        ({"resourceSpans": []}, "native", "use --format openinference"),
+        (NATIVE_TRACE, "openinference", "omit --format (native is the default)"),
+        (NATIVE_TRACE, "openai", "omit --format (native is the default)"),
+        (SPANS, "openai", "use --format openinference"),
+        (SPANS, "langfuse", "use --format openinference"),
+        (LANGFUSE_TRACE, "openinference", "use --format langfuse"),
+        (LANGSMITH_RUN, "langfuse", "use --format langsmith"),
+        (OPENAI_MESSAGES, "langsmith", "use --format openai"),
+    ],
+)
+def test_wrong_format_is_an_input_error_that_names_the_right_one(tmp_path, doc, fmt, hint):
+    with pytest.raises(ValueError, match=hint.replace("(", r"\(").replace(")", r"\)")):
+        load_source(_write(tmp_path, doc), fmt)
+
+
+@pytest.mark.parametrize("fmt", ["native", "openinference", "openai", "langfuse", "langsmith"])
+@pytest.mark.parametrize(("name", "content"), [("e.json", "[]"), ("e.jsonl", ""), ("e.json", "{}")])
+def test_empty_input_is_an_input_error(tmp_path, fmt, name, content):
+    path = tmp_path / name
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match="no traces found|not readable as native"):
+        load_source(str(path), fmt)
+
+
+@pytest.mark.parametrize(
+    ("doc", "fmt"),
+    [
+        ({"run_id": "n0", "steps": []}, "native"),
+        (
+            [
+                {
+                    "span_id": "c1",
+                    "name": "chain",
+                    "attributes": {"openinference.span.kind": "CHAIN"},
+                }
+            ],
+            "openinference",
+        ),
+    ],
+)
+def test_right_format_with_nothing_in_it_is_nothing_to_lint(tmp_path, doc, fmt):
+    with pytest.raises(ValueError, match="nothing to lint"):
+        load_source(_write(tmp_path, doc), fmt)
+
+
+def test_a_file_with_some_empty_runs_still_lints(tmp_path):
+    chain_only = {
+        "span_id": "c1",
+        "trace_id": "other",
+        "name": "chain",
+        "attributes": {"openinference.span.kind": "CHAIN"},
+    }
+    traces = load_source(_write(tmp_path, [*SPANS, chain_only]), "openinference")
+    assert sorted(len(t.tool_calls()) for t in traces) == [0, 2]
+
+
+def test_a_file_holding_only_part_of_a_split_run_is_not_an_error(tmp_path):
+    # A rotating exporter can leave just the run's root CHAIN span in the last file.
+    tool_spans = _write_jsonl(tmp_path, SPANS, "part-1.jsonl")
+    root = {
+        "span_id": "root",
+        "trace_id": "t1",
+        "name": "agent",
+        "attributes": {"openinference.span.kind": "CHAIN"},
+    }
+    tail = _write_jsonl(tmp_path, [root], "part-2.jsonl")
+    loaded = load_sources([tool_spans, tail], "openinference")
+    assert [_calls(t) for t, _ in loaded] == [["search", "book"]]
+
+
+def test_a_file_with_nothing_to_lint_fails_the_whole_check(tmp_path):
+    good = _write_jsonl(tmp_path, SPANS, "good.jsonl")
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="empty.jsonl: no traces found"):
+        load_sources([good, str(empty)], "openinference")

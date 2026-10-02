@@ -44,7 +44,9 @@ with capture("trace.json", framework="smolagents"):
 tracelint check trace.json --format openinference
 ```
 
-Exit codes: `0` clean · `2` a structurally-provable defect (`hard_defect`) · `3` an input error.
+Exit codes: `0` clean · `2` a structurally-provable defect (`hard_defect`) · `3` an input error:
+a missing or unreadable file, an empty one, or input that doesn't match `--format` (the error
+names the format it looks like), so a misconfigured step never passes having checked nothing.
 Heuristic candidates never fail CI on their own; a suppression (a rule that couldn't run) is
 disclosed but is not a defect.
 

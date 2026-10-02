@@ -6,6 +6,17 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: the wrong `--format`, or an empty file, is an input error instead of a clean pass.**
+  The CLI's default format (and the GitHub Action's) is `native`. Read as native, a span file
+  became one empty "trace" per span and exited 0 having checked nothing; the same happened for
+  every other format mismatch, and for an empty file (`[]`, an empty `.jsonl`). Across 12 test
+  inputs (a trace in each format, empty files, a CHAIN-only export) and the five formats, all 60
+  combinations exited 0 on 0.9, though only the 7 matching pairs linted anything. Now a
+  file in which nothing reads as the requested format exits 3, naming the format it looks like
+  (`it looks like OpenInference / OTel spans: use --format openinference`). Native input must be
+  native traces (objects with a `steps` list; a bad `.jsonl` line is named), and a right-format
+  file with no tool calls or messages is reported as "nothing to lint". `load_source` raises the
+  same `ValueError`; `check` checks each file after merging runs split across files.
 - **Fix: `.jsonl` span files are linted as runs, not as one trace per line.** Exporters write one
   span (or one export batch) per line, as Phoenix's `to_json(..., lines=True)` and OTel file
   exporters do. Every CI path in the docs (the GitHub Action example, the pre-commit hook, the
