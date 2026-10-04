@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from tracelint import ConfidenceTier, Finding, LintReport, render_report
+from tracelint import ConfidenceTier, Finding, LintReport, render_report, render_reports
 
 
 def _defect() -> Finding:
@@ -52,3 +52,33 @@ def test_possible_false_positive_annotated():
     f.possible_false_positive = True
     text = render_report(LintReport("run", [f]), include_candidates=True)
     assert "possible false positive" in text
+
+
+def test_report_leads_with_the_source_path_when_given():
+    text = render_report(LintReport("run-xyz", [_defect()]), source="traces/deploy.json")
+    assert text.startswith("traces/deploy.json:")
+    assert "run-xyz" not in text  # the file path replaces the run id in the header
+
+
+def test_report_falls_back_to_run_id_without_a_source():
+    assert render_report(LintReport("run-xyz", [_defect()])).startswith("run-xyz:")
+
+
+def test_a_tier_legend_is_shown_with_findings_but_not_on_a_clean_report():
+    assert "tiers:" in render_report(LintReport("r", [_defect()]))
+    assert "tiers:" not in render_report(LintReport("r", []))
+
+
+def test_render_reports_adds_a_cross_file_summary_for_multiple_traces():
+    text = render_reports(
+        [LintReport("a", [_defect()]), LintReport("b", [])],
+        sources=["traces/a.json", "traces/b.json"],
+    )
+    assert "linted 2 trace(s)" in text and "1 with a hard_defect" in text
+    assert "traces/a.json:" in text and "traces/b.json:" in text
+
+
+def test_render_reports_omits_the_summary_for_a_single_trace():
+    text = render_reports([LintReport("solo", [_defect()])], sources=["traces/solo.json"])
+    assert "linted 1 trace(s)" not in text
+    assert text.startswith("traces/solo.json:")

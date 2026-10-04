@@ -19,20 +19,32 @@ from typing import Any
 from tracelint.findings import ConfidenceTier, Finding, LintReport
 from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult
 
+#: A one-line key to the tiers, shown with the findings so the ``[tier]`` labels read on their own.
+_TIER_LEGEND = (
+    "  tiers: [hard_defect] fails CI; [hard_event] a certain event; [candidate] heuristic, review"
+)
+
 
 def _location(finding: Finding) -> str:
     idx = finding.step_indices
     return "step " + ",".join(str(i) for i in idx) if idx else "no step"
 
 
-def render_report(report: LintReport, *, include_candidates: bool = False) -> str:
-    """Render one :class:`LintReport` as text."""
+def render_report(
+    report: LintReport, *, source: str | None = None, include_candidates: bool = False
+) -> str:
+    """Render one :class:`LintReport` as text.
+
+    ``source`` is the trace's file path (or any display label); the header leads with it so the
+    reader knows which trace a finding is in, falling back to the run id when it is not given.
+    """
     active = report.active_findings
     gating = report.fail_on is ConfidenceTier.CANDIDATE  # candidates fail this run: never hide them
     shown = [
         f for f in active if include_candidates or gating or f.tier is not ConfidenceTier.CANDIDATE
     ]
-    lines = [f"{report.run_id}: {len(active)} finding(s), exit {report.exit_code}"]
+    head = source or report.run_id or "trace"
+    lines = [f"{head}: {len(active)} finding(s), exit {report.exit_code}"]
 
     for f in shown:
         lines.append(f"  [{f.tier.value}] {f.rule} {f.finding_type}  ({_location(f)})")
@@ -41,6 +53,9 @@ def render_report(report: LintReport, *, include_candidates: bool = False) -> st
             lines.append(f"      {err['path']}  {err['keyword']}: {err['message']}")
         if f.possible_false_positive:
             lines.append("    (possible false positive — review the evidence)")
+
+    if shown:
+        lines.append(_TIER_LEGEND)
 
     hidden = len(active) - len(shown)
     if hidden:
@@ -82,22 +97,55 @@ def render_report(report: LintReport, *, include_candidates: bool = False) -> st
     return "\n".join(lines)
 
 
-def render_reports(reports: list[LintReport], *, include_candidates: bool = False) -> str:
-    """Render several reports with a one-line summary header."""
+def render_reports(
+    reports: list[LintReport],
+    *,
+    sources: list[str] | None = None,
+    include_candidates: bool = False,
+) -> str:
+    """Render several reports, with a one-line summary header across files.
+
+    ``sources`` optionally gives each report's file path (same length and order as ``reports``), so
+    every report leads with the file it came from. A single report is rendered on its own; the
+    cross-file summary header is added only when there is more than one.
+    """
+    if sources is not None and len(sources) != len(reports):
+        raise ValueError("sources must have the same length as reports")
+
+    def _src(i: int) -> str | None:
+        return sources[i] if sources is not None else None
+
+    if len(reports) == 1:
+        return render_report(reports[0], source=_src(0), include_candidates=include_candidates)
+
     n_defect = sum(1 for r in reports if r.has_hard_defect)
     header = (
         f"linted {len(reports)} trace(s); "
         f"{n_defect} with a hard_defect; overall exit "
         f"{max((r.exit_code for r in reports), default=0)}"
     )
-    body = "\n\n".join(render_report(r, include_candidates=include_candidates) for r in reports)
+    body = "\n\n".join(
+        render_report(r, source=_src(i), include_candidates=include_candidates)
+        for i, r in enumerate(reports)
+    )
     return f"{header}\n\n{body}" if body else header
 
 
-def reports_to_dict(reports: list[LintReport]) -> dict[str, Any]:
+def reports_to_dict(
+    reports: list[LintReport], *, sources: list[str] | None = None
+) -> dict[str, Any]:
+    """Serialise several reports. ``sources`` adds each report's file path as ``source``."""
+    if sources is not None and len(sources) != len(reports):
+        raise ValueError("sources must have the same length as reports")
+    entries: list[dict[str, Any]] = []
+    for i, r in enumerate(reports):
+        entry = r.to_dict()
+        if sources is not None:
+            entry = {"source": sources[i], **entry}
+        entries.append(entry)
     return {
         "overall_exit": max((r.exit_code for r in reports), default=0),
-        "reports": [r.to_dict() for r in reports],
+        "reports": entries,
     }
 
 

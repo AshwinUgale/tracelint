@@ -36,7 +36,12 @@ from tracelint.findings import (
     ConfidenceTier,
     LintReport,
 )
-from tracelint.report import render_report, reports_to_dict, write_json
+from tracelint.report import (
+    render_report,
+    render_reports,
+    reports_to_dict,
+    write_json,
+)
 from tracelint.rules import lint_trace, rule_ids, select_rules
 from tracelint.sources import SUPPORTED_FORMATS, load_source, load_sources
 from tracelint.tools import ToolRegistry
@@ -284,8 +289,9 @@ def _cmd_check(args: argparse.Namespace) -> int:
             ratchet=config.ratchet and not args.no_ratchet,
         )
 
+    shown_uris = [_shown_path(u) for u in uris]
     if args.json_out:
-        write_json(args.json_out, reports_to_dict(reports))
+        write_json(args.json_out, reports_to_dict(reports, sources=shown_uris))
     if args.sarif_out:
         from tracelint.sarif import to_sarif
 
@@ -299,8 +305,9 @@ def _cmd_check(args: argparse.Namespace) -> int:
         )
 
     if not args.quiet:
-        for report in reports:
-            print(render_report(report, include_candidates=args.include_candidates))
+        print(
+            render_reports(reports, sources=shown_uris, include_candidates=args.include_candidates)
+        )
 
     return max((r.exit_code for r in reports), default=EXIT_OK)
 
