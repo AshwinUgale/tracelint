@@ -30,7 +30,6 @@ from typing import NoReturn
 
 from tracelint.findings import (
     EXIT_GATE,
-    EXIT_HARD_DEFECT,
     EXIT_INPUT_ERROR,
     EXIT_OK,
     ConfidenceTier,
@@ -383,15 +382,30 @@ def _cmd_langfuse_pull(args: argparse.Namespace) -> int:
 
 
 def _cmd_langfuse_check(args: argparse.Namespace) -> int:
+    from tracelint.config import Config, apply_ignores, find_config, load_config
     from tracelint.integrations.langfuse import LangfuseIntegration
 
-    registry = ToolRegistry.load(args.tools) if args.tools else ToolRegistry()
+    # Honour the project config (rules, tools, fail_on, ignores) so a checked Langfuse trace gates
+    # the same way `tracelint check` does. A baseline is not applied here: it accepts findings in
+    # committed trace files; for that, pull first then `check --baseline`.
+    config_path = find_config()
+    config = load_config(config_path) if config_path else Config()
+    if args.tools:
+        registry = ToolRegistry.load(args.tools)
+    elif config.tools:
+        registry = ToolRegistry.load(str(config.tools))
+    else:
+        registry = ToolRegistry()
+    rules = select_rules(config.rules) if config.rules else None
     result = LangfuseIntegration().check(
         args.trace_id,
         registry=registry,
         tool_names=args.tool_names,
         write_back=args.write_back,
+        rules=rules,
     )
+    apply_ignores(result.report, config.ignores, args.trace_id)
+    result.report.fail_on = config.fail_on or ConfidenceTier.HARD_DEFECT
     if not args.quiet:
         print(render_report(result.report, include_candidates=args.include_candidates))
         print()
@@ -402,7 +416,7 @@ def _cmd_langfuse_check(args: argparse.Namespace) -> int:
         for plan in result.plans:
             target = f"obs {plan.observation_id}" if plan.observation_id else "trace"
             print(f"  {plan.name:34} {plan.value:<5} [{target}]")
-    return EXIT_HARD_DEFECT if result.report.has_hard_defect else EXIT_OK
+    return result.report.exit_code
 
 
 def _cmd_init(args: argparse.Namespace) -> int:

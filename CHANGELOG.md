@@ -6,6 +6,12 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **The pytest fixture and `tracelint langfuse check` now honour the project config.** Both read
+  `[tool.tracelint]` / `tracelint.toml` for rules, tools, `fail_on` and ignores, so a `trace_capture`
+  test or a checked Langfuse trace gates exactly as `tracelint check` does in CI — no silent drift
+  between what CI enforces and what a test or a `langfuse check` accepts. (A baseline is not applied in
+  either: it accepts findings in committed trace files, so pair `tracelint langfuse pull` with
+  `tracelint check --baseline` for that.)
 - **Suppressions now say which fix they need.** A rule that abstains was always disclosed, but
   every suppression read the same and the report always suggested `tracelint init` — even when
   `init` could not help. Each suppression now carries a category and the report groups them:

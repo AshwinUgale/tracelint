@@ -32,6 +32,11 @@ tracelint langfuse check --trace <trace-id> [--tools tools.json] [--write-back]
 This fetches and lints in one step. `--write-back` posts the findings as Scores on that trace, so the
 deterministic verdict shows up next to it in the Langfuse UI; omit it for a read-only lint.
 
+It reads your project config (`[tool.tracelint]` / `tracelint.toml`) for the rules, tools, `fail_on` and
+ignores, so it gates like `tracelint check` does. For a baseline (accept today's findings, fail on
+new ones), use the `pull` -> `tracelint check --baseline` flow above, since a baseline is keyed to a
+committed trace file.
+
 ## Examples
 
 - [`examples/langfuse_cookbook.py`](../../examples/langfuse_cookbook.py) — offline & keyless on a

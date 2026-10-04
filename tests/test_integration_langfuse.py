@@ -250,3 +250,27 @@ def test_missing_sdk_is_a_clean_error(monkeypatch, capsys):
     code = main(["langfuse", "check", "--trace", "trace-xyz"])
     assert code == 3
     assert "tracelint[langfuse]" in capsys.readouterr().err
+
+
+def test_cli_check_honours_project_config(monkeypatch, capsys, tmp_path):
+    # No --tools: the registry, the ignore and the gate all come from the project config.
+    # tools -> R2b (hard_defect) + R8 (hard_event); the ignore drops R2b; fail_on=hard_event gates
+    # on the remaining hard_event -> exit 1 (only true if all three config facets were read).
+    import tracelint.integrations.langfuse as lf
+
+    monkeypatch.setattr(lf, "_default_client", lambda: FakeClient(TRACE))
+    _write_tools(tmp_path)
+    (tmp_path / "tracelint.toml").write_text(
+        'tools = "tools.json"\n'
+        'fail_on = "hard_event"\n'
+        "\n"
+        "[[ignore]]\n"
+        'rule = "R2b"\n'
+        'reason = "refunds to the cached card are accepted for this agent"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    code = main(["langfuse", "check", "--trace", "trace-xyz"])
+    out = capsys.readouterr().out
+    assert code == 1
+    assert "ignored" in out and "R2b" in out  # the config's tools fired R2b; its ignore accepted it
