@@ -19,10 +19,27 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from typing import NamedTuple
 
-from tracelint.findings import ARGS_UNKNOWN, ConfidenceTier, Coverage, Finding, LintReport
+from tracelint.findings import (
+    ARGS_UNKNOWN,
+    SUPPRESS_NEEDS_CONTRACT,
+    SUPPRESS_NOT_APPLICABLE,
+    SUPPRESS_NOT_RECORDED,
+    ConfidenceTier,
+    Coverage,
+    Finding,
+    LintReport,
+)
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ToolCall, Trace
+
+
+class Suppression(NamedTuple):
+    """A reason a rule abstained, with its category (see ``findings`` ``SUPPRESS_*``)."""
+
+    reason: str
+    category: str
 
 
 class Rule(ABC):
@@ -37,9 +54,22 @@ class Rule(ABC):
     #: The semantic kind this rule emits, used to label suppression records.
     finding_type: str = ""
 
-    def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
-        """Return ``None`` if runnable, else a reason this rule is suppressed on ``trace``."""
+    def applicable(self, trace: Trace, registry: ToolRegistry) -> Suppression | str | None:
+        """Return ``None`` if runnable, else a :class:`Suppression` (reason + category), or a
+        bare reason string (taken as an uncategorised suppression)."""
         return None
+
+    def not_applicable(self, reason: str) -> Suppression:
+        """This trace cannot trigger the rule (too few calls, no results). Nothing to check."""
+        return Suppression(reason, SUPPRESS_NOT_APPLICABLE)
+
+    def needs_contract(self, reason: str) -> Suppression:
+        """A ``tools.json`` fact is missing (schema, failure_when, registry); ``init`` helps."""
+        return Suppression(reason, SUPPRESS_NEEDS_CONTRACT)
+
+    def not_recorded(self, reason: str) -> Suppression:
+        """The trace did not capture the data the rule needs; no ``tools.json`` fills that gap."""
+        return Suppression(reason, SUPPRESS_NOT_RECORDED)
 
     def coverage(self, trace: Trace, registry: ToolRegistry) -> Coverage | None:
         """How many of this rule's units it could actually evaluate, or ``None`` to not report.
@@ -86,6 +116,7 @@ class Rule(ABC):
                 "cause": ARGS_UNKNOWN,
             },
             suppressed_reason=reason,
+            suppressed_category=SUPPRESS_NOT_RECORDED,
         )
 
 
@@ -107,9 +138,13 @@ def lint_trace(
         cov = rule.coverage(trace, registry)
         if cov is not None:
             coverage.append(cov)
-        reason = rule.applicable(trace, registry)
-        if reason is not None:
-            findings.append(Finding.suppressed(rule.id, rule.finding_type, reason))
+        verdict = rule.applicable(trace, registry)
+        if verdict is not None:
+            reason = verdict.reason if isinstance(verdict, Suppression) else verdict
+            category = verdict.category if isinstance(verdict, Suppression) else None
+            findings.append(
+                Finding.suppressed(rule.id, rule.finding_type, reason, category=category)
+            )
             continue
         findings.extend(rule.run(trace, registry))
     return LintReport(run_id=trace.run_id, findings=findings, coverage=coverage)

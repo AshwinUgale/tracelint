@@ -37,7 +37,7 @@ class HallucinatedArgRule(Rule):
 
     def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
         if not trace.tool_calls():
-            return "trace has no tool calls to check"
+            return self.not_applicable("trace has no tool calls to check")
         return None
 
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:

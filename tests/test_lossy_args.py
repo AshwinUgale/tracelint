@@ -38,7 +38,7 @@ from tracelint import (
     lint_trace,
 )
 from tracelint.adapters._common import tool_input_args
-from tracelint.findings import ARGS_UNKNOWN, LintReport
+from tracelint.findings import ARGS_UNKNOWN, SUPPRESS_NOT_RECORDED, LintReport
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "lossy_args"
 
@@ -358,6 +358,7 @@ def test_a_repeated_side_effect_with_unknown_arguments_is_disclosed():
     assert "R8" not in _active(report)
     (disclosure,) = [s for s in report.suppressions if s.rule == "R8"]
     assert disclosure.evidence["cause"] == ARGS_UNKNOWN
+    assert disclosure.suppressed_category == SUPPRESS_NOT_RECORDED
     assert disclosure.step_indices == [0, 2]
     assert "2 calls to 'charge_card' not checked for duplicate side effects" in (
         disclosure.suppressed_reason

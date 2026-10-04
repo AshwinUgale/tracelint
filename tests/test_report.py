@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from tracelint import ConfidenceTier, Finding, LintReport, render_report, render_reports
+from tracelint.findings import (
+    SUPPRESS_NEEDS_CONTRACT,
+    SUPPRESS_NOT_APPLICABLE,
+    SUPPRESS_NOT_RECORDED,
+)
 
 
 def _defect() -> Finding:
@@ -82,3 +87,35 @@ def test_render_reports_omits_the_summary_for_a_single_trace():
     text = render_reports([LintReport("solo", [_defect()])], sources=["traces/solo.json"])
     assert "linted 1 trace(s)" not in text
     assert text.startswith("traces/solo.json:")
+
+
+def test_suppressions_are_grouped_by_category_with_targeted_advice():
+    report = LintReport(
+        "run",
+        [
+            Finding.suppressed(
+                "R1", "schema_violation", "no schema for 'pay'", category=SUPPRESS_NEEDS_CONTRACT
+            ),
+            Finding.suppressed(
+                "R8", "duplicate_side_effect", "args unknown", category=SUPPRESS_NOT_RECORDED
+            ),
+            Finding.suppressed(
+                "R4", "loop", "fewer than 3 calls", category=SUPPRESS_NOT_APPLICABLE
+            ),
+        ],
+    )
+    text = render_report(report)
+    assert "run `tracelint init`" in text  # needs_contract group advice
+    assert "enable tool-content capture" in text  # not_recorded group advice
+    assert "nothing to check" in text  # not_applicable group advice
+    assert "declare the missing tools.json facts" in text  # closing line leads with the init action
+
+
+def test_closing_hint_omits_init_when_only_not_applicable():
+    report = LintReport(
+        "run",
+        [Finding.suppressed("R4", "loop", "fewer than 3 calls", category=SUPPRESS_NOT_APPLICABLE)],
+    )
+    text = render_report(report)
+    assert "tracelint init" not in text  # nothing to declare — do not nag about init
+    assert "nothing to check here" in text
