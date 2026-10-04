@@ -347,6 +347,23 @@ that matches nothing prints a warning. A misspelled key or value fails the run (
 quietly loosening the gate. The nearest config file wins, searched up to the repository root;
 `--config FILE` names one.
 
+**Adopt it on traces that already have findings** — record a baseline once and commit it; CI then
+fails only on what's new:
+
+```bash
+tracelint check traces/*.jsonl --baseline tracelint-baseline.json --update-baseline   # once
+tracelint check traces/*.jsonl --baseline tracelint-baseline.json                     # in CI
+```
+
+(or `baseline = "tracelint-baseline.json"` in the config). A finding is matched by its trace file,
+its rule and the tools and fields it involves, never by step position or value, so a re-run of the
+agent still matches. The baseline accepts as many of each as it recorded: a new kind, one more of
+the same, or a worse tier fails. It also records what each rule could check, so a run that checks
+less fails too (exit 1): a tool a rule can no longer check (content capture switched off), or a
+rule that now checks nothing (schemas deleted). `ratchet = false` turns that part off. Accepted
+findings stay in the report, marked "in the baseline", and ones that no longer occur are noted so
+you can tighten the file with `--update-baseline`.
+
 ## Library
 
 ```python

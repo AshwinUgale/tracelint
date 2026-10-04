@@ -88,3 +88,13 @@ jobs:
         env:
           OUTCOME: ${{ steps.configured.outcome }}
         run: test "$OUTCOME" = failure
+      - name: Record a baseline that accepts the defect
+        uses: ./
+        with:
+          traces: examples/traces/langgraph_phoenix_trace.json
+          args: --baseline tracelint-baseline.json --update-baseline
+      - name: The baselined defect passes
+        uses: ./
+        with:
+          traces: examples/traces/langgraph_phoenix_trace.json
+          args: --baseline tracelint-baseline.json

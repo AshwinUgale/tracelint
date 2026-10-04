@@ -162,7 +162,7 @@ def test_an_ignored_hard_defect_is_shown_but_does_not_fail(project, capsys):
     _pyproject(project, IGNORE_DEPLOY)
     assert _check("traces/refund.json") == 0
     out = capsys.readouterr().out
-    assert "ignored (1) by config" in out
+    assert "ignored (1) — not failing" in out
     assert "refunds to the cached card are approved for this agent" in out
     assert "R2a tool_error_event" in out  # the event is not ignored
 

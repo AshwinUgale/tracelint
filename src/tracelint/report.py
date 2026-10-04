@@ -46,8 +46,15 @@ def render_report(report: LintReport, *, include_candidates: bool = False) -> st
     if hidden:
         lines.append(f"  ({hidden} candidate(s) hidden; pass --include-candidates to show)")
 
+    if report.gate_failures:
+        lines.append(
+            f"  checks less than the baseline ({len(report.gate_failures)}) — fails the run:"
+        )
+        for reason in report.gate_failures:
+            lines.append(f"    {reason}")
+
     if report.ignored:
-        lines.append(f"  ignored ({len(report.ignored)}) by config — not failing:")
+        lines.append(f"  ignored ({len(report.ignored)}) — not failing:")
         for f in report.ignored:
             where = f"{f.rule} {f.finding_type}  ({_location(f)})"
             lines.append(f"    [{f.tier.value}] {where}: {f.ignored_reason}")

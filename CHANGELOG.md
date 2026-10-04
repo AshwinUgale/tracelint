@@ -6,6 +6,25 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: a CI baseline with a coverage ratchet** (the second half of the CI contract). Adopting
+  tracelint on traces that already had findings meant a red build until every one was fixed, or
+  turning rules off.
+  - `--update-baseline` records what the traces show (`--baseline FILE`, or `baseline` in the
+    config); later runs accept up to that many of each finding and fail on anything beyond it.
+    A finding is matched by its trace file and its rule, kind, tools, fields and signal, never by
+    step position, value or run id, so a re-run of the agent whose steps shift still matches. A
+    recorded finding also accepts the same finding at a lower tier, never a higher one.
+  - Only findings at the gate (`fail_on`, a hard defect by default) are recorded. Accepted ones
+    stay in the report as ignored, "in the baseline"; ones that no longer occur are noted.
+  - **Coverage ratchet:** the baseline records which tools each rule could not check and which
+    rules checked something. A run fails (exit 1) when a rule can no longer check a tool it could,
+    or a rule that checked something now checks nothing: content capture switched off, schemas
+    deleted. `ratchet = false` or `--no-ratchet` turns it off; a trace file the baseline never saw
+    has nothing to compare.
+  - Paths are stored relative to the baseline file, and updating from some traces keeps the
+    entries for the others. A missing or invalid baseline is an input error (exit 3).
+  - R2b's evidence names every side-effecting tool the failure reached (`side_effecting_uses`), so
+    a baselined failure that starts feeding a new action is a new finding.
 - **New: a project config file, `--fail-on`, and ignores with reasons** (the first half of the CI
   contract). Every setting had to be repeated on each CI command, nothing below a hard defect could
   fail a build, and the only way to accept a known finding was to turn its rule off.

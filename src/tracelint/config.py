@@ -9,6 +9,7 @@ contract is versioned with the code::
     tools = "tools.json"         # the default --tools, relative to this file
     rules = ["R1", "R2a", "R2b"] # the default --rules (default: all)
     fail_on = "hard_event"       # also fail CI (exit 1) on hard events; or "candidate"
+    baseline = "tracelint-baseline.json"   # accept today's findings; fail on new ones
 
     [[tool.tracelint.ignore]]
     rule = "R3"
@@ -26,6 +27,9 @@ trace files (a glob), and must say why. An ignored finding stays in the report, 
 reason and counted, but no longer counts toward the exit code. An ignore that matches nothing is
 reported, so stale entries don't pile up unnoticed. A misspelled key or value fails the run (exit
 3) rather than being skipped: a typo in a gate must not silently loosen it.
+
+``baseline`` names a CI baseline file (relative to this file; see :mod:`tracelint.baseline`), and
+``ratchet = false`` turns off its coverage check.
 """
 
 from __future__ import annotations
@@ -47,7 +51,7 @@ else:  # pragma: no cover - exercised on Python 3.10
 CONFIG_FILE = "tracelint.toml"
 PYPROJECT = "pyproject.toml"
 
-_KEYS = {"format", "tools", "rules", "fail_on", "ignore"}
+_KEYS = {"format", "tools", "rules", "fail_on", "ignore", "baseline", "ratchet"}
 _IGNORE_KEYS = {"rule", "tool", "field", "path", "reason"}
 _FAIL_ON = {tier.value: tier for tier in ConfidenceTier}
 
@@ -95,6 +99,8 @@ class Config:
     rules: list[str] | None = None
     fail_on: ConfidenceTier | None = None
     ignores: tuple[Ignore, ...] = ()
+    baseline: Path | None = None
+    ratchet: bool = True
 
 
 def find_config(start: Path | None = None) -> Path | None:
@@ -184,6 +190,14 @@ def _parse(table: dict[str, Any], path: Path) -> Config:
     if fail_on is not None and fail_on not in _FAIL_ON:
         raise fail(f"fail_on {fail_on!r} is not one of {', '.join(_FAIL_ON)}")
 
+    baseline = table.get("baseline")
+    if baseline is not None and not isinstance(baseline, str):
+        raise fail("baseline must be a path (a string)")
+
+    ratchet = table.get("ratchet", True)
+    if not isinstance(ratchet, bool):
+        raise fail("ratchet must be true or false")
+
     entries = table.get("ignore", [])
     if not isinstance(entries, list):
         raise fail("ignore must be a list of tables ([[tool.tracelint.ignore]])")
@@ -198,6 +212,8 @@ def _parse(table: dict[str, Any], path: Path) -> Config:
         rules=rules,
         fail_on=_FAIL_ON[fail_on] if fail_on is not None else None,
         ignores=ignores,
+        baseline=(path.parent / baseline) if baseline is not None else None,
+        ratchet=ratchet,
     )
 
 
