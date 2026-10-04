@@ -16,8 +16,11 @@ It's a thin wrapper over :func:`tracelint.capture.capture` (which records the ru
 loader ``tracelint check --format openinference`` uses (which lints each captured run). Capturing a
 real framework needs that framework's extra, e.g. ``pip install "tracelint[capture-smolagents]"``.
 
-The fixture auto-fails the test on a **hard defect**; heuristic candidates never fail it. Pass
-``assert_clean=False`` to inspect the report yourself instead, and read it from the handle's
+The fixture reads the project's tracelint config (``[tool.tracelint]`` / ``tracelint.toml``) for
+the rules, tools, ignores and gate, so a test gates exactly as ``tracelint check`` would in CI: it
+fails on a **hard defect** by default, or on whatever ``fail_on`` sets. (A baseline is not applied —
+it accepts findings in committed trace files, not an ephemeral capture; use ``check --baseline``.)
+Pass ``assert_clean=False`` to inspect the report yourself instead, and read it from the handle's
 ``.report`` after the block (``.reports`` holds one per run when the block ran the agent more than
 once). A capture with nothing to lint fails the test too — an empty capture is a broken setup, not
 a clean run. For a manual/advanced run (no framework), omit ``framework`` and emit spans on the
@@ -34,8 +37,9 @@ from typing import Any
 import pytest
 
 from tracelint.capture import capture
+from tracelint.config import Config, apply_ignores, find_config, load_config
 from tracelint.findings import ConfidenceTier, LintReport
-from tracelint.rules import default_rules, lint_trace
+from tracelint.rules import default_rules, lint_trace, select_rules
 from tracelint.sources import OPENINFERENCE, load_source
 from tracelint.tools import ToolRegistry
 
@@ -93,10 +97,27 @@ def trace_capture(tmp_path: Path):
         except ValueError as exc:  # spans, but no tool calls or messages among them
             message = f"tracelint: the captured run has nothing to lint ({exc})"
             raise AssertionError(message) from exc
-        handle.reports = [lint_trace(trace, default_rules(), registry) for trace in traces]
-        hard = [f for r in handle.reports for f in r.by_tier(ConfidenceTier.HARD_DEFECT)]
-        if assert_clean and hard:
-            detail = "; ".join(f"{f.rule} {f.summary}" for f in hard)
-            raise AssertionError(f"tracelint: the agent trace has a hard defect ({detail})")
+        # Honour the project config, so a test gates exactly as `tracelint check` would in CI.
+        config_path = find_config()
+        config = load_config(config_path) if config_path else Config()
+        rules = select_rules(config.rules) if config.rules else default_rules()
+        reg = registry
+        if reg is None:
+            reg = ToolRegistry.load(str(config.tools)) if config.tools else ToolRegistry()
+        gate = config.fail_on or ConfidenceTier.HARD_DEFECT
+        handle.reports = []
+        for trace in traces:
+            report = lint_trace(trace, rules, reg)
+            apply_ignores(report, config.ignores, str(path))
+            report.fail_on = gate
+            handle.reports.append(report)
+        gated = [f for r in handle.reports for f in r.active_findings if f.tier.rank >= gate.rank]
+        if assert_clean and gated:
+            detail = "; ".join(f"{f.rule} {f.summary}" for f in gated)
+            if gate is ConfidenceTier.HARD_DEFECT:
+                raise AssertionError(f"tracelint: the agent trace has a hard defect ({detail})")
+            raise AssertionError(
+                f"tracelint: the agent trace has a finding at or above {gate.value} ({detail})"
+            )
 
     return _trace_capture

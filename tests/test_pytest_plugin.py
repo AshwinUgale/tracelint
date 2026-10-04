@@ -167,3 +167,42 @@ def test_an_empty_capture_fails_the_test(pytester):
     result = pytester.runpytest()
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*recorded no spans*"])
+
+
+def test_fixture_honours_config_rules(pytester):
+    # The project config limits rules to R1, so R6 (which would hard-fail) never runs on a
+    # malformed-args call: the fixture gates exactly as `tracelint check` would under that config.
+    pytester.makeconftest(_conftest())
+    pytester.makefile(".toml", tracelint='rules = ["R1"]')
+    pytester.makepyfile(
+        emit=_EMIT,
+        test_cfg_rules="""
+        from emit import emit_model_tool_call
+
+        def test_malformed_args_pass_when_r6_disabled(trace_capture):
+            with trace_capture() as cap:
+                emit_model_tool_call(cap.tracer, "get_order", "{ not valid json")
+            assert cap.report.exit_code == 0
+        """,
+    )
+    pytester.runpytest().assert_outcomes(passed=1)
+
+
+def test_fixture_honours_fail_on_from_config(pytester):
+    # fail_on = candidate makes a candidate finding fail the test, matching the project's CI gate.
+    pytester.makeconftest(_conftest())
+    pytester.makefile(".toml", tracelint='fail_on = "candidate"')
+    pytester.makepyfile(
+        emit=_EMIT,
+        test_cfg_failon="""
+        from emit import emit_model_tool_call
+
+        def test_candidate_fails_under_candidate_gate(trace_capture):
+            # An order id the agent never observed -> R3 candidate (hallucinated_arg).
+            with trace_capture() as cap:
+                emit_model_tool_call(cap.tracer, "get_order", '{"order_id": "ZZZ-NEVER-SEEN"}')
+        """,
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*at or above candidate*"])

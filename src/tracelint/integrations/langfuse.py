@@ -24,7 +24,7 @@ from typing import Any
 from tracelint.adapters.langfuse import from_langfuse_trace
 from tracelint.findings import LintReport
 from tracelint.integrations.base import ScorePlan, plan_scores
-from tracelint.rules import default_rules, lint_trace
+from tracelint.rules import Rule, default_rules, lint_trace
 from tracelint.tools import ToolRegistry
 from tracelint.trace import Trace
 
@@ -93,9 +93,10 @@ class LangfuseIntegration:
         registry: ToolRegistry | None = None,
         tool_names: list[str] | None = None,
         write_back: bool = False,
+        rules: list[Rule] | None = None,
     ) -> LangfuseCheckResult:
         trace = self.fetch_trace(trace_id, tool_names=tool_names)
-        report = lint_trace(trace, default_rules(), registry or ToolRegistry())
+        report = lint_trace(trace, rules or default_rules(), registry or ToolRegistry())
         plans = plan_scores(trace, report, scope=trace_id)
         written = self._write(trace_id, plans) if write_back else 0
         return LangfuseCheckResult(trace=trace, report=report, plans=plans, written=written)
