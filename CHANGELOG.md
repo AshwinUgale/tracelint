@@ -6,6 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Call/result pairing is no longer O(n^2) on long traces.** `Trace.call_for`, `result_for`
+  and `pairs` scanned the step list on every lookup, so the rules that pair calls with results
+  — R2a, R2b, R4, R5 — grew quadratically with trace length. A trace now builds a `call_id`
+  index once and looks up by bisect, bringing those rules back to roughly linear: on an
+  8,000-call trace R2a drops from ~0.6s to ~0.04s and R2b/R4/R5 from ~0.4s each to ~0.1s, with
+  identical findings. (R3's provenance substring scan is a separate, narrower cost — it only
+  bites a trace that is both very long and hallucination-heavy, since a derivable value
+  short-circuits — and is left for a dedicated change.)
 - **The pytest fixture and `tracelint langfuse check` now honour the project config.** Both read
   `[tool.tracelint]` / `tracelint.toml` for rules, tools, `fail_on` and ignores, so a `trace_capture`
   test or a checked Langfuse trace gates exactly as `tracelint check` does in CI — no silent drift

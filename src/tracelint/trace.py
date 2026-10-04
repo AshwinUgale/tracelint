@@ -21,6 +21,7 @@ the recovery scorecard; it is optional and absent by default.
 from __future__ import annotations
 
 import json
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from enum import Enum
@@ -307,6 +308,9 @@ class Trace:
     run_id: str
     steps: list[Step] = field(default_factory=list)
     final: Any = None
+    #: Lazily-built ({call_id: calls}, {call_id: results}) pairing index; rebuilt if ``steps``
+    #: is replaced. Keeps call/result pairing O(log k) per lookup instead of an O(n) scan.
+    _pairing: Any = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         for i, step in enumerate(self.steps):
@@ -329,19 +333,37 @@ class Trace:
         return [s for s in self.steps if isinstance(s, ToolResult)]
 
     # --- call/result pairing ---------------------------------------------------------
+    def _pairing_index(self) -> tuple[dict[str, list[ToolCall]], dict[str, list[ToolResult]]]:
+        """{call_id: calls} and {call_id: results}, each in step order. Built once and reused:
+        pairing used to scan the step list per call/result, i.e. O(n^2) over a long trace."""
+        cache = self._pairing
+        if cache is None or cache[0] is not self.steps:
+            calls: dict[str, list[ToolCall]] = {}
+            results: dict[str, list[ToolResult]] = {}
+            for step in self.steps:
+                if isinstance(step, ToolCall):
+                    calls.setdefault(step.call_id, []).append(step)
+                elif isinstance(step, ToolResult):
+                    results.setdefault(step.call_id, []).append(step)
+            cache = (self.steps, calls, results)
+            self._pairing = cache
+        return cache[1], cache[2]
+
     def result_for(self, call: ToolCall) -> ToolResult | None:
         """The first result after ``call`` sharing its ``call_id`` (``None`` if none)."""
-        for step in self.steps[call.index + 1 :]:
-            if isinstance(step, ToolResult) and step.call_id == call.call_id:
-                return step
-        return None
+        results = self._pairing_index()[1].get(call.call_id)
+        if not results:
+            return None
+        i = bisect_right(results, call.index, key=lambda r: r.index)
+        return results[i] if i < len(results) else None
 
     def call_for(self, result: ToolResult) -> ToolCall | None:
         """The most recent call before ``result`` sharing its ``call_id`` (``None`` if none)."""
-        for step in reversed(self.steps[: result.index]):
-            if isinstance(step, ToolCall) and step.call_id == result.call_id:
-                return step
-        return None
+        calls = self._pairing_index()[0].get(result.call_id)
+        if not calls:
+            return None
+        i = bisect_left(calls, result.index, key=lambda c: c.index)
+        return calls[i - 1] if i > 0 else None
 
     def pairs(self) -> list[tuple[ToolCall, ToolResult | None]]:
         """Every tool call with its matched result (or ``None`` when unmatched)."""
