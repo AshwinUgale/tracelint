@@ -171,8 +171,9 @@ def test_ignored_findings_are_marked_in_json(project, tmp_path):
     _pyproject(project, IGNORE_DEPLOY)
     out = tmp_path / "out.json"
     assert _check("traces/refund.json", "--json", str(out)) == 0
-    findings = json.loads(out.read_text(encoding="utf-8"))["reports"][0]["findings"]
-    (ignored,) = [f for f in findings if "ignored_reason" in f]
+    report = json.loads(out.read_text(encoding="utf-8"))["reports"][0]
+    assert all("ignored_reason" not in f for f in report["findings"])  # not folded into findings
+    (ignored,) = report["ignored"]
     assert ignored["rule"] == "R2b" and ignored["tier"] == "hard_defect"
 
 

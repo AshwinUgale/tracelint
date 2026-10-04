@@ -229,7 +229,7 @@ def test_a_report_the_console_cannot_encode_does_not_crash(tmp_path, monkeypatch
         "run_id": "予約-東京",
         "steps": [{"type": "message", "role": "user", "content": "予約"}],
     }
-    p = tmp_path / "trace.json"
+    p = tmp_path / "\u4e88\u7d04.json"
     p.write_text(json.dumps(trace, ensure_ascii=False), encoding="utf-8")
     raw = io.BytesIO()
     monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
@@ -258,3 +258,16 @@ def test_init_on_the_wrong_format_is_an_input_error(tmp_path, capsys):
     sp = _write_openinference_spans(tmp_path)
     assert main(["init", sp]) == 3
     assert "use --format openinference" in capsys.readouterr().err
+
+
+def test_check_json_separates_suppressions_and_carries_the_source(tmp_path):
+    # Without --tools, R1 cannot run: it is disclosed in `suppressions`, never folded into
+    # `findings` (whose count must match the text report). Each report also carries its file path.
+    trace, _toolset = _planted_trace()
+    tp = _write_trace(tmp_path, trace)
+    out = tmp_path / "out.json"
+    assert main(["check", tp, "--json", str(out), "--quiet"]) == 0
+    report = json.loads(out.read_text(encoding="utf-8"))["reports"][0]
+    assert any(s["rule"] == "R1" for s in report["suppressions"])
+    assert all(f["rule"] != "R1" for f in report["findings"])
+    assert report["source"].endswith(".json")

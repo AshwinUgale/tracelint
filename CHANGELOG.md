@@ -6,6 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Clearer reports (output readability).** The text report now leads with the trace **file path**
+  instead of only the run id (keyless native traces no longer print a bare `: 0 finding(s)`), a run
+  over several files gets a one-line cross-file **summary** header, and a short **tier legend**
+  explains the `[hard_defect]` / `[hard_event]` / `[candidate]` labels.
+- **JSON output no longer folds suppressions or ignored findings into `findings`.** `findings` is
+  now the active findings only, so its count matches the text report; suppressions (not checked) and
+  ignored (accepted) findings are disclosed in their own `suppressions` and `ignored` arrays, and
+  each report carries its `source` file path.
 - **New: R9, declared preconditions.** R2b proves an agent acted on a failed result only when a value
   flows from the failure into the action, so the audit's deploy after an `UNSTABLE` pipeline was a
   hard defect when the agent copied the build id but exited 0 when it deployed `"latest"` or a

@@ -216,15 +216,22 @@ class LintReport:
         return EXIT_OK
 
     def to_dict(self) -> dict[str, Any]:
+        # ``findings`` is the active findings only, so its count matches the text report.
+        # Suppressions (not checked) and ignored (accepted) are disclosed in their own arrays,
+        # never folded into ``findings`` where they would inflate the count (spec II.10).
         out: dict[str, Any] = {
             "run_id": self.run_id,
-            "findings": [f.to_dict() for f in self.findings],
+            "findings": [f.to_dict() for f in self.active_findings],
             "exit_code": self.exit_code,
         }
         if self.fail_on is not ConfidenceTier.HARD_DEFECT:
             out["fail_on"] = self.fail_on.value
         if self.gate_failures:
             out["gate_failures"] = list(self.gate_failures)
+        if self.ignored:
+            out["ignored"] = [f.to_dict() for f in self.ignored]
+        if self.suppressions:
+            out["suppressions"] = [f.to_dict() for f in self.suppressions]
         if self.coverage:
             out["coverage"] = [c.to_dict() for c in self.coverage]
         return out
