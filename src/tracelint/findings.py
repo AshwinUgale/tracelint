@@ -175,14 +175,16 @@ class LintReport:
     records, per reporting rule, how many units it could evaluate (:class:`Coverage`).
     ``exit_code`` implements the CI contract: ``2`` on a ``hard_defect``, exactly the tier reserved
     for structurally-provable defects; ``1`` when ``fail_on`` opts into a lower tier
-    (``hard_event`` or ``candidate``) and an active finding reaches it; else ``0``. By default CI
-    never fails on an event or a heuristic candidate.
+    (``hard_event`` or ``candidate``) and an active finding reaches it, or a ``gate_failures`` entry
+    says the run checked less than its baseline; else ``0``. By default CI never fails on an event
+    or a heuristic candidate.
     """
 
     run_id: str
     findings: list[Finding] = field(default_factory=list)
     coverage: list[Coverage] = field(default_factory=list)
     fail_on: ConfidenceTier = ConfidenceTier.HARD_DEFECT
+    gate_failures: list[str] = field(default_factory=list)
 
     @property
     def active_findings(self) -> list[Finding]:
@@ -207,7 +209,9 @@ class LintReport:
     def exit_code(self) -> int:
         if self.has_hard_defect:
             return EXIT_HARD_DEFECT
-        if any(f.tier.rank >= self.fail_on.rank for f in self.active_findings):
+        if self.gate_failures or any(
+            f.tier.rank >= self.fail_on.rank for f in self.active_findings
+        ):
             return EXIT_GATE
         return EXIT_OK
 
@@ -219,6 +223,8 @@ class LintReport:
         }
         if self.fail_on is not ConfidenceTier.HARD_DEFECT:
             out["fail_on"] = self.fail_on.value
+        if self.gate_failures:
+            out["gate_failures"] = list(self.gate_failures)
         if self.coverage:
             out["coverage"] = [c.to_dict() for c in self.coverage]
         return out

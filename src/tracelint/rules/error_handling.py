@@ -420,6 +420,11 @@ class ErrorHandlingRule(Rule):
         also = [other.call.name for other in uses if other is not use]
         if also:
             evidence["also_used_by"] = also
+        # Every side effect the failure reached, not just the one reported: a CI baseline must
+        # notice when the same failure starts feeding a new action.
+        reached = sorted({u.call.name for u in uses if side_effecting(u.call)})
+        if reached:
+            evidence["side_effecting_uses"] = reached
         summary = (
             f"value(s) from the errored {errored_tool!r} result ({values}) reused as arguments "
             f"to {use.call.name!r}"

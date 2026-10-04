@@ -25,6 +25,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from typing import NoReturn
 
 from tracelint.findings import (
@@ -33,6 +34,7 @@ from tracelint.findings import (
     EXIT_INPUT_ERROR,
     EXIT_OK,
     ConfidenceTier,
+    LintReport,
 )
 from tracelint.report import render_report, reports_to_dict, write_json
 from tracelint.rules import lint_trace, rule_ids, select_rules
@@ -109,6 +111,23 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="read settings from this file (default: the nearest tracelint.toml or "
         "pyproject.toml with [tool.tracelint])",
+    )
+    check.add_argument(
+        "--baseline",
+        metavar="FILE",
+        help="accept the findings recorded in this baseline and fail only on new ones (default: "
+        "the config's baseline)",
+    )
+    check.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="record what the traces show now into the baseline file (other files' entries are "
+        "kept), then check against it",
+    )
+    check.add_argument(
+        "--no-ratchet",
+        action="store_true",
+        help="with a baseline, don't fail when a run checks less than the baseline did",
     )
     check.add_argument("--json", dest="json_out", metavar="OUT", help="write findings as JSON")
     check.add_argument(
@@ -221,8 +240,6 @@ def _version() -> str:
 
 
 def _cmd_check(args: argparse.Namespace) -> int:
-    from pathlib import Path
-
     from tracelint.config import Config, apply_ignores, find_config, load_config
 
     config_path = Path(args.config) if args.config else find_config()
@@ -252,6 +269,21 @@ def _cmd_check(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
+    baseline_path = Path(args.baseline) if args.baseline else config.baseline
+    if args.update_baseline and baseline_path is None:
+        raise ValueError(
+            "--update-baseline needs a baseline file: --baseline FILE, or baseline in the config"
+        )
+    if baseline_path is not None:
+        _use_baseline(
+            baseline_path,
+            reports,
+            uris,
+            fail_on or ConfidenceTier.HARD_DEFECT,
+            update=args.update_baseline,
+            ratchet=config.ratchet and not args.no_ratchet,
+        )
+
     if args.json_out:
         write_json(args.json_out, reports_to_dict(reports))
     if args.sarif_out:
@@ -271,6 +303,45 @@ def _cmd_check(args: argparse.Namespace) -> int:
             print(render_report(report, include_candidates=args.include_candidates))
 
     return max((r.exit_code for r in reports), default=EXIT_OK)
+
+
+def _use_baseline(
+    path: Path,
+    reports: list[LintReport],
+    uris: list[str],
+    gate: ConfidenceTier,
+    *,
+    update: bool,
+    ratchet: bool,
+) -> None:
+    """Record the baseline (``update``) and accept what it holds; regressions fail the gate."""
+    from tracelint.baseline import Baseline, FileBaseline, apply, record
+
+    baseline = Baseline(path) if update and not path.exists() else Baseline.load(path)
+    by_file: dict[str, list[LintReport]] = {}
+    for report, uri in zip(reports, uris, strict=True):
+        by_file.setdefault(baseline.name_for(uri), []).append(report)
+    if update:
+        for name, group in by_file.items():
+            baseline.files[name] = record(group, gate)
+        baseline.save()
+        accepted = sum(a.count for name in by_file for a in baseline.files[name].accepted)
+        print(
+            f"tracelint: recorded {accepted} finding(s) from {len(by_file)} trace file(s) in "
+            f"{_shown_path(path)}",
+            file=sys.stderr,
+        )
+    stale = 0
+    for name, group in by_file.items():
+        known = name in baseline.files  # a trace file the baseline never saw: nothing to compare
+        entry = baseline.files.get(name, FileBaseline())
+        stale += apply(entry, group, gate, ratchet=ratchet and known)
+    if stale:
+        print(
+            f"tracelint: note: {_shown_path(path)}: {stale} accepted finding(s) no longer occur; "
+            "run with --update-baseline to drop them",
+            file=sys.stderr,
+        )
 
 
 def _shown_path(path: object) -> str:

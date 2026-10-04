@@ -32,8 +32,8 @@ def finding_fingerprint(finding: Finding, *, scope: str, step_keys: Sequence[str
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
 
 
-# Evidence keys naming a tool a finding is about, in the order they read (R2b: failed -> consumer).
-_TOOL_KEYS = ("tool", "errored_tool", "consumer")
+# Evidence keys naming the tool a finding starts from (R2b: the failed one; then its consumers).
+_SOURCE_KEYS = ("tool", "errored_tool")
 
 
 @dataclass(frozen=True)
@@ -41,10 +41,11 @@ class FindingKey:
     """What a finding is about, independent of where it sits in a run.
 
     The fingerprint above pins a finding to its exact steps; this key keeps only what survives a
-    re-run of the agent: the rule and kind, the tools involved, the argument fields (R3's field,
-    the locations of R1's schema errors) and the signal (R2a/R2b). Step positions, values and run
-    ids are left out, so a regenerated trace whose steps shift still yields the same key. A
-    project's ignores match on it, and a CI baseline counts findings by it.
+    re-run of the agent: the rule and kind, the tools involved (for R2b, the failed tool and every
+    side-effecting tool it fed, in name order), the argument fields (R3's field, the locations of
+    R1's schema errors) and the signal (R2a/R2b). Step positions, values and run ids are left out,
+    so a regenerated trace whose steps shift still yields the same key. A project's ignores match
+    on it, and a CI baseline counts findings by it.
     """
 
     rule: str
@@ -57,7 +58,8 @@ class FindingKey:
         """A short label: ``R2b error_mishandled run_release_pipeline -> deploy``."""
         parts = [self.rule, self.finding_type]
         if self.tools:
-            parts.append(" -> ".join(self.tools))
+            first, *rest = self.tools
+            parts.append(f"{first} -> {', '.join(rest)}" if rest else first)
         if self.fields:
             parts.append("fields " + ", ".join(f or "(root)" for f in self.fields))
         if self.signal:
@@ -68,7 +70,12 @@ class FindingKey:
 def finding_key(finding: Finding) -> FindingKey:
     """The :class:`FindingKey` of ``finding``."""
     evidence = finding.evidence
-    tools = [evidence[k] for k in _TOOL_KEYS if isinstance(evidence.get(k), str)]
+    tools = [evidence[k] for k in _SOURCE_KEYS if isinstance(evidence.get(k), str)]
+    reached = evidence.get("side_effecting_uses")
+    if isinstance(reached, list) and reached:  # R2b: every side effect the failure fed, as a set
+        tools += sorted(t for t in reached if isinstance(t, str))
+    elif isinstance(evidence.get("consumer"), str):
+        tools.append(evidence["consumer"])
     listed = evidence.get("tools")
     if isinstance(listed, list):
         tools += [t for t in listed if isinstance(t, str)]
