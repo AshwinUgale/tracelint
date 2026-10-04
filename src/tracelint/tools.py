@@ -23,6 +23,54 @@ from typing import Any
 
 from tracelint.predicates import FailurePredicate
 
+_REQUIREMENT_KEYS = {"tool", "succeeded", "same"}
+
+
+@dataclass(frozen=True)
+class Requirement:
+    """A declared precondition (R9): before the tool runs, the latest call to ``tool`` must have
+    returned successfully (with ``succeeded=False``, merely returned). ``same`` names arguments
+    whose values must match between the two calls, scoping the check to one entity: one order, one
+    build."""
+
+    tool: str
+    succeeded: bool = True
+    same: tuple[str, ...] = ()
+
+    @classmethod
+    def from_dict(cls, data: Any, owner: str) -> Requirement:
+        if not isinstance(data, dict):
+            raise ValueError(
+                f'{owner}: each requires entry is an object, e.g. {{"tool": "get_order"}}'
+            )
+        unknown = sorted(set(data) - _REQUIREMENT_KEYS)
+        if unknown:
+            raise ValueError(
+                f"{owner}: unknown key {unknown[0]!r} in requires; expected tool, succeeded, same"
+            )
+        tool = data.get("tool")
+        if not isinstance(tool, str) or not tool:
+            raise ValueError(f"{owner}: a requires entry needs the required tool's name")
+        succeeded = data.get("succeeded", True)
+        if not isinstance(succeeded, bool):
+            raise ValueError(f"{owner}: requires succeeded must be true or false")
+        same = data.get("same", [])
+        if not isinstance(same, list) or not all(isinstance(n, str) and n for n in same):
+            raise ValueError(f"{owner}: requires same must be a list of argument names")
+        return cls(tool, succeeded, tuple(same))
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"tool": self.tool}
+        if not self.succeeded:
+            out["succeeded"] = False
+        if self.same:
+            out["same"] = list(self.same)
+        return out
+
+    def describe(self) -> str:
+        first = f"a successful {self.tool}" if self.succeeded else f"a {self.tool} call"
+        return first + (f" (same {', '.join(self.same)})" if self.same else "")
+
 
 @dataclass(frozen=True)
 class ToolMetadata:
@@ -40,11 +88,16 @@ class ToolMetadata:
     #: Declared domain-failure predicate — a result matching it is a structured error (R2), even
     #: when the transport reported success. See :mod:`tracelint.predicates`.
     failure_when: FailurePredicate | None = None
+    #: Declared preconditions (R9): calls that must have succeeded before this tool runs.
+    requires: tuple[Requirement, ...] = ()
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any] | None) -> ToolMetadata:
+    def from_dict(cls, data: dict[str, Any] | None, owner: str = "tool") -> ToolMetadata:
         if not data:
             return cls()
+        requires = data.get("requires") or []
+        if not isinstance(requires, list):
+            raise ValueError(f'{owner}: requires must be a list, e.g. [{{"tool": "get_order"}}]')
         return cls(
             idempotent=bool(data.get("idempotent", False)),
             side_effecting=bool(data.get("side_effecting", False)),
@@ -52,6 +105,7 @@ class ToolMetadata:
             paginated=bool(data.get("paginated", False)),
             retryable_errors=tuple(data.get("retryable_errors", ()) or ()),
             failure_when=FailurePredicate.from_dict(data.get("failure_when")),
+            requires=tuple(Requirement.from_dict(r, owner) for r in requires),
         )
 
 
@@ -79,7 +133,7 @@ class ToolSpec:
         return cls(
             name=name,
             schema=schema,
-            metadata=ToolMetadata.from_dict(data.get("metadata")),
+            metadata=ToolMetadata.from_dict(data.get("metadata"), owner=name),
             schema_version=data.get("schema_version"),
             value_origins=_extract_value_origins(schema, data.get("value_origins")),
         )
@@ -127,6 +181,7 @@ class ToolContract:
                 "paginated": m.paginated,
             },
             "failure_when": self.failure_when.summary() if self.failure_when else None,
+            "requires": [r.to_dict() for r in m.requires],
             "provenance": dict(self.value_origins),
         }
 
@@ -142,6 +197,7 @@ class ToolContract:
         if m.idempotent:
             effects += ", idempotent"
         failure = self.failure_when.summary() if self.failure_when else "none declared"
+        requires = ", ".join(r.describe() for r in m.requires) or "none declared"
         prov = (
             ", ".join(f"{k}={v}" for k, v in sorted(self.value_origins.items()))
             or "none declared"
@@ -152,6 +208,7 @@ class ToolContract:
                 f"  args:       {args}",
                 f"  effects:    {effects}",
                 f"  failure:    {failure}",
+                f"  requires:   {requires}",
                 f"  provenance: {prov}",
             ]
         )

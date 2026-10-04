@@ -86,6 +86,7 @@ class ContractDraft:
     inferred_schema: list[str] = field(default_factory=list)
     no_schema: list[str] = field(default_factory=list)
     skipped_internal: list[str] = field(default_factory=list)
+    after_others: list[str] = field(default_factory=list)  # first called after other tools
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -118,6 +119,12 @@ class ContractDraft:
                 "  REVIEW behavior for every tool (the trace can't prove it): set "
                 "side_effecting / idempotent / failure_when — see each tool's _todo."
             )
+        if self.after_others:
+            lines.append(
+                "  preconditions: if one of these must only run after an earlier call succeeded "
+                "(a refund after its lookup), declare metadata.requires — see the _todo of: "
+                + ", ".join(self.after_others)
+            )
         return "\n".join(lines)
 
 
@@ -127,6 +134,7 @@ def discover_contract(traces: Iterable[Trace]) -> ContractDraft:
     observed: dict[str, list[dict[str, Any]]] = {}
     order: list[str] = []
     skipped: list[str] = []
+    before: dict[str, list[str]] = {}  # tools called before a tool's first call, latest first
 
     for trace in traces:
         for call in trace.tool_calls():
@@ -138,6 +146,9 @@ def discover_contract(traces: Iterable[Trace]) -> ContractDraft:
                     skipped.append(name)
                 continue
             if name not in observed:
+                seen = [c.name for c in trace.tool_calls() if c.index < call.index]
+                earlier = [t for t in reversed(seen) if t not in (name, *FRAMEWORK_INTERNAL_TOOLS)]
+                before[name] = list(dict.fromkeys(earlier))[:3]
                 order.append(name)
                 observed[name] = []
             if call.args_unavailable is None:  # unknown arguments say nothing about the schema
@@ -161,6 +172,13 @@ def discover_contract(traces: Iterable[Trace]) -> ContractDraft:
                 draft.no_schema.append(name)
                 schema_todo = "add the argument JSON Schema (none in the trace, no args observed)"
         todo = ([schema_todo] if schema_todo else []) + _TODO_BEHAVIOR
+        if before.get(name):
+            draft.after_others.append(name)
+            todo.append(
+                "set metadata.requires if this call must only run after an earlier one "
+                f'succeeded, e.g. [{{"tool": "{before[name][0]}"}}] (called before it here: '
+                f"{', '.join(before[name])})"
+            )
         draft.tools[name] = {
             "schema": schema,  # object schema, or null when nothing could be discovered/inferred
             "metadata": dict(_BEHAVIOR_PLACEHOLDER),

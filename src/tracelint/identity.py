@@ -32,8 +32,9 @@ def finding_fingerprint(finding: Finding, *, scope: str, step_keys: Sequence[str
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
 
 
-# Evidence keys naming the tool a finding starts from (R2b: the failed one; then its consumers).
-_SOURCE_KEYS = ("tool", "errored_tool")
+# Evidence keys naming the tool a finding starts from, in order: R9's required tool before the
+# tool that needed it; R2b's failed tool, then its consumers.
+_SOURCE_KEYS = ("requires", "tool", "errored_tool")
 
 
 @dataclass(frozen=True)

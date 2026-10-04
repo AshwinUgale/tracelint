@@ -11,6 +11,7 @@ from tracelint.rules.base import Rule, lint_trace
 from tracelint.rules.error_handling import ErrorHandlingRule, ToolErrorEventRule
 from tracelint.rules.hallucination import HallucinatedArgRule
 from tracelint.rules.loops import LoopRule, RedundantCallRule
+from tracelint.rules.preconditions import PreconditionRule
 from tracelint.rules.schema_violation import SchemaViolationRule
 from tracelint.rules.side_effects import DuplicateSideEffectRule
 from tracelint.rules.tool_integrity import MalformedArgumentsRule, UnknownToolRule
@@ -26,6 +27,7 @@ _RULE_CLASSES: list[type[Rule]] = [
     MalformedArgumentsRule,
     UnknownToolRule,
     DuplicateSideEffectRule,
+    PreconditionRule,
 ]
 
 
@@ -64,6 +66,7 @@ __all__ = [
     "MalformedArgumentsRule",
     "UnknownToolRule",
     "DuplicateSideEffectRule",
+    "PreconditionRule",
     "default_rules",
     "select_rules",
     "rule_ids",

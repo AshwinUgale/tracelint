@@ -145,6 +145,7 @@ for report in lint_otel_traces(spans):   # spans: your OpenInference span export
 | R6 | malformed arguments — tool-call arguments that are not valid JSON | `hard_defect` if the model emitted them; `candidate` in a tool's own record |
 | R7 | unknown tool — a call to a tool absent from the declared toolset (possible hallucinated tool) | `candidate` |
 | R8 | duplicate side effect — a non-idempotent side effect repeated with the same args after it succeeded | `hard_event`; `candidate` if the first result is unknown |
+| R9 | unmet precondition — a tool ran although a call its contract `requires` had failed or not returned first | `hard_defect` (declared in `tools.json`) |
 
 `hard_event` and `hard_defect` are orthogonal to the finding kind: a tool-error event is a
 `hard_event` from a structured signal (the span's or run's own error status, a LangChain
@@ -157,7 +158,8 @@ R2b follows the data, not repeated text. A failed result often echoes its inputs
 only when nothing else the agent saw supplied it: an order id the user gave is not from the failure,
 even when the error repeats it. Retrying the failed tool is handling the error, not misusing it. If
 a call the value was passed to returns it again (a lookup that may have confirmed it), the use is a
-`candidate`.
+`candidate`. An action that must not run after a failed check, whatever values it uses, is declared
+instead: `requires` (R9, see below).
 
 ## Input format
 
@@ -212,6 +214,30 @@ slipping through:
 is a structured error for R2 (feeding R2a and, on reuse into a side-effecting call, R2b). A
 side-effecting tool with **no** `failure_when` and an unclassifiable result is *suppressed with a
 reason* — never counted as a clean pass.
+
+A tool can also declare **what must succeed before it runs** (R9). A refund needs a successful lookup
+of the same order, and a deploy needs a passing pipeline, whether or not the agent copied any value
+from it:
+
+```json
+{
+  "tools": {
+    "refund_order": {
+      "metadata": {
+        "side_effecting": true,
+        "requires": [{"tool": "get_order", "same": ["order_id"]}]
+      }
+    }
+  }
+}
+```
+
+The latest `get_order` for that `order_id` must have returned successfully before the refund ran: a
+retry that passes satisfies it, a later failure doesn't, and a lookup still in flight doesn't count.
+`same` (optional) scopes it to one entity, and `"succeeded": false` asks only that the call returned.
+A violation is a `hard_defect`. When the trace can't show whether the lookup succeeded (no error and
+no `failure_when` to read), the check is disclosed as not run, never passed. `tracelint init`
+proposes `requires` for calls that followed others.
 
 The rules run against **one canonical trace schema**; a thin **adapter** translates each source's
 format into it, so the rules never change: `from_openai_messages`, `from_langfuse_trace`,
