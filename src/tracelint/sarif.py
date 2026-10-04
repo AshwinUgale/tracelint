@@ -88,6 +88,14 @@ _RULE_META: dict[str, dict[str, str]] = {
         ),
         "level": "warning",
     },
+    "R9": {
+        "name": "UnmetPrecondition",
+        "text": (
+            "A tool ran although a call its contract requires had failed, or had not returned, "
+            "first."
+        ),
+        "level": "error",
+    },
 }
 
 

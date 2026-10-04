@@ -265,7 +265,7 @@ def test_an_explicit_config_file(project, tmp_path):
         ('[tool.tracelint]\nformat = "jaeger"\n', "format 'jaeger' is not one of"),
         ('[tool.tracelint]\nrules = ["R2"]\n', "unknown rule 'R2'"),
         ('[[tool.tracelint.ignore]]\nrule = "R3"\n', "needs a reason"),
-        ('[[tool.tracelint.ignore]]\nrule = "R9"\nreason = "x"\n', "rule 'R9' is not a known rule"),
+        ('[[tool.tracelint.ignore]]\nrule = "R99"\nreason = "x"\n', "rule 'R99' is not a known"),
         (
             '[[tool.tracelint.ignore]]\nrule = "R3"\ntools = "x"\nreason = "x"\n',
             "unknown key 'tools'",

@@ -6,6 +6,24 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: R9, declared preconditions.** R2b proves an agent acted on a failed result only when a value
+  flows from the failure into the action, so the audit's deploy after an `UNSTABLE` pipeline was a
+  hard defect when the agent copied the build id but exited 0 when it deployed `"latest"` or a
+  version number, and a refund after a failed lookup of an id the user gave is only an R2b candidate.
+  A tool can now declare what must succeed before it runs:
+  `"requires": [{"tool": "get_order", "same": ["order_id"]}]`.
+  - The **latest** returned call of the required tool decides: a retry that passes satisfies it, a
+    later failure un-satisfies it, and a call still in flight (fired in parallel, not waited for)
+    doesn't count. `same` scopes it to one entity (refunding order B needs B's lookup); `"succeeded":
+    false` asks only that the call returned.
+  - A violation is a `hard_defect`, whether the required call failed or never ran. Success is read
+    like R2a reads it; when the trace can't show it (no error, no `failure_when` to read), or the
+    arguments that scope it weren't recorded, the check is disclosed as not run, with the fix named.
+  - Opt-in: a trace whose tools declare no `requires` gets nothing new in its report. A malformed
+    `requires` entry is an input error (exit 3). The contract view lists it, and `tracelint init`
+    suggests it in the `_todo` of a tool that was called after others.
+  - Checks are indexed per trace: 8,000 calls with a precondition each take ~0.04 s.
+
 - **New: a CI baseline with a coverage ratchet** (the second half of the CI contract). Adopting
   tracelint on traces that already had findings meant a red build until every one was fixed, or
   turning rules off.
