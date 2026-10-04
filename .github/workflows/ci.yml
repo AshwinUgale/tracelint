@@ -98,3 +98,31 @@ jobs:
         with:
           traces: examples/traces/langgraph_phoenix_trace.json
           args: --baseline tracelint-baseline.json
+
+  hook:
+    # The pre-commit hook as users run it (.pre-commit-hooks.yaml), via `pre-commit try-repo`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install pre-commit
+      - name: Write a clean trace and a trace with a hard defect
+        run: |
+          cat > clean.jsonl <<'EOF'
+          {"run_id": "hook-clean", "steps": [{"type": "message", "role": "user", "content": "hello"}, {"type": "message", "role": "assistant", "content": "hi"}]}
+          EOF
+          cat > defect.jsonl <<'EOF'
+          {"run_id": "hook-defect", "steps": [{"type": "message", "role": "user", "content": "charge the card"}, {"type": "tool_call", "call_id": "c1", "name": "charge_card", "raw_text": "{broken"}]}
+          EOF
+      - name: The hook passes a clean trace
+        run: pre-commit try-repo . tracelint --files clean.jsonl --verbose
+      - name: A hard defect fails the hook
+        id: hookdefect
+        continue-on-error: true
+        run: pre-commit try-repo . tracelint --files defect.jsonl --verbose
+      - name: Check the defect failed the hook
+        env:
+          OUTCOME: ${{ steps.hookdefect.outcome }}
+        run: test "$OUTCOME" = failure
