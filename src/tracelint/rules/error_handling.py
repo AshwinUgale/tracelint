@@ -41,7 +41,13 @@ from collections.abc import Callable
 from functools import cache
 from typing import Any, NamedTuple
 
-from tracelint.findings import ConfidenceTier, Coverage, Finding
+from tracelint.findings import (
+    SUPPRESS_NEEDS_CONTRACT,
+    SUPPRESS_NOT_RECORDED,
+    ConfidenceTier,
+    Coverage,
+    Finding,
+)
 from tracelint.predicates import PredicateResult
 from tracelint.provenance import build_provenance
 from tracelint.rules.base import Rule
@@ -101,7 +107,7 @@ class ToolErrorEventRule(Rule):
 
     def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
         if not trace.tool_results():
-            return "trace has no tool results"
+            return self.not_applicable("trace has no tool results")
         return None
 
     def coverage(self, trace: Trace, registry: ToolRegistry) -> Coverage | None:
@@ -204,6 +210,7 @@ class ToolErrorEventRule(Rule):
             summary=f"rule {self.id} suppressed for {tool!r}: {reason}",
             evidence={"step_indices": [result.index], "tool": tool},
             suppressed_reason=reason,
+            suppressed_category=SUPPRESS_NEEDS_CONTRACT,
         )
 
     def _suppress_unverifiable_predicate(
@@ -225,6 +232,7 @@ class ToolErrorEventRule(Rule):
                 "signal": "failure_predicate_unverifiable",
             },
             suppressed_reason=reason,
+            suppressed_category=SUPPRESS_NOT_RECORDED,
         )
 
     def _hard(self, result: ToolResult, tool: str) -> Finding:
@@ -309,7 +317,7 @@ class ErrorHandlingRule(Rule):
 
     def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
         if not trace.tool_results():
-            return "trace has no tool results"
+            return self.not_applicable("trace has no tool results")
         return None
 
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:

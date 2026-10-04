@@ -6,6 +6,13 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Suppressions now say which fix they need.** A rule that abstains was always disclosed, but
+  every suppression read the same and the report always suggested `tracelint init` — even when
+  `init` could not help. Each suppression now carries a category and the report groups them:
+  *missing a tools.json fact* (run `init`), *not recorded in the trace* (enable tool-content
+  capture), and *not applicable* (too few calls, no results — nothing to check). The closing
+  line suggests `init` only when a contract is actually missing, and the category is in the JSON
+  as `suppressed_category`.
 - **Clearer reports (output readability).** The text report now leads with the trace **file path**
   instead of only the run id (keyless native traces no longer print a bare `: 0 finding(s)`), a run
   over several files gets a one-line cross-file **summary** header, and a short **tier legend**

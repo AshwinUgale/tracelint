@@ -21,7 +21,14 @@ from typing import Any
 from jsonschema.exceptions import SchemaError
 from jsonschema.validators import validator_for
 
-from tracelint.findings import ARGS_UNKNOWN, ConfidenceTier, Coverage, Finding
+from tracelint.findings import (
+    ARGS_UNKNOWN,
+    SUPPRESS_NEEDS_CONTRACT,
+    SUPPRESS_NOT_RECORDED,
+    ConfidenceTier,
+    Coverage,
+    Finding,
+)
 from tracelint.rules.base import Rule
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ToolCall, Trace
@@ -42,9 +49,9 @@ class SchemaViolationRule(Rule):
     def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
         calls = trace.tool_calls()
         if not calls:
-            return "trace has no tool calls to validate"
+            return self.not_applicable("trace has no tool calls to validate")
         if not any(registry.schema_for(c.name) is not None for c in calls):
-            return "no tool schema available for any called tool"
+            return self.needs_contract("no tool schema available for any called tool")
         return None
 
     def coverage(self, trace: Trace, registry: ToolRegistry) -> Coverage | None:
@@ -64,13 +71,19 @@ class SchemaViolationRule(Rule):
         for call in trace.tool_calls():
             schema = registry.schema_for(call.name)
             if schema is None:
-                findings.append(self._suppress(call, f"no schema for tool {call.name!r}"))
+                findings.append(
+                    self._suppress(
+                        call, f"no schema for tool {call.name!r}", category=SUPPRESS_NEEDS_CONTRACT
+                    )
+                )
                 continue
             if call.args_unavailable is not None:
                 # Validating `{}` would report every required field as missing — a defect in the
                 # *record*, not in the call. Disclose why the call couldn't be checked instead.
                 reason = f"arguments unknown: {call.args_unavailable}"
-                findings.append(self._suppress(call, reason, cause=ARGS_UNKNOWN))
+                findings.append(
+                    self._suppress(call, reason, cause=ARGS_UNKNOWN, category=SUPPRESS_NOT_RECORDED)
+                )
                 continue
             finding = self._validate_call(call, schema)
             if finding is not None:
@@ -83,7 +96,9 @@ class SchemaViolationRule(Rule):
             validator_cls.check_schema(schema)
         except SchemaError as exc:
             return self._suppress(
-                call, f"tool {call.name!r} has an invalid JSON Schema: {exc.message}"
+                call,
+                f"tool {call.name!r} has an invalid JSON Schema: {exc.message}",
+                category=SUPPRESS_NEEDS_CONTRACT,
             )
 
         validator = validator_cls(schema)
@@ -113,7 +128,9 @@ class SchemaViolationRule(Rule):
             },
         )
 
-    def _suppress(self, call: ToolCall, reason: str, *, cause: str | None = None) -> Finding:
+    def _suppress(
+        self, call: ToolCall, reason: str, *, cause: str | None = None, category: str | None = None
+    ) -> Finding:
         evidence: dict[str, Any] = {
             "step_indices": [call.index],
             "tool": call.name,
@@ -128,4 +145,5 @@ class SchemaViolationRule(Rule):
             summary=f"rule {self.id} suppressed for call {call.call_id}: {reason}",
             evidence=evidence,
             suppressed_reason=reason,
+            suppressed_category=category,
         )

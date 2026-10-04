@@ -76,7 +76,7 @@ class LoopRule(Rule):
 
     def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
         if len(trace.tool_calls()) < LOOP_THRESHOLD:
-            return f"fewer than {LOOP_THRESHOLD} tool calls; no loop possible"
+            return self.not_applicable(f"fewer than {LOOP_THRESHOLD} tool calls; no loop possible")
         return None
 
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
@@ -169,7 +169,7 @@ class RedundantCallRule(Rule):
 
     def applicable(self, trace: Trace, registry: ToolRegistry) -> str | None:
         if len(trace.tool_calls()) < 2:
-            return "fewer than 2 tool calls; no repetition possible"
+            return self.not_applicable("fewer than 2 tool calls; no repetition possible")
         return None
 
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:

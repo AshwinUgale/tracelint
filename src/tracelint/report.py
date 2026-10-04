@@ -16,13 +16,29 @@ from html import escape as _esc
 from pathlib import Path
 from typing import Any
 
-from tracelint.findings import ConfidenceTier, Finding, LintReport
+from tracelint.findings import (
+    SUPPRESS_NEEDS_CONTRACT,
+    SUPPRESS_NOT_APPLICABLE,
+    SUPPRESS_NOT_RECORDED,
+    ConfidenceTier,
+    Finding,
+    LintReport,
+)
 from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult
 
 #: A one-line key to the tiers, shown with the findings so the ``[tier]`` labels read on their own.
 _TIER_LEGEND = (
     "  tiers: [hard_defect] fails CI; [hard_event] a certain event; [candidate] heuristic, review"
 )
+
+#: Suppression groups, most actionable first, each with the fix it points to. ``None`` catches any
+#: uncategorised suppression (e.g. from an external rule) so it is still disclosed.
+_SUPPRESS_GROUPS: list[tuple[str | None, str]] = [
+    (SUPPRESS_NEEDS_CONTRACT, "missing a tools.json fact — run `tracelint init` to declare it:"),
+    (SUPPRESS_NOT_RECORDED, "not recorded in the trace — enable tool-content capture:"),
+    (SUPPRESS_NOT_APPLICABLE, "not applicable to this trace — nothing to check:"),
+    (None, "not checked:"),
+]
 
 
 def _location(finding: Finding) -> str:
@@ -76,8 +92,13 @@ def render_report(
 
     if report.suppressions:
         lines.append(f"  suppressed ({len(report.suppressions)}) — not checked, not a clean pass:")
-        for s in report.suppressions:
-            lines.append(f"    {s.rule} {s.finding_type}: {s.suppressed_reason}")
+        for category, label in _SUPPRESS_GROUPS:
+            members = [s for s in report.suppressions if s.suppressed_category == category]
+            if not members:
+                continue
+            lines.append(f"    {label}")
+            for s in members:
+                lines.append(f"      {s.rule} {s.finding_type}: {s.suppressed_reason}")
 
     if report.coverage:
         lines.append("  verification coverage (evaluatable / total):")
@@ -86,9 +107,15 @@ def render_report(
 
     if not active:
         if report.suppressions:
+            cats = {s.suppressed_category for s in report.suppressions}
+            if SUPPRESS_NEEDS_CONTRACT in cats:
+                tail = "run `tracelint init` to declare the missing tools.json facts."
+            elif SUPPRESS_NOT_RECORDED in cats:
+                tail = "the trace did not record the data they need — enable tool-content capture."
+            else:
+                tail = "the suppressed rules had nothing to check here."
             lines.append(
-                "  no structural issues found — but some rules were suppressed above "
-                "(not checked); run `tracelint init` to generate a tools.json and enable them."
+                "  no structural issues found — but some rules were not checked (above); " + tail
             )
         elif report.ignored:
             lines.append("  no structural issues found beyond the ignored ones above.")

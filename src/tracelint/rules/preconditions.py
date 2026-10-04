@@ -30,7 +30,13 @@ from __future__ import annotations
 from bisect import bisect_left
 from typing import Any
 
-from tracelint.findings import ConfidenceTier, Coverage, Finding
+from tracelint.findings import (
+    SUPPRESS_NEEDS_CONTRACT,
+    SUPPRESS_NOT_RECORDED,
+    ConfidenceTier,
+    Coverage,
+    Finding,
+)
 from tracelint.predicates import PredicateResult
 from tracelint.rules.base import Rule
 from tracelint.signatures import is_structured_error
@@ -134,6 +140,7 @@ class PreconditionRule(Rule):
                 f"result shows no error and {req.tool!r} declares no failure_when to read it — "
                 f"declare one"
             )
+        category = SUPPRESS_NOT_RECORDED if check.reason else SUPPRESS_NEEDS_CONTRACT
         steps = [check.result.index, call.index] if check.result else [call.index]
         return Finding(
             rule=self.id,
@@ -142,6 +149,7 @@ class PreconditionRule(Rule):
             summary=f"rule {self.id} suppressed for {call.name!r}: {reason}",
             evidence={"step_indices": steps, "tool": call.name, "requires": req.tool},
             suppressed_reason=reason,
+            suppressed_category=category,
         )
 
 

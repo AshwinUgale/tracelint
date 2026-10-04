@@ -33,6 +33,12 @@ from typing import Any
 #: in the record that a ``tools.json`` cannot fill (unlike a missing schema or contract).
 ARGS_UNKNOWN = "arguments_unknown"
 
+#: Why a rule abstained (``Finding.suppressed_category``), so a report advises precisely
+#: instead of a blanket "run init". ``ARGS_UNKNOWN`` above is one specific NOT_RECORDED cause.
+SUPPRESS_NOT_APPLICABLE = "not_applicable"  # the trace cannot trigger the rule; nothing to check
+SUPPRESS_NEEDS_CONTRACT = "needs_contract"  # a tools.json fact is missing (schema, failure_when)
+SUPPRESS_NOT_RECORDED = "not_recorded"  # the trace did not capture the data; no tools.json helps
+
 
 class ConfidenceTier(str, Enum):
     """How much to trust a finding. See module docstring."""
@@ -64,6 +70,8 @@ class Finding:
       (a real retry loop, a generated idempotency key), signalling extra caution to the reader.
     - ``suppressed_reason``: when set, this is a *suppression* record, not a defect — the named
       rule could not run because the trace was missing something, and that is disclosed here.
+    - ``suppressed_category``: on a suppression, which kind of gap it is (``not_applicable`` /
+      ``needs_contract`` / ``not_recorded``), so a report can advise the right fix.
     - ``ignored_reason``: when set, the project's configuration accepted this finding for the given
       reason; it is still reported, but no longer counts toward the exit code.
     """
@@ -75,6 +83,7 @@ class Finding:
     evidence: dict[str, Any] = field(default_factory=dict)
     possible_false_positive: bool = False
     suppressed_reason: str | None = None
+    suppressed_category: str | None = None
     ignored_reason: str | None = None
 
     @property
@@ -91,7 +100,9 @@ class Finding:
         return list(idx) if isinstance(idx, (list, tuple)) else []
 
     @classmethod
-    def suppressed(cls, rule: str, finding_type: str, reason: str) -> Finding:
+    def suppressed(
+        cls, rule: str, finding_type: str, reason: str, *, category: str | None = None
+    ) -> Finding:
         """Build a suppression record for a rule that could not run on this trace."""
         return cls(
             rule=rule,
@@ -99,6 +110,7 @@ class Finding:
             tier=ConfidenceTier.CANDIDATE,
             summary=f"rule {rule} suppressed: {reason}",
             suppressed_reason=reason,
+            suppressed_category=category,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -112,6 +124,8 @@ class Finding:
         }
         if self.suppressed_reason is not None:
             out["suppressed_reason"] = self.suppressed_reason
+        if self.suppressed_category is not None:
+            out["suppressed_category"] = self.suppressed_category
         if self.ignored_reason is not None:
             out["ignored_reason"] = self.ignored_reason
         return out
@@ -126,6 +140,7 @@ class Finding:
             evidence=data.get("evidence") or {},
             possible_false_positive=bool(data.get("possible_false_positive", False)),
             suppressed_reason=data.get("suppressed_reason"),
+            suppressed_category=data.get("suppressed_category"),
             ignored_reason=data.get("ignored_reason"),
         )
 
