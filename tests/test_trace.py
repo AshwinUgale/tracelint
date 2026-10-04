@@ -123,3 +123,23 @@ def test_load_traces_json_and_jsonl(tmp_path):
     arr = tmp_path / "arr.json"
     arr.write_text(json.dumps([trace.to_dict(), trace.to_dict()]), encoding="utf-8")
     assert len(load_traces(arr)) == 2
+
+
+def test_pairing_with_a_reused_call_id_picks_the_nearest():
+    # A retry reuses the call_id. The call_id index (built once, bisected) must still return the
+    # FIRST result after a given call and the MOST RECENT call before a given result, not just any
+    # step sharing the id -- the property the per-call scan used to guarantee.
+    trace = build_trace(
+        "run-dup",
+        [
+            ToolCall("c1", "charge", {"n": 1}),
+            ToolResult("c1", {"ok": False}, status=ResultStatus.ERROR),
+            ToolCall("c1", "charge", {"n": 1}),
+            ToolResult("c1", {"ok": True}, status=ResultStatus.OK),
+        ],
+    )
+    first_call, first_res, second_call, second_res = trace.steps
+    assert trace.result_for(first_call) is first_res  # its own result, not the retry's
+    assert trace.result_for(second_call) is second_res
+    assert trace.call_for(first_res) is first_call
+    assert trace.call_for(second_res) is second_call  # the most recent call before it
