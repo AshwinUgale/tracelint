@@ -119,6 +119,7 @@ schema-dependent rules (R1, and R3's high-confidence tier). Don't have one? `tra
 spans.json --format openinference -o tools.json` bootstraps a starter contract from the trace —
 schemas discovered where the telemetry carries them, behavior fields left as placeholders to review.
 Using MCP tools? `tracelint init --from-mcp tools_list.json -o tools.json` builds the contract straight from a saved `tools/list` response: `inputSchema` becomes the argument schema, and the server's `readOnlyHint` / `idempotentHint` become `side_effecting` / `idempotent`. Those annotations are advisory, so they are applied only where the server states them — a tool with no hint is left for you to classify rather than guessed.
+Not sure why rules are suppressing on a trace? `tracelint doctor <trace>` diagnoses the gap — tool content the instrumentation didn't record vs a missing `tools.json` — and names the one fix, instead of a wall of suppressions.
 A multi-trace input (a JSON array, an OTLP export, or a `.jsonl` file) fans out to one report per
 run. Spans are grouped into runs by trace id, so a `.jsonl` file can hold one span per line
 (Phoenix's `to_json(..., lines=True)`, an OTel file exporter), whole runs, or export batches, and a

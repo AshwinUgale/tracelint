@@ -195,6 +195,23 @@ def build_parser() -> argparse.ArgumentParser:
     lfcheck.add_argument("--quiet", action="store_true", help="suppress the text report")
     lfcheck.set_defaults(func=_cmd_langfuse_check)
 
+    doctor = sub.add_parser(
+        "doctor",
+        help="diagnose why rules couldn't run on a trace (instrumentation / contract gaps)",
+    )
+    doctor.add_argument("traces", nargs="+", help="trace file(s): .json / .jsonl / a JSON array")
+    doctor.add_argument(
+        "--tools", help="tools.json (same as check); doctor also reports when one is missing"
+    )
+    doctor.add_argument(
+        "--format",
+        dest="fmt",
+        choices=list(SUPPORTED_FORMATS),
+        default=None,
+        help="input format (default: the config's, else native)",
+    )
+    doctor.set_defaults(func=_cmd_doctor)
+
     init = sub.add_parser(
         "init", help="bootstrap a starter tools.json from a trace (discovers tools + schemas)"
     )
@@ -425,6 +442,24 @@ def _cmd_langfuse_check(args: argparse.Namespace) -> int:
             target = f"obs {plan.observation_id}" if plan.observation_id else "trace"
             print(f"  {plan.name:34} {plan.value:<5} [{target}]")
     return result.report.exit_code
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    from tracelint.config import Config, find_config, load_config
+    from tracelint.report import render_diagnosis
+    from tracelint.rules import default_rules
+
+    config_path = find_config()
+    config = load_config(config_path) if config_path else Config()
+    tools = args.tools or (str(config.tools) if config.tools else None)
+    registry = ToolRegistry.load(tools) if tools else ToolRegistry()
+    fmt = args.fmt or config.format
+    reports = [
+        lint_trace(trace, default_rules(), registry)
+        for trace, _path in load_sources(args.traces, fmt or "native")
+    ]
+    print(render_diagnosis(reports, fmt=fmt, has_tools=tools is not None))
+    return EXIT_OK
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
