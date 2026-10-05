@@ -283,6 +283,9 @@ def discover_mcp_contract(data: Any) -> ContractDraft:
         if isinstance(description, str) and description:
             entry["description"] = description
         entry["schema"] = schema
+        out_schema = tool.get("outputSchema")
+        if isinstance(out_schema, dict):
+            entry["output_schema"] = out_schema  # R10 validates results against it
         entry["metadata"] = meta
         if schema is not None:
             draft.with_schema.append(name)

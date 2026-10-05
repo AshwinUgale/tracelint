@@ -26,6 +26,11 @@ encountering it on a real trace, not the suggestion itself.
   tool: the latest call of the required tool must have returned successfully before it runs, scoped
   to one entity by `same`. It closes the gap R2b's dataflow leaves: a refund after a failed lookup of
   an id the user gave, or a deploy of `"latest"` after an `UNSTABLE` pipeline.
+- **R10 — result contract** — an `output_schema` on a tool (MCP's `outputSchema` maps straight
+  to it): each recorded successful result is validated against it, the mirror of R1 on the
+  arguments. A violation is *tool output drift* and a `hard_event` — the tool's output, not the
+  agent's own defect — so it is shown but does not fail CI unless `--fail-on hard_event` is set.
+  Opt-in: a tool with no `output_schema` is silent.
 
 ## Candidate rules
 
