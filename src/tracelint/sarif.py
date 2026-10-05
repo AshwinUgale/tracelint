@@ -96,6 +96,11 @@ _RULE_META: dict[str, dict[str, str]] = {
         ),
         "level": "error",
     },
+    "R10": {
+        "name": "ResultContractViolation",
+        "text": "A tool's result does not satisfy the output JSON Schema its contract declares.",
+        "level": "warning",
+    },
 }
 
 

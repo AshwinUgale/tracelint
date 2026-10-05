@@ -6,6 +6,15 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: R10, the result contract.** A tool can declare an `output_schema` (MCP's `outputSchema`
+  maps straight to it, and `tracelint init --from-mcp` now captures it). R10 validates each
+  recorded successful result against it — the mirror of R1 on the arguments. A violation is
+  *tool output drift* and a `hard_event`: the output is the tool's, not the agent's own defect
+  (unlike R1's `hard_defect`), so it is shown but does not fail CI unless you opt in with
+  `--fail-on hard_event`. Opt-in: a tool with no `output_schema` is silent (no finding,
+  suppression or coverage). Error results are skipped (R2's domain); a success whose content
+  wasn't recorded is disclosed as not-checked.
+
 - **New: `tracelint init --from-mcp`.** Point it at a saved MCP `tools/list` response and it
   writes a starter `tools.json`: `inputSchema` becomes each tool's argument schema, and the
   server's `readOnlyHint` / `idempotentHint` annotations become `side_effecting` / `idempotent`.

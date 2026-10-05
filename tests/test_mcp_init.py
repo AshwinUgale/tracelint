@@ -107,3 +107,21 @@ def test_cli_init_rejects_a_non_mcp_file(tmp_path):
     bad = tmp_path / "bad.json"
     bad.write_text(json.dumps({"nope": 1}), encoding="utf-8")
     assert main(["init", "--from-mcp", str(bad)]) == 3
+
+
+def test_output_schema_is_captured_and_loads_for_r10():
+    out = {"type": "object", "properties": {"total": {"type": "number"}}}
+    d = discover_mcp_contract(
+        {
+            "tools": [
+                {
+                    "name": "lookup",
+                    "inputSchema": _OBJ,
+                    "outputSchema": out,
+                    "annotations": {"readOnlyHint": True},
+                }
+            ]
+        }
+    )
+    assert d.tools["lookup"]["output_schema"] == out
+    assert ToolRegistry.from_dict(d.to_dict()).output_schema_for("lookup") == out

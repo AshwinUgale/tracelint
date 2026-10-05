@@ -118,6 +118,7 @@ class ToolSpec:
     metadata: ToolMetadata = field(default_factory=ToolMetadata)
     schema_version: str | None = None
     value_origins: dict[str, str] = field(default_factory=dict)
+    output_schema: dict[str, Any] | None = None  # the result's JSON Schema (R10); MCP outputSchema
 
     def __post_init__(self) -> None:
         # Populate x-value-origin annotations from the schema when not passed explicitly, so a
@@ -130,12 +131,14 @@ class ToolSpec:
     @classmethod
     def from_dict(cls, name: str, data: dict[str, Any]) -> ToolSpec:
         schema = data.get("schema") or data.get("input_schema") or data.get("parameters")
+        output_schema = data.get("output_schema") or data.get("outputSchema")
         return cls(
             name=name,
             schema=schema,
             metadata=ToolMetadata.from_dict(data.get("metadata"), owner=name),
             schema_version=data.get("schema_version"),
             value_origins=_extract_value_origins(schema, data.get("value_origins")),
+            output_schema=output_schema if isinstance(output_schema, dict) else None,
         )
 
 
@@ -256,6 +259,10 @@ class ToolRegistry:
     def schema_for(self, name: str) -> dict[str, Any] | None:
         spec = self._tools.get(name)
         return spec.schema if spec else None
+
+    def output_schema_for(self, name: str) -> dict[str, Any] | None:
+        spec = self._tools.get(name)
+        return spec.output_schema if spec else None
 
     def metadata_for(self, name: str) -> ToolMetadata | None:
         spec = self._tools.get(name)
