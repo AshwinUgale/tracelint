@@ -8,12 +8,13 @@ stable ``partialFingerprints`` identity plus the trace's ``step_indices``.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
 from tracelint.cli import main
 from tracelint.findings import ConfidenceTier, Finding, LintReport
-from tracelint.sarif import SARIF_VERSION, to_sarif
+from tracelint.sarif import SARIF_VERSION, build_line_map, to_sarif
 
 
 def _f(rule, ftype, tier, steps=(0,), summary="something happened"):
@@ -158,6 +159,10 @@ def test_cli_writes_valid_sarif_file(tmp_path):
     # the finding is located in the trace file we passed on the command line.
     assert results[0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == tp
     assert sarif["runs"][0]["invocations"][0]["executionSuccessful"] is False
+    # anchored to the finding's step line in the trace file, not the hardcoded line 1.
+    region = results[0]["locations"][0]["physicalLocation"]["region"]
+    assert region["startLine"] > 1
+    assert region["startLine"] <= len(Path(tp).read_text(encoding="utf-8").splitlines())
 
 
 def test_help_uri_is_per_rule_anchored():
@@ -178,3 +183,60 @@ def test_help_uri_is_per_rule_anchored():
     ]
     assert next(r for r in rules if r["id"] == "R1")["helpUri"] == HELP_URI + "#r1"
     assert next(r for r in rules if r["id"] == "R2a")["helpUri"] == HELP_URI + "#r2a"
+
+
+# --- startLine: locate a finding's step in the trace file ------------------------------
+
+def _tc(call_id, *, span=None):
+    from tracelint.trace import SourceRef, ToolCall
+
+    return ToolCall(
+        call_id=call_id, name="t", source=(SourceRef(span_id=span) if span else None)
+    )
+
+
+def _trace(*steps):
+    from tracelint.trace import Trace
+
+    return Trace(run_id="r", steps=list(steps))
+
+
+def test_build_line_map_locates_by_span_then_call_id():
+    tr = _trace(_tc("c1", span="SPAN_AAA"), _tc("c2"), _tc("cZ"))
+    text = "\n".join(["line1", 'x "SPAN_AAA" y', "line3", '  "call_id": "c2"', "line5"])
+    # step0 by span -> line 2; step1 by call_id -> line 4; step2's "cZ" absent -> omitted.
+    assert build_line_map(tr, text, {0, 1, 2}) == {0: 2, 1: 4}
+
+
+def test_build_line_map_prefers_span_and_honors_allow_call_id():
+    tr = _trace(_tc("c1", span="SPAN"), _tc("c2"))
+    text = '"SPAN"\n"c1"\n"c2"\n'  # lines 1,2,3
+    # prefers the span line (1) over the call_id line (2) for step0.
+    assert build_line_map(tr, text, {0}) == {0: 1}
+    # with call_id disabled (a multi-trace file), step0 still resolves by span, step1 drops out.
+    assert build_line_map(tr, text, {0, 1}, allow_call_id=False) == {0: 1}
+
+
+def test_build_line_map_skips_empty_and_out_of_range():
+    tr = _trace(_tc("c1"))
+    assert build_line_map(tr, '"c1"', set()) == {}  # nothing requested -> no scan
+    assert build_line_map(tr, '"c1"', {5}) == {}  # out of range -> skipped
+
+
+def test_line_maps_set_the_result_start_line():
+    out = to_sarif([_report()], tool_version="0", uris=["t.json"], line_maps=[{0: 7}])
+    regions = [r["locations"][0]["physicalLocation"]["region"] for r in out["runs"][0]["results"]]
+    assert regions and all(reg["startLine"] == 7 for reg in regions)
+
+
+def test_unmapped_finding_defaults_to_line_one():
+    out = to_sarif([_report()], tool_version="0", uris=["t.json"], line_maps=[{}])
+    assert all(
+        r["locations"][0]["physicalLocation"]["region"]["startLine"] == 1
+        for r in out["runs"][0]["results"]
+    )
+
+
+def test_line_maps_length_mismatch_raises():
+    with pytest.raises(ValueError, match="same length"):
+        to_sarif([_report()], tool_version="0", line_maps=[{}, {}])

@@ -336,7 +336,9 @@ tracelint check traces/*.jsonl --format openinference --tools tools.json
 
 **GitHub code scanning (SARIF)** — surface findings in the repo's *Security → Code scanning* tab
 and as inline pull-request annotations. `--sarif` writes a SARIF 2.1.0 file (mapping `hard_defect`
-→ `error`, `hard_event` → `warning`, `candidate` → `note`). It's written *before* the exit-`2`
+→ `error`, `hard_event` → `warning`, `candidate` → `note`). Each finding anchors to the line of its
+first trace step in the uploaded file (line 1 when the step can't be located), so an annotation
+lands on the relevant record, not the top of the file. It's written *before* the exit-`2`
 gate, so an `if: always()` upload step runs even when a defect fails the job:
 
 ```yaml

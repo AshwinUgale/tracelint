@@ -46,9 +46,13 @@ encountering it on a real trace, not the suggestion itself.
 - **Per-rule help pages** — every finding's rule now links to [docs/rules.md](docs/rules.md), a
   reference with a stable anchor per rule (what it checks, its tier, how to resolve it). The SARIF
   `helpUri` points each GitHub code-scanning alert at its rule's anchor rather than the repo root,
-  and the text report ends with a pointer to the page. (The remaining report-readability item —
-  mapping a SARIF result's `startLine` to the finding's step in the trace file, instead of a
-  constant line 1 — is still open.)
+  and the text report ends with a pointer to the page.
+- **SARIF line anchoring** — a result's `region.startLine` was a constant line 1; it is now the line
+  of the trace file where the finding's first step can be located by its source token (`span_id` /
+  `observation_id` / `call_id`), so a code-scanning annotation lands on the offending record, not the
+  top of the file. Best-effort and fail-safe (a step that can't be located unambiguously stays at
+  line 1; the exact `step_indices` stay in the result's `properties`). This closes §3.7 report
+  readability.
 
 ## Candidate rules
 

@@ -317,9 +317,33 @@ def _cmd_check(args: argparse.Namespace) -> int:
     if args.json_out:
         write_json(args.json_out, reports_to_dict(reports, sources=shown_uris))
     if args.sarif_out:
-        from tracelint.sarif import to_sarif
+        from tracelint.sarif import build_line_map, to_sarif
 
-        write_json(args.sarif_out, to_sarif(reports, tool_version=_version(), uris=uris))
+        # call_id is unique only within one run, so don't locate by it in a file holding several.
+        seen: set[str] = set()
+        shared: set[str] = set()
+        for u in uris:
+            (shared if u in seen else seen).add(u)
+        text_cache: dict[str, str] = {}
+        line_maps: list[dict[int, int]] = []
+        for trace, uri, report in zip(linted, uris, reports, strict=True):
+            text = text_cache.get(uri)
+            if text is None:
+                try:
+                    text = Path(uri).read_text(encoding="utf-8")
+                except OSError:
+                    text = ""
+                text_cache[uri] = text
+            anchors = {f.step_indices[0] for f in report.active_findings if f.step_indices}
+            line_maps.append(
+                build_line_map(trace, text, anchors, allow_call_id=uri not in shared)
+                if text
+                else {}
+            )
+        write_json(
+            args.sarif_out,
+            to_sarif(reports, tool_version=_version(), uris=uris, line_maps=line_maps),
+        )
     if args.html_out:
         from tracelint.report import render_html, write_html
 

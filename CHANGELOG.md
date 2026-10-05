@@ -6,6 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **SARIF results anchor to the finding's trace step.** A result's `region.startLine` was a constant
+  line 1; it is now the line of the trace file where the finding's first step can be located by its
+  source token (an OTel/Phoenix `span_id`, a Langfuse `observation_id`, or a `call_id`), so a GitHub
+  code-scanning annotation lands on the offending record instead of the top of the file. Best-effort
+  and fail-safe: a step that can't be located unambiguously (a span merged in from another file, a
+  repeated `call_id` in a multi-trace `.jsonl`) stays at line 1, and the exact `step_indices` remain
+  in the result's `properties`. Completes the §3.7 report-readability work.
+
 - **Per-rule help pages.** Every rule a finding names now has an entry in the new
   [`docs/rules.md`](docs/rules.md) reference — what it checks, its tier, and the honest moves to
   resolve it — each under a stable anchor. The SARIF `helpUri` now links a GitHub code-scanning
