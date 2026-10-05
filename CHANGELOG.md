@@ -6,6 +6,12 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Docs: a precision study on real agent trajectories.** `docs/experiments/swe-bench-precision.md`
+  writes up a precision / over-fire probe on 200 real, verified-correct agent trajectories (the
+  work that motivated the R3 fix below): 0/200 false CI failures, the loop rule holds on retries
+  (1/200), and a `<returncode>`-grounded analysis of where the keyless candidate heuristics are
+  noisy on shell/stdout traces. Includes reproducible scripts (`docs/experiments/swe-bench/`).
+
 - **R3 precision: free-form text arguments are no longer flagged.** R3 (hallucinated argument)
   checked every scalar string, including free-form text a model *composes* rather than *derives* — a
   shell command, a search query, a sentence — which its provenance model can't judge, so it flagged

@@ -53,7 +53,10 @@ structurally-provable defect (`hard_defect`) · `3` an input error: a missing or
 empty one, input that doesn't match `--format` (the error names the format it looks like), or an
 invalid config, so a misconfigured step never passes having checked nothing.
 Heuristic candidates never fail CI unless you opt in (`fail_on`); a suppression (a rule that
-couldn't run) is disclosed but is not a defect.
+couldn't run) is disclosed but is not a defect. (A [precision study on 200 real agent
+trajectories](docs/experiments/swe-bench-precision.md) found 0/200 false CI failures and that the
+loop rule doesn't over-fire on retries — and quantifies where the keyless candidate heuristics are
+noisy on shell traces.)
 
 **3. Fail CI on a defect.** `check` returns `2` on a provable defect, so it gates a build directly:
 
