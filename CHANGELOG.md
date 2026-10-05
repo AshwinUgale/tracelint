@@ -6,6 +6,16 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: promptfoo assertion.** Run tracelint's checks as a [promptfoo](https://promptfoo.dev)
+  `type: python` assertion — a test case passes iff its run's trace passes the rules, same gate as
+  `tracelint check` (`fail_on`), judge-free. Point promptfoo at
+  `tracelint.integrations.promptfoo` and configure `tools` / `rules` / `fmt` / `fail_on` in the
+  assertion's YAML `config`; the trace is found via `config.trace`, a `vars` entry
+  (`tracelint_trace`), or an `output` that is a trace-file path. promptfoo is a Node tool that only
+  calls the function, so there's no extra to install. A missing or unreadable trace fails that case
+  with a recorded reason rather than erroring the eval. (The scoring core now lives in
+  `tracelint.integrations.scoring`, shared with the DeepEval metric.)
+
 - **New: DeepEval metric (`pip install "tracelint[deepeval]"`).** Run tracelint's deterministic
   checks as a [DeepEval](https://deepeval.com) metric, so an existing DeepEval suite gets a
   judge-free structural check beside its other metrics. `TracelintMetric` passes a test case iff the

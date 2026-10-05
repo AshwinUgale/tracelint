@@ -56,9 +56,14 @@ encountering it on a real trace, not the suggestion itself.
 - **DeepEval metric** (§3.6, first distribution wrapper) — `tracelint.integrations.deepeval.`
   `TracelintMetric` runs the rules as a DeepEval metric: a test case passes iff its trace passes,
   gated like `tracelint check` (`fail_on`), judge-free. Trace bound to the metric or on the case's
-  `additional_metadata`; the scoring core (`score_trace`) is dependency-free and the SDK is lazy, so
-  the module imports without DeepEval. `pip install "tracelint[deepeval]"`. Remaining §3.6 wrappers
-  (promptfoo / Inspect / LangWatch) are demand-gated — build when a user pulls for them.
+  `additional_metadata`; the scoring core is dependency-free and the SDK is lazy, so the module
+  imports without DeepEval. `pip install "tracelint[deepeval]"`.
+- **promptfoo assertion** (§3.6, second wrapper) — `tracelint.integrations.promptfoo` is a promptfoo
+  `type: python` assertion (`get_assert`): a test passes iff its trace passes, configured in the
+  assertion's YAML `config` (tools / rules / fmt / fail_on), trace via `config.trace` / a `vars`
+  entry / an `output` path. No extra to install (promptfoo is a Node tool). The scoring core now
+  lives in `tracelint.integrations.scoring`, shared by both wrappers. Remaining §3.6 wrappers
+  (Inspect / LangWatch) stay demand-gated — build when a user pulls for them.
 
 ## Candidate rules
 
