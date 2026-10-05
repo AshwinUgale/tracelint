@@ -1,0 +1,12 @@
+{
+  "info": {"instance_id": "demo__repo-123", "exit_status": "submitted"},
+  "trajectory": [
+    {"thought": "Look around.", "action": "ls -F", "observation": "setup.py\nsrc/\ntests/\n"},
+    {"thought": "Read the setup.", "action": "cat setup.py", "observation": "from setuptools import setup\nsetup(name='demo')\n"},
+    {"thought": "Run the tests to see the failure.", "action": "python -m pytest tests/ -q", "observation": "F\n1 failed in 0.21s\nE   AssertionError: expected 3, got 2"},
+    {"thought": "Open the source to fix it.", "action": "cat setup.py", "observation": "from setuptools import setup\nsetup(name='demo')\n"},
+    {"thought": "Apply the fix.", "action": "python -m edit src/calc.py", "observation": "File updated.\n"},
+    {"thought": "Re-run the tests after the fix.", "action": "python -m pytest tests/ -q", "observation": ".\n1 passed in 0.19s"},
+    {"thought": "Submit.", "action": "submit", "observation": "Submitted."}
+  ]
+}
