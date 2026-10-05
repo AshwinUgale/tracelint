@@ -44,6 +44,10 @@ real-agent = ["openai>=1.0"]
 # as Scores. Targets the v3 Python SDK (get_client / create_score). The adapter itself is
 # dependency-free — this extra is only needed for the live fetch/write-back path.
 langfuse = ["langfuse>=3.0"]
+# The DeepEval integration: `tracelint.integrations.deepeval.TracelintMetric` runs the rules as a
+# DeepEval metric, so a team's existing DeepEval suite gets a deterministic structural check. The
+# pure core (score_trace) is dependency-free — this extra is only the SDK the metric subclasses.
+deepeval = ["deepeval>=1.0"]
 # `tracelint.capture` — record an agent run to a lintable trace file. The base extra is just the
 # OpenTelemetry SDK (the uniform capture mechanism); each per-framework extra adds that framework's
 # stock OpenInference instrumentor, which capture wraps rather than reimplements.

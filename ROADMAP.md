@@ -53,6 +53,12 @@ encountering it on a real trace, not the suggestion itself.
   top of the file. Best-effort and fail-safe (a step that can't be located unambiguously stays at
   line 1; the exact `step_indices` stay in the result's `properties`). This closes §3.7 report
   readability.
+- **DeepEval metric** (§3.6, first distribution wrapper) — `tracelint.integrations.deepeval.`
+  `TracelintMetric` runs the rules as a DeepEval metric: a test case passes iff its trace passes,
+  gated like `tracelint check` (`fail_on`), judge-free. Trace bound to the metric or on the case's
+  `additional_metadata`; the scoring core (`score_trace`) is dependency-free and the SDK is lazy, so
+  the module imports without DeepEval. `pip install "tracelint[deepeval]"`. Remaining §3.6 wrappers
+  (promptfoo / Inspect / LangWatch) are demand-gated — build when a user pulls for them.
 
 ## Candidate rules
 
