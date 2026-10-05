@@ -75,7 +75,10 @@ precondition — see [R9](#r9).
 
 An argument value isn't derivable from anything the agent observed earlier in the trace — not from
 the user, not from a prior tool result. A candidate by default; a hard defect when the contract
-annotates the field as one that must be `provided` from observed data.
+annotates the field as one that must be `provided` from observed data. R3 checks discrete data (an
+id, a number, a filename, a code); it **skips free-form text** — a shell command, a search query, a
+sentence (more than one token) — which a model legitimately *composes* rather than derives, unless
+the field is annotated `provided`.
 
 **What to do:** ground the argument in something the agent actually saw, or annotate the field's
 provenance in the contract so the high-confidence tier can apply.

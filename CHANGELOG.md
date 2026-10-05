@@ -6,6 +6,17 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **R3 precision: free-form text arguments are no longer flagged.** R3 (hallucinated argument)
+  checked every scalar string, including free-form text a model *composes* rather than *derives* — a
+  shell command, a search query, a sentence — which its provenance model can't judge, so it flagged
+  nearly every such argument. It now skips a string of more than one token on the keyless candidate
+  path (a discrete datum — id, number, filename, code — is a single token), unless the field is
+  annotated `x-value-origin: "provided"` (the opt-in `hard_defect` path, unchanged). On 200 real
+  agent trajectories this cut R3's candidate findings ~88% (5,779 → 684) with no change to its
+  discrete-value catches. (Investigated alongside R2a, which was found *already* correct — it trusts
+  an explicit `OK` status before its string heuristic — so a trace's structured success signal just
+  needs to reach the adapter's `ResultStatus`; no rule change there.)
+
 - **New: promptfoo assertion.** Run tracelint's checks as a [promptfoo](https://promptfoo.dev)
   `type: python` assertion — a test case passes iff its run's trace passes the rules, same gate as
   `tracelint check` (`fail_on`), judge-free. Point promptfoo at
