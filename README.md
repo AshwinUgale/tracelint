@@ -136,6 +136,10 @@ for report in lint_otel_traces(spans):   # spans: your OpenInference span export
 
 ## The rules
 
+The table below is the one-line summary; [docs/rules.md](docs/rules.md) is the full reference —
+what each rule checks, its tier, and how to resolve it. The text report and the SARIF `helpUri`
+link there, one anchor per rule.
+
 | Rule | Finding | Tiers |
 |------|---------|-------|
 | R1 | schema violation — args fail the tool's JSON Schema | `hard_defect` |

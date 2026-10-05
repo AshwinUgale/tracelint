@@ -24,12 +24,17 @@ from tracelint.findings import (
     Finding,
     LintReport,
 )
+from tracelint.sarif import HELP_URI
 from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult
 
 #: A one-line key to the tiers, shown with the findings so the ``[tier]`` labels read on their own.
 _TIER_LEGEND = (
     "  tiers: [hard_defect] fails CI; [hard_event] a certain event; [candidate] heuristic, review"
 )
+
+#: Pointer to the per-rule reference (docs/rules.md). Appended once whenever the report names a
+#: rule, so a reader who doesn't recognise an id (``R2b``) knows where each rule is explained.
+_RULE_REFERENCE = f"  rule reference: {HELP_URI}"
 
 #: Suppression groups, most actionable first, each with the fix it points to. ``None`` catches any
 #: uncategorised suppression (e.g. from an external rule) so it is still disclosed.
@@ -121,6 +126,9 @@ def render_report(
             lines.append("  no structural issues found beyond the ignored ones above.")
         else:
             lines.append("  clean — no structural issues found.")
+
+    if shown or report.ignored or report.suppressions:
+        lines.append(_RULE_REFERENCE)
     return "\n".join(lines)
 
 

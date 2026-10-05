@@ -6,6 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Per-rule help pages.** Every rule a finding names now has an entry in the new
+  [`docs/rules.md`](docs/rules.md) reference — what it checks, its tier, and the honest moves to
+  resolve it — each under a stable anchor. The SARIF `helpUri` now links a GitHub code-scanning
+  alert straight to its rule's anchor (previously every rule pointed at the repository root), and
+  the text report ends with a pointer to the page whenever it names a rule. A test keeps the page,
+  the shipped rule set, and the help links from drifting apart. (The remaining report-readability
+  item — mapping a SARIF result's `startLine` to the finding's trace step — is still open.)
+
 - **OTel-GenAI ingestion: read `gen_ai.tool.definitions`.** The OTel adapter already read tool
   schemas from a TOOL span's `tool.parameters` and from OpenInference `llm.tools.*.json_schema`;
   it now also reads the OTel GenAI semantic-convention `gen_ai.tool.definitions` list (each

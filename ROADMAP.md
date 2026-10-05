@@ -43,6 +43,12 @@ encountering it on a real trace, not the suggestion itself.
   misses. A `candidate`, fail-closed (a missing result could be a truncated capture, flagged a
   possible false positive at the trace end); never a `hard_defect`. The independent read-back
   half (`confirmed_by`) is still below.
+- **Per-rule help pages** — every finding's rule now links to [docs/rules.md](docs/rules.md), a
+  reference with a stable anchor per rule (what it checks, its tier, how to resolve it). The SARIF
+  `helpUri` points each GitHub code-scanning alert at its rule's anchor rather than the repo root,
+  and the text report ends with a pointer to the page. (The remaining report-readability item —
+  mapping a SARIF result's `startLine` to the finding's step in the trace file, instead of a
+  constant line 1 — is still open.)
 
 ## Candidate rules
 
