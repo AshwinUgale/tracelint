@@ -6,6 +6,15 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **OTel-GenAI ingestion: read `gen_ai.tool.definitions`.** The OTel adapter already read tool
+  schemas from a TOOL span's `tool.parameters` and from OpenInference `llm.tools.*.json_schema`;
+  it now also reads the OTel GenAI semantic-convention `gen_ai.tool.definitions` list (each
+  `{name, parameters}` / `inputSchema`), whether the attribute lands as a JSON string or a list.
+  Those schemas feed each call's schema, powering `tracelint init` and R11 (contract drift), so
+  a GenAI-native instrumentation lights up R1 / R3 / R11 from the trace alone. (MCP tool calls
+  already arrive as `execute_tool` TOOL spans, and `invoke_agent` is already handled — closing
+  the ingestion half of §3.5.)
+
 - **New: `tracelint doctor`.** A trace where rules abstain used to show a wall of suppressions; `doctor` turns that into the one sentence that matters. It lints the trace(s) and reports *why* each rule couldn't run, grouped by cause: **tool content not recorded** (your instrumentation isn't capturing tool arguments/results — it names the capture setting for the format), a **missing `tools.json`** (run `tracelint init`), or simply **not applicable** (no gap). It adds a coverage summary (evaluatable / total per rule, across all traces) and is advisory — it never gates (always exits 0). `tracelint doctor <traces> [--format F] [--tools T]`.
 
 - **New: R12, unresolved side effect.** The side-effect-integrity arc's last core rule, and the
