@@ -64,6 +64,15 @@ encountering it on a real trace, not the suggestion itself.
   entry / an `output` path. No extra to install (promptfoo is a Node tool). The scoring core now
   lives in `tracelint.integrations.scoring`, shared by both wrappers. Remaining §3.6 wrappers
   (Inspect / LangWatch) stay demand-gated — build when a user pulls for them.
+- **R3 precision on free-form args** — a precision probe on 200 real, verified-correct agent
+  trajectories (mini-swe-agent / swe-smith) confirmed the gate never false-fires (0/200) and the
+  loop rule doesn't over-fire on retries (1/200), but surfaced that R3's keyless candidate flagged
+  essentially every free-form command/query argument (its provenance model doesn't fit composed
+  text). R3 now skips multi-token free-form string values keyless (−88% R3 findings on that sample),
+  keeping its discrete-value catches and the `provided` opt-in. R2a was found already correct (it
+  trusts an explicit `OK` status) — the lesson there is adapter-side: map a structured success
+  signal (e.g. an exit code) to `ResultStatus`, conservatively (`exit 0 ⇒ OK`, never `nonzero ⇒
+  error`).
 
 ## Candidate rules
 

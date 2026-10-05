@@ -11,8 +11,12 @@ generated* value. So the confidence is gated (Trap 2, the "trusted-doc problem r
 - No annotation and the value is underivable → ``candidate`` with ``possible_false_positive``
   (could be a legitimate generated value or an unrecognized transform — shown for review).
 
-Fields the model legitimately *chooses* rather than *derives* are skipped: ``enum`` / ``const``
-fields, and booleans. Nested object/array arguments are out of scope for the MVP.
+Fields the model legitimately *chooses* or *composes* rather than *derives* are skipped: ``enum`` /
+``const`` fields, booleans, and **free-form text** values (a shell command, a search query — a
+value of more than one token), which a model writes rather than lifts from context and which R3's
+provenance model cannot judge. The free-form skip is overridden by an explicit ``provided``
+annotation (the user opting that field into the check). Nested object/array arguments are out of
+scope for the MVP.
 
 **Honest consequence (disclosed in the README):** most users will not annotate schemas, so
 out-of-box hallucination detection is candidate-only; the high-confidence tier is opt-in effort.
@@ -75,6 +79,15 @@ class HallucinatedArgRule(Rule):
             return False  # nested arguments are out of MVP scope
         if isinstance(subschema, dict) and ("enum" in subschema or "const" in subschema):
             return False  # a closed choice the model selects, not a value it derives
+        # Free-form composed text — a shell command, a search query, a sentence — is legitimately
+        # *generated* by the model, not *derived* from observed data, so R3's provenance model does
+        # not fit it: it would flag essentially every such argument (a tool whose only input is a
+        # command string gets a finding on every call). A discrete datum the agent should have
+        # grounded (an id, a number, a filename, a code) is a single token; multiple tokens signal
+        # composed text. Skip it — unless the schema marks the field ``provided`` (the user opting
+        # that specific field into the check, where an underivable value is a declared defect).
+        if origin != "provided" and isinstance(value, str) and len(value.split()) > 1:
+            return False
         return True
 
     def _finding(self, call: ToolCall, field_name: str, value: Any, origin: str | None) -> Finding:
