@@ -6,6 +6,16 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: `tracelint init --from-mcp`.** Point it at a saved MCP `tools/list` response and it
+  writes a starter `tools.json`: `inputSchema` becomes each tool's argument schema, and the
+  server's `readOnlyHint` / `idempotentHint` annotations become `side_effecting` / `idempotent`.
+  Because those annotations are advisory (the MCP spec says clients must not rely on them) and
+  `side_effecting` drives the hard-defect rules, they are applied only when the server states
+  them explicitly — a tool with no hint is left with a `_todo` to classify, not a guessed
+  default, so a server can't manufacture a false red. Accepts the JSON-RPC envelope, a bare
+  `{"tools": ...}`, or a plain list. (First of the audit's MCP-native-contracts items; a
+  result-contract rule from `outputSchema` and a contract-drift check follow.)
+
 - **Call/result pairing is no longer O(n^2) on long traces.** `Trace.call_for`, `result_for`
   and `pairs` scanned the step list on every lookup, so the rules that pair calls with results
   — R2a, R2b, R4, R5 — grew quadratically with trace length. A trace now builds a `call_id`

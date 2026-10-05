@@ -198,7 +198,15 @@ def build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser(
         "init", help="bootstrap a starter tools.json from a trace (discovers tools + schemas)"
     )
-    init.add_argument("trace", help="trace file to read tools from (.json / .jsonl / a JSON array)")
+    init.add_argument(
+        "trace", nargs="?", help="trace file to read tools from (.json / .jsonl / a JSON array)"
+    )
+    init.add_argument(
+        "--from-mcp",
+        dest="from_mcp",
+        metavar="TOOLS_LIST",
+        help="build the contract from a saved MCP tools/list response instead of a trace",
+    )
     init.add_argument(
         "--format",
         dest="fmt",
@@ -420,13 +428,20 @@ def _cmd_langfuse_check(args: argparse.Namespace) -> int:
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
-    from tracelint.contract import discover_contract
+    from pathlib import Path
 
-    draft = discover_contract(load_source(args.trace, args.fmt))
+    from tracelint.contract import discover_contract, discover_mcp_contract
+
+    if args.from_mcp:
+        if args.trace:
+            raise ValueError("give a trace or --from-mcp, not both")
+        draft = discover_mcp_contract(json.loads(Path(args.from_mcp).read_text(encoding="utf-8")))
+    elif args.trace:
+        draft = discover_contract(load_source(args.trace, args.fmt))
+    else:
+        raise ValueError("init needs a trace file, or --from-mcp TOOLS_LIST to read an MCP server")
     payload = json.dumps(draft.to_dict(), indent=2)
     if args.output:
-        from pathlib import Path
-
         Path(args.output).write_text(payload + "\n", encoding="utf-8")
         print(draft.summary())
         print(f"\nwrote starter contract to {args.output} — fill the behavior fields, then pass it "
