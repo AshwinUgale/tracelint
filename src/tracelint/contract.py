@@ -87,18 +87,27 @@ class ContractDraft:
     no_schema: list[str] = field(default_factory=list)
     skipped_internal: list[str] = field(default_factory=list)
     after_others: list[str] = field(default_factory=list)  # first called after other tools
+    from_mcp: bool = False  # built from an MCP tools/list rather than a trace
+    derived_behavior: list[str] = field(default_factory=list)  # behaviour set from a hint
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "_comment": (
+        if self.from_mcp:
+            comment = (
+                "Starter contract from `tracelint init --from-mcp`. Schemas and read/write hints "
+                "come from the MCP server and are advisory — do each tool's _todo, delete the "
+                "_todo keys, then `tracelint check <trace> --tools tools.json`."
+            )
+        else:
+            comment = (
                 "Starter contract from `tracelint init`. Per tool, do the _todo items, then delete "
                 "the _todo keys and run `tracelint check <trace> --tools tools.json`."
-            ),
-            "tools": self.tools,
-        }
+            )
+        return {"_comment": comment, "tools": self.tools}
 
     def summary(self) -> str:
         """A human summary — the review TODOs the JSON also carries inline."""
+        if self.from_mcp:
+            return self._mcp_summary()
         n = len(self.tools)
         lines = [f"tracelint init: {n} tool(s) called in the trace."]
         if self.with_schema:
@@ -124,6 +133,28 @@ class ContractDraft:
                 "  preconditions: if one of these must only run after an earlier call succeeded "
                 "(a refund after its lookup), declare metadata.requires — see the _todo of: "
                 + ", ".join(self.after_others)
+            )
+        return "\n".join(lines)
+
+    def _mcp_summary(self) -> str:
+        n = len(self.tools)
+        lines = [f"tracelint init: {n} tool(s) from the MCP server."]
+        if self.with_schema:
+            lines.append(
+                f"  inputSchema from the server for {len(self.with_schema)}: "
+                + ", ".join(self.with_schema)
+            )
+        if self.no_schema:
+            lines.append("  no inputSchema — add one for R1: " + ", ".join(self.no_schema))
+        if self.derived_behavior:
+            lines.append(
+                f"  side_effecting / idempotent set from the server's hints for "
+                f"{len(self.derived_behavior)}: " + ", ".join(self.derived_behavior)
+            )
+        if n:
+            lines.append(
+                "  MCP annotations are advisory — CONFIRM side_effecting / idempotent and add "
+                "failure_when per tool (see each _todo)."
             )
         return "\n".join(lines)
 
@@ -184,4 +215,81 @@ def discover_contract(traces: Iterable[Trace]) -> ContractDraft:
             "metadata": dict(_BEHAVIOR_PLACEHOLDER),
             "_todo": todo,
         }
+    return draft
+
+
+def _mcp_tools(data: Any) -> list[dict[str, Any]]:
+    """The tool list from a saved MCP ``tools/list`` payload, however it was stored: the JSON-RPC
+    envelope ``{"result": {"tools": [...]}}``, a bare ``{"tools": [...]}``, or just ``[...]``."""
+    if isinstance(data, dict):
+        inner = data.get("result")
+        tools = inner.get("tools") if isinstance(inner, dict) else data.get("tools")
+    else:
+        tools = data
+    if not isinstance(tools, list):
+        raise ValueError(
+            "not an MCP tools/list payload: expected a `tools` array (a saved "
+            '`{"tools": [...]}` or `{"result": {"tools": [...]}}` response)'
+        )
+    return [t for t in tools if isinstance(t, dict)]
+
+
+def discover_mcp_contract(data: Any) -> ContractDraft:
+    """Build a :class:`ContractDraft` from a saved MCP ``tools/list`` response.
+
+    ``inputSchema`` becomes the argument schema; the ``readOnlyHint`` / ``idempotentHint``
+    annotations become ``side_effecting`` / ``idempotent`` — but only when the server states them
+    explicitly, because they are advisory (the spec says clients must not rely on them) and
+    ``side_effecting`` drives the hard-defect rules. A tool with no hint gets a ``_todo`` to
+    classify it rather than a guessed default, so the server can't manufacture a false red.
+    """
+    draft = ContractDraft(from_mcp=True)
+    for tool in _mcp_tools(data):
+        name = tool.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        raw_schema = tool.get("inputSchema")
+        schema = raw_schema if isinstance(raw_schema, dict) else None
+        ann = tool.get("annotations")
+        ann = ann if isinstance(ann, dict) else {}
+        meta: dict[str, Any] = {}
+        todo: list[str] = []
+
+        read_only = ann.get("readOnlyHint")
+        if read_only is False:
+            meta["side_effecting"] = True
+        elif read_only is not True:  # absent or non-bool: unknown — do not guess
+            todo.append(
+                "set metadata.side_effecting: true if this tool changes state — the MCP server "
+                "declared no readOnlyHint (annotations are advisory)"
+            )
+        if ann.get("idempotentHint") is True:
+            meta["idempotent"] = True
+        elif meta.get("side_effecting"):
+            todo.append(
+                "set metadata.idempotent: true if repeating the identical call is harmless "
+                "(the server declared no idempotentHint)"
+            )
+        if meta.get("side_effecting") or read_only is not True:
+            todo.append(
+                "set metadata.failure_when if a success response can still carry a failure "
+                '(e.g. {"status": "declined"} at HTTP 200) — a JSON pointer + match'
+            )
+        if meta:  # behaviour we set from a real hint (for the summary)
+            draft.derived_behavior.append(name)
+
+        entry: dict[str, Any] = {}
+        description = tool.get("description")
+        if isinstance(description, str) and description:
+            entry["description"] = description
+        entry["schema"] = schema
+        entry["metadata"] = meta
+        if schema is not None:
+            draft.with_schema.append(name)
+        else:
+            draft.no_schema.append(name)
+            todo.insert(0, "add the argument JSON Schema (the tool declared no inputSchema)")
+        if todo:
+            entry["_todo"] = todo
+        draft.tools[name] = entry
     return draft
