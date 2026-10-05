@@ -573,3 +573,73 @@ def test_end_to_end_lint_from_otel():
     assert any(
         f.rule == "R1" and f.tier is ConfidenceTier.HARD_DEFECT for f in report.active_findings
     )
+
+
+def test_gen_ai_tool_definitions_supply_a_schema():
+    # OTel GenAI semconv: gen_ai.tool.definitions (a list) declares each tool's parameters schema.
+    spans = [
+        {
+            "name": "chat",
+            "context": {"span_id": "s1"},
+            "attributes": {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.tool.definitions": [
+                    {
+                        "type": "function",
+                        "name": "get_order",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"order_id": {"type": "string"}},
+                            "required": ["order_id"],
+                        },
+                    }
+                ],
+            },
+        },
+        {
+            "name": "get_order",
+            "context": {"span_id": "s2"},
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "get_order",
+                "gen_ai.tool.call.arguments": {"order_id": "A1"},
+                "gen_ai.tool.call.result": {"ok": True},
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    call = next(c for c in trace.tool_calls() if c.name == "get_order")
+    assert call.schema is not None
+    assert "order_id" in call.schema.get("properties", {})
+
+
+def test_gen_ai_tool_definitions_as_a_json_string():
+    import json as _json
+
+    defs = _json.dumps(
+        [
+            {
+                "name": "pay",
+                "parameters": {"type": "object", "properties": {"amt": {"type": "number"}}},
+            }
+        ]
+    )
+    spans = [
+        {
+            "name": "chat",
+            "context": {"span_id": "s1"},
+            "attributes": {"gen_ai.operation.name": "chat", "gen_ai.tool.definitions": defs},
+        },
+        {
+            "name": "pay",
+            "context": {"span_id": "s2"},
+            "attributes": {
+                "gen_ai.operation.name": "execute_tool",
+                "gen_ai.tool.name": "pay",
+                "gen_ai.tool.call.arguments": {"amt": 5},
+            },
+        },
+    ]
+    trace = from_otel_spans(spans)
+    call = next(c for c in trace.tool_calls() if c.name == "pay")
+    assert call.schema is not None and "amt" in call.schema.get("properties", {})

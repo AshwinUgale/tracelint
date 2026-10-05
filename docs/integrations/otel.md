@@ -18,7 +18,9 @@ matches how your spans are attributed. Mixed exports are read either way.)
 ## What tracelint reads
 
 An `execute_tool` span → a paired tool call + result; an OTel `ERROR` status or exception event marks
-a structured tool error (R2a). `chat` / `completion` spans contribute the LLM turn. Missing fields
+a structured tool error (R2a). `chat` / `completion` spans contribute the LLM turn. Tool definitions in
+`gen_ai.tool.definitions` (or OpenInference `llm.tools.*`, or a TOOL span's `tool.parameters`) supply each
+tool's argument schema, so R1 / R3 / R11 and `tracelint init` work from the trace alone. Missing fields
 suppress the relevant rule with a reason.
 
 ## Example (offline, keyless)

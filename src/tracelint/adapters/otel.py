@@ -505,10 +505,10 @@ def _normalize_arg_schema(parsed: Any) -> dict[str, Any] | None:
 def _tool_schemas(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> dict[str, dict[str, Any]]:
     """Discover per-tool argument JSON Schemas from the spans, indexed by tool name.
 
-    Two sources, LLM-span definitions preferred (they are the standard OpenAI tool format and cover
-    every declared tool): ``llm.tools.<i>.tool.json_schema`` (an OpenAI ``{"function": {"name",
-    "parameters"}}`` definition) on LLM spans, and ``tool.parameters`` on the TOOL span. Powers
-    ``tracelint init``; unused by the rules.
+    Three sources, in increasing precedence: ``tool.parameters`` on the TOOL span; the OTel GenAI
+    ``gen_ai.tool.definitions`` list; and ``llm.tools.<i>.tool.json_schema`` (the OpenAI
+    ``{"function": {"name", "parameters"}}`` form) on LLM spans. Powers ``tracelint init`` and feeds
+    each call's ``schema``, which R11 compares against the committed ``tools.json``.
     """
     schemas: dict[str, dict[str, Any]] = {}
     # TOOL-span tool.parameters first (lower precedence — LLM-span definitions overwrite below).
@@ -524,6 +524,18 @@ def _tool_schemas(parsed: list[tuple[dict[str, Any], dict[str, Any]]]) -> dict[s
         schema = _normalize_arg_schema(got)
         if schema is not None:
             schemas[name] = schema
+    # GenAI tool definitions (OTel semconv): gen_ai.tool.definitions is a list of
+    # {name/function, parameters/inputSchema}. Read like the OpenAI llm.tools.* form below.
+    for _span, attrs in parsed:
+        got, _ = _parse_value(attrs.get("gen_ai.tool.definitions"))
+        for defn in got if isinstance(got, list) else []:
+            if not isinstance(defn, dict):
+                continue
+            fn = defn.get("function") if isinstance(defn.get("function"), dict) else defn
+            name = str(fn.get("name") or "")
+            schema = _normalize_arg_schema(fn.get("parameters") or fn.get("inputSchema"))
+            if name and schema is not None:
+                schemas[name] = schema
     # LLM-span tool definitions (preferred): llm.tools.<i>.tool.json_schema
     for _span, attrs in parsed:
         for key, val in attrs.items():
