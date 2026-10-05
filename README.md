@@ -277,10 +277,11 @@ has short, reproducible one-pagers, each validated on a **real captured trace**:
   [LangSmith](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/langsmith.md) ·
   [OpenLLMetry / Traceloop](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/otel.md) ·
   [OpenAI / ShareGPT message lists](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/openai.md).
-- **Eval suites (already running one?):** tracelint drops in as a deterministic, judge-free metric —
+- **Eval suites (already running one?):** tracelint drops in as a deterministic, judge-free check —
   [DeepEval](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/deepeval.md)
-  (`TracelintMetric`: a test case passes iff its trace passes the rules), via
-  `pip install "tracelint[deepeval]"`.
+  (`TracelintMetric`, via `pip install "tracelint[deepeval]"`) or
+  [promptfoo](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/promptfoo.md)
+  (a Python assertion, no extra to install) — a case passes iff its trace passes the rules.
 
 For Langfuse, `pull` is convenience sugar on top of that baseline — it fetches a trace straight to a
 file, so `pull` → `check` composes and the file doubles as a saved fixture:

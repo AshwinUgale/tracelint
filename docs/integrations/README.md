@@ -57,9 +57,10 @@ judge-free structural check beside your existing ones.
 | Harness | How | One-pager |
 |---|---|---|
 | [DeepEval](https://deepeval.com) | `TracelintMetric` — passes a test case iff its trace passes the rules | [deepeval.md](deepeval.md) |
+| [promptfoo](https://promptfoo.dev) | a Python assertion — a test passes iff its trace passes the rules | [promptfoo.md](promptfoo.md) |
 
 ```bash
-pip install "tracelint[deepeval]"
+pip install "tracelint[deepeval]"   # DeepEval; promptfoo is a Node tool and needs no extra
 ```
 
 ## What tracelint proves vs. suggests
