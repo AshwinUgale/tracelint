@@ -6,6 +6,18 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: R11, contract drift.** Some traces carry each tool's run-time schema inline (OTel /
+  OpenInference tool definitions, an OpenAI `tools` block, on `ToolCall.schema`). R11 compares
+  that against the committed `tools.json` structurally — property names, each property's `type`,
+  `required`, the top-level `type`, ignoring descriptions/titles/order — and flags a real
+  difference as *contract drift*: the committed contract has gone stale, so R1 is validating
+  against a schema that no longer matches the tool. Like R10 it is a `hard_event` (certain, but
+  about the contract rather than the agent's run) — shown but not failing CI unless you opt in
+  with `--fail-on hard_event`. Opt-in and quiet: it fires only where a tool carries both an
+  inline and a committed schema and both declare properties, so native traces and bare
+  placeholders stay silent. This completes the MCP-native-contracts group (`init --from-mcp`,
+  R10, R11).
+
 - **New: R10, the result contract.** A tool can declare an `output_schema` (MCP's `outputSchema`
   maps straight to it, and `tracelint init --from-mcp` now captures it). R10 validates each
   recorded successful result against it — the mirror of R1 on the arguments. A violation is

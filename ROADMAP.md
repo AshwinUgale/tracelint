@@ -31,6 +31,13 @@ encountering it on a real trace, not the suggestion itself.
   arguments. A violation is *tool output drift* and a `hard_event` — the tool's output, not the
   agent's own defect — so it is shown but does not fail CI unless `--fail-on hard_event` is set.
   Opt-in: a tool with no `output_schema` is silent.
+- **R11 — contract drift** — some traces carry each tool's run-time schema inline (OTel /
+  OpenInference definitions, an OpenAI tools block). When it differs structurally from the
+  committed `tools.json` — a property added or removed, a type or `required` changed — the
+  committed contract has gone stale (R1 is then validating against a schema that no longer
+  matches). A `hard_event`: certain, but about the contract, not the agent's run, so shown and
+  opt-in to gate. Fires only where both an inline and a committed schema exist and declare
+  properties.
 
 ## Candidate rules
 
