@@ -8,6 +8,7 @@ redundant call) arrive in later phases and register here.
 from __future__ import annotations
 
 from tracelint.rules.base import Rule, lint_trace
+from tracelint.rules.contract_drift import ContractDriftRule
 from tracelint.rules.error_handling import ErrorHandlingRule, ToolErrorEventRule
 from tracelint.rules.hallucination import HallucinatedArgRule
 from tracelint.rules.loops import LoopRule, RedundantCallRule
@@ -30,6 +31,7 @@ _RULE_CLASSES: list[type[Rule]] = [
     DuplicateSideEffectRule,
     PreconditionRule,
     ResultContractRule,
+    ContractDriftRule,
 ]
 
 

@@ -101,6 +101,11 @@ _RULE_META: dict[str, dict[str, str]] = {
         "text": "A tool's result does not satisfy the output JSON Schema its contract declares.",
         "level": "warning",
     },
+    "R11": {
+        "name": "ContractDrift",
+        "text": "A tool's schema in the trace differs from the committed tools.json contract.",
+        "level": "warning",
+    },
 }
 
 
