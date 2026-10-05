@@ -12,19 +12,24 @@ The mapping keeps tracelint's tiers honest inside SARIF's ``level`` vocabulary:
 - ``candidate``   -> ``note``    (a heuristic shown for review)
 
 Suppressions are *not* results (they record what could not be checked, not a defect) and are
-omitted. A trace file is the "artifact" a finding is located in; because a trace step is not a
-source line, results anchor at the trace file (line 1) and carry the exact ``step_indices`` in
-``properties`` for the reader. ``partialFingerprints`` give GitHub a stable identity so the same
-finding across runs is one alert, not a new one each time.
+omitted. A trace file is the "artifact" a finding is located in. A trace step is not a source line,
+so a result's ``region.startLine`` is a best-effort anchor: the line of the trace file where the
+finding's *first* step can be found by its source token — an OTel/Phoenix ``span_id``, a Langfuse
+``observation_id``, or a ``call_id`` — falling back to line 1 when the step can't be located (a
+merged span from another file, a token the format doesn't serialise). The exact ``step_indices``
+always travel in ``properties`` for the reader. ``partialFingerprints`` give GitHub a stable
+identity so the same finding across runs is one alert, not a new one each time.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from bisect import bisect_right
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from tracelint.findings import ConfidenceTier, Finding, LintReport
 from tracelint.identity import finding_fingerprint
+from tracelint.trace import Trace
 
 SARIF_VERSION = "2.1.0"
 SCHEMA_URI = "https://json.schemastore.org/sarif-2.1.0.json"
@@ -156,7 +161,73 @@ def _rule_descriptor(rule_id: str, finding_type: str) -> dict[str, Any]:
     }
 
 
-def _result(uri: str, finding: Finding, rule_index: int) -> dict[str, Any]:
+def _line_starts(text: str) -> list[int]:
+    """Char offsets at which each line begins (so an offset maps to a 1-based line by bisect)."""
+    starts = [0]
+    start = text.find("\n")
+    while start != -1:
+        starts.append(start + 1)
+        start = text.find("\n", start + 1)
+    return starts
+
+
+def _locate(token: str, text: str, starts: list[int]) -> int | None:
+    """The 1-based line of ``token``'s first occurrence in ``text``, or None if absent.
+
+    The quoted form is tried first (tokens are JSON string values, e.g. ``"span_id": "abc"``), so a
+    token is not matched inside a longer value; a raw search is the fallback.
+    """
+    for needle in (f'"{token}"', token):
+        pos = text.find(needle)
+        if pos != -1:
+            return bisect_right(starts, pos)
+    return None
+
+
+def _step_token(step: Any, *, allow_call_id: bool) -> str | None:
+    """A distinctive string that locates ``step`` in its source file: a globally-unique span /
+    observation id when the adapter recorded one, else the ``call_id`` (only when unambiguous —
+    ``call_id`` repeats across the runs of a multi-trace file, so the caller disables it there)."""
+    source = getattr(step, "source", None)
+    if source is not None:
+        if source.span_id:
+            return str(source.span_id)
+        if source.observation_id:
+            return str(source.observation_id)
+    if allow_call_id:
+        call_id = getattr(step, "call_id", None)
+        if call_id:
+            return str(call_id)
+    return None
+
+
+def build_line_map(
+    trace: Trace, text: str, indices: set[int], *, allow_call_id: bool = True
+) -> dict[int, int]:
+    """Map each wanted step index to its 1-based line in ``text`` (the trace file), best-effort.
+
+    Only ``indices`` (the steps findings actually anchor to) are located, so cost stays tied to the
+    number of findings, not the trace length. A step with no token, or a token not in ``text`` (a
+    span merged in from another file), is simply absent from the map — the caller then leaves that
+    finding at line 1.
+    """
+    if not indices:
+        return {}
+    starts = _line_starts(text)
+    out: dict[int, int] = {}
+    for idx in indices:
+        if not 0 <= idx < len(trace.steps):
+            continue
+        token = _step_token(trace.steps[idx], allow_call_id=allow_call_id)
+        if not token:
+            continue
+        line = _locate(token, text, starts)
+        if line is not None:
+            out[idx] = line
+    return out
+
+
+def _result(uri: str, finding: Finding, rule_index: int, start_line: int = 1) -> dict[str, Any]:
     message = finding.summary or f"{finding.rule} {finding.finding_type}"
     props: dict[str, Any] = {
         "tier": finding.tier.value,
@@ -175,7 +246,7 @@ def _result(uri: str, finding: Finding, rule_index: int) -> dict[str, Any]:
             {
                 "physicalLocation": {
                     "artifactLocation": {"uri": uri},
-                    "region": {"startLine": 1},
+                    "region": {"startLine": start_line},
                 }
             }
         ],
@@ -189,26 +260,35 @@ def to_sarif(
     *,
     tool_version: str,
     uris: Sequence[str] | None = None,
+    line_maps: Sequence[Mapping[int, int]] | None = None,
 ) -> dict[str, Any]:
     """Render lint reports as a SARIF 2.1.0 log for GitHub code scanning.
 
     ``uris`` optionally gives the source file each report was linted from (same length and order as
     ``reports``); a finding is located in that file. When omitted, a report's ``run_id`` is used as
-    the artifact URI. Only active findings become results — suppressions are excluded by design.
+    the artifact URI. ``line_maps`` optionally gives, per report, a ``{step_index: 1-based line}``
+    map (see :func:`build_line_map`): a finding's ``region.startLine`` is the line of its first
+    step, or 1 when unmapped. Only active findings become results — suppressions are excluded.
     """
     if uris is not None and len(uris) != len(reports):
         raise ValueError("uris must have the same length as reports")
+    if line_maps is not None and len(line_maps) != len(reports):
+        raise ValueError("line_maps must have the same length as reports")
 
     results: list[dict[str, Any]] = []
     referenced: list[str] = []  # rule ids in first-seen order -> rules[] and ruleIndex
     type_for: dict[str, str] = {}
     for i, report in enumerate(reports):
         uri = uris[i] if uris is not None else report.run_id
+        line_map = line_maps[i] if line_maps is not None else None
         for finding in report.active_findings:
             if finding.rule not in referenced:
                 referenced.append(finding.rule)
                 type_for[finding.rule] = finding.finding_type
-            results.append(_result(uri, finding, referenced.index(finding.rule)))
+            start_line = 1
+            if line_map and finding.step_indices:
+                start_line = line_map.get(finding.step_indices[0], 1)
+            results.append(_result(uri, finding, referenced.index(finding.rule), start_line))
 
     rules = [_rule_descriptor(rid, type_for[rid]) for rid in referenced]
     has_defect = any(r.has_hard_defect for r in reports)
