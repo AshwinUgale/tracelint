@@ -119,3 +119,15 @@ def test_closing_hint_omits_init_when_only_not_applicable():
     text = render_report(report)
     assert "tracelint init" not in text  # nothing to declare — do not nag about init
     assert "nothing to check here" in text
+
+
+def test_report_links_the_rule_reference_when_a_rule_is_named():
+    from tracelint.sarif import HELP_URI
+
+    text = render_report(LintReport("planted", [_defect()]))
+    assert "rule reference:" in text
+    assert HELP_URI in text
+
+
+def test_clean_report_omits_the_rule_reference():
+    assert "rule reference:" not in render_report(LintReport("run", []))

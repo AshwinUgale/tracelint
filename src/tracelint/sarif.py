@@ -29,6 +29,10 @@ from tracelint.identity import finding_fingerprint
 SARIF_VERSION = "2.1.0"
 SCHEMA_URI = "https://json.schemastore.org/sarif-2.1.0.json"
 INFORMATION_URI = "https://github.com/AshwinUgale/tracelint"
+#: Per-rule help pages (docs/rules.md, one anchor per rule). Each rule descriptor's ``helpUri``
+#: points at its anchor, so a GitHub code-scanning alert links straight to what the rule means and
+#: how to resolve it, rather than to the repository root.
+HELP_URI = INFORMATION_URI + "/blob/main/docs/rules.md"
 
 _LEVEL: dict[ConfidenceTier, str] = {
     ConfidenceTier.HARD_DEFECT: "error",
@@ -124,6 +128,18 @@ def _fingerprint(uri: str, finding: Finding) -> str:
     )
 
 
+def _help_uri(rule_id: str) -> str:
+    """The rule's help anchor in docs/rules.md, or the page itself for an unknown rule.
+
+    Anchors are the lowercased rule id (``R2b`` -> ``#r2b``), matching the ``<a id=...>`` tags in
+    docs/rules.md. An id with no descriptor (e.g. an external rule) links to the page, not a
+    dangling anchor.
+    """
+    if rule_id in _RULE_META:
+        return f"{HELP_URI}#{rule_id.lower()}"
+    return HELP_URI
+
+
 def _rule_descriptor(rule_id: str, finding_type: str) -> dict[str, Any]:
     meta = _RULE_META.get(rule_id)
     name = meta["name"] if meta else finding_type
@@ -134,7 +150,7 @@ def _rule_descriptor(rule_id: str, finding_type: str) -> dict[str, Any]:
         "name": name,
         "shortDescription": {"text": text},
         "fullDescription": {"text": text},
-        "helpUri": INFORMATION_URI,
+        "helpUri": _help_uri(rule_id),
         "defaultConfiguration": {"level": level},
         "properties": {"tags": ["agent-trace", "tracelint"]},
     }

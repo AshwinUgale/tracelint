@@ -158,3 +158,23 @@ def test_cli_writes_valid_sarif_file(tmp_path):
     # the finding is located in the trace file we passed on the command line.
     assert results[0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == tp
     assert sarif["runs"][0]["invocations"][0]["executionSuccessful"] is False
+
+
+def test_help_uri_is_per_rule_anchored():
+    from tracelint.sarif import _RULE_META, HELP_URI, _help_uri
+
+    # every rule links to its own anchor in the rules-reference page, lowercased id.
+    for rid in _RULE_META:
+        assert _help_uri(rid) == f"{HELP_URI}#{rid.lower()}"
+    # distinct per rule, all under the one reference page.
+    uris = {_help_uri(rid) for rid in _RULE_META}
+    assert len(uris) == len(_RULE_META)
+    assert all(u.startswith(HELP_URI + "#") for u in uris)
+    # an unknown/external rule links to the page itself, not a dangling anchor.
+    assert _help_uri("R999") == HELP_URI
+    # and the emitted descriptors carry those links (R2a -> #r2a).
+    rules = to_sarif([_report()], tool_version="0", uris=["t.json"])["runs"][0]["tool"]["driver"][
+        "rules"
+    ]
+    assert next(r for r in rules if r["id"] == "R1")["helpUri"] == HELP_URI + "#r1"
+    assert next(r for r in rules if r["id"] == "R2a")["helpUri"] == HELP_URI + "#r2a"
