@@ -6,6 +6,16 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: DeepEval metric (`pip install "tracelint[deepeval]"`).** Run tracelint's deterministic
+  checks as a [DeepEval](https://deepeval.com) metric, so an existing DeepEval suite gets a
+  judge-free structural check beside its other metrics. `TracelintMetric` passes a test case iff the
+  run's trace passes the rules, with the same gate as `tracelint check` (`fail_on`). The trace is
+  bound to the metric (`trace=`) or carried on the test case's `additional_metadata`; a missing or
+  unreadable trace fails that case with a recorded reason instead of crashing the run. The scoring
+  core (`score_trace`) is dependency-free and the SDK is imported lazily, so importing
+  `tracelint.integrations.deepeval` never requires DeepEval. First of the §3.6 distribution
+  wrappers. See [docs/integrations/deepeval.md](docs/integrations/deepeval.md).
+
 - **SARIF results anchor to the finding's trace step.** A result's `region.startLine` was a constant
   line 1; it is now the line of the trace file where the finding's first step can be located by its
   source token (an OTel/Phoenix `span_id`, a Langfuse `observation_id`, or a `call_id`), so a GitHub

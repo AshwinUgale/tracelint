@@ -49,6 +49,19 @@ tracelint check <trace-id>.json --format langfuse
 The lowest-friction path needs no tracing stack at all — lint a raw OpenAI/ShareGPT message list
 with `--format openai` (see [openai.md](openai.md)).
 
+## Inside your eval suite
+
+Already running an eval framework? tracelint drops in as one more metric — a deterministic,
+judge-free structural check beside your existing ones.
+
+| Harness | How | One-pager |
+|---|---|---|
+| [DeepEval](https://deepeval.com) | `TracelintMetric` — passes a test case iff its trace passes the rules | [deepeval.md](deepeval.md) |
+
+```bash
+pip install "tracelint[deepeval]"
+```
+
 ## What tracelint proves vs. suggests
 
 - **hard_defect** (fails CI, exit 2): schema violation (R1), a value only a failed call returned,
