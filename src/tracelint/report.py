@@ -834,3 +834,90 @@ def write_html(path: str | Path, html: str) -> None:
     if p.parent and not p.parent.exists():
         p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(html, encoding="utf-8")
+
+
+# --- Doctor: diagnose why rules could not run (spec §II.9 fail-closed, surfaced as guidance) ------
+
+_CAPTURE_HINT = {
+    "openinference": "record each tool call's input.value and output.value on its span",
+    "otel": "set gen_ai.tool.call.arguments and .result (or input.value / output.value)",
+    "langfuse": "record each tool observation's input and output",
+    "langsmith": "record each tool run's inputs and outputs",
+    "openai": "include the tool-call arguments and the tool-result messages",
+    "native": "populate each tool_call's args and each tool_result's content",
+}
+
+
+def render_diagnosis(
+    reports: list[LintReport], *, fmt: str | None = None, has_tools: bool = False
+) -> str:
+    """Diagnose *why* rules abstained across ``reports`` and name the one fix for each gap.
+
+    The report already discloses every suppression; this turns a wall of them into the sentence
+    that matters: your instrumentation isn't recording tool content, or you haven't declared a
+    contract, or the rule simply did not apply. Advisory — it never gates.
+    """
+    suppressions = [s for r in reports for s in r.suppressions]
+    by_category: dict[str | None, list[Finding]] = {}
+    for s in suppressions:
+        by_category.setdefault(s.suppressed_category, []).append(s)
+
+    lines = [f"tracelint doctor: {len(reports)} trace(s), {len(suppressions)} rule(s) abstained."]
+    gaps: list[str] = []
+
+    not_recorded = by_category.get(SUPPRESS_NOT_RECORDED, [])
+    if not_recorded:
+        rules = ", ".join(sorted({s.rule for s in not_recorded}))
+        hint = _CAPTURE_HINT.get(fmt or "native", _CAPTURE_HINT["native"])
+        where = f" (see docs/integrations/{fmt}.md)" if fmt and fmt != "native" else ""
+        gaps.append(
+            f"  - Tool content not recorded ({rules}): the trace didn't capture some tool "
+            f"arguments or results, so those rules abstained."
+        )
+        gaps.append(f"    Fix the capture, not the contract -> {hint}{where}.")
+
+    needs_contract = by_category.get(SUPPRESS_NEEDS_CONTRACT, [])
+    if needs_contract:
+        rules = ", ".join(sorted({s.rule for s in needs_contract}))
+        if has_tools:
+            gaps.append(
+                f"  - Missing contract facts ({rules}): a declared tool lacks a schema / "
+                f"failure_when / side_effecting."
+            )
+            gaps.append("    Fill the gaps in your tools.json (each suppression names which).")
+        else:
+            gaps.append(
+                f"  - No tools.json ({rules}): these rules need declared tool schemas or metadata."
+            )
+            gaps.append("    Run `tracelint init <trace> -o tools.json`, then pass it to --tools.")
+
+    if gaps:
+        lines.append("")
+        lines.append("What's limiting the check:")
+        lines.extend(gaps)
+    else:
+        lines.append("")
+        lines.append("No instrumentation or contract gaps: the traces carry what the rules need.")
+
+    coverage: dict[str, list[int]] = {}
+    units: dict[str, str] = {}
+    for r in reports:
+        for c in r.coverage:
+            agg = coverage.setdefault(c.rule, [0, 0])
+            agg[0] += c.evaluatable
+            agg[1] += c.total
+            units[c.rule] = c.unit
+    if coverage:
+        lines.append("")
+        lines.append("Coverage (evaluatable / total, across all traces):")
+        for rule_id in sorted(coverage):
+            evaluatable, total = coverage[rule_id]
+            lines.append(f"  {rule_id}  {evaluatable}/{total} {units[rule_id]}")
+
+    not_applicable = by_category.get(SUPPRESS_NOT_APPLICABLE, [])
+    if not_applicable:
+        rules = ", ".join(sorted({s.rule for s in not_applicable}))
+        lines.append("")
+        lines.append(f"Not applicable to these traces (no gap): {rules}.")
+
+    return "\n".join(lines)
