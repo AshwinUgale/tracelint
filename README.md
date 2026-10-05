@@ -149,6 +149,7 @@ for report in lint_otel_traces(spans):   # spans: your OpenInference span export
 | R9 | unmet precondition — a tool ran although a call its contract `requires` had failed or not returned first | `hard_defect` (declared in `tools.json`) |
 | R10 | result contract — a tool's result violates the output JSON Schema its contract declares (e.g. MCP `outputSchema`) | `hard_event` (opt-in; only tools with an `output_schema`) |
 | R11 | contract drift — a tool's schema carried in the trace differs from the committed `tools.json` | `hard_event` (opt-in; needs an inline and a committed schema) |
+| R12 | unresolved side effect — a side-effecting call with no recorded outcome, or a failure nothing recovered | `candidate` (opt-in; per side-effecting tool) |
 
 `hard_event` and `hard_defect` are orthogonal to the finding kind: a tool-error event is a
 `hard_event` from a structured signal (the span's or run's own error status, a LangChain

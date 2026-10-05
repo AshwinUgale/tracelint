@@ -106,6 +106,14 @@ _RULE_META: dict[str, dict[str, str]] = {
         "text": "A tool's schema in the trace differs from the committed tools.json contract.",
         "level": "warning",
     },
+    "R12": {
+        "name": "UnresolvedSideEffect",
+        "text": (
+            "A side-effecting call whose outcome the trace never resolved (no result, or a "
+            "failure nothing recovered)."
+        ),
+        "level": "note",
+    },
 }
 
 

@@ -17,6 +17,7 @@ from tracelint.rules.result_contract import ResultContractRule
 from tracelint.rules.schema_violation import SchemaViolationRule
 from tracelint.rules.side_effects import DuplicateSideEffectRule
 from tracelint.rules.tool_integrity import MalformedArgumentsRule, UnknownToolRule
+from tracelint.rules.unresolved_side_effect import UnresolvedSideEffectRule
 
 # Every implemented rule class, in run order. Each phase appends here.
 _RULE_CLASSES: list[type[Rule]] = [
@@ -32,6 +33,7 @@ _RULE_CLASSES: list[type[Rule]] = [
     PreconditionRule,
     ResultContractRule,
     ContractDriftRule,
+    UnresolvedSideEffectRule,
 ]
 
 

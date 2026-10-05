@@ -6,6 +6,17 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: R12, unresolved side effect.** The side-effect-integrity arc's last core rule, and the
+  case R2 misses: not "the agent ignored an error" but "the agent never found out." R12 flags a
+  side-effecting tool whose last call has no recorded outcome, or failed with nothing after it
+  succeeding. It is a `candidate`, fail-closed (the ROADMAP's explicit tier call): a missing
+  result could be a truncated capture as easily as a real hang, so R12 discloses a signal for
+  review and never asserts a defect — and marks it a possible false positive when the call sits
+  at the very end of the trace, dropping that caution when the run clearly continued past it.
+  Opt-in: only side-effecting tools, judged per tool on its last call, so a later success
+  recovers an earlier failure. Independent read-back confirmation (a declared `confirmed_by`) is
+  the deeper, deferred half.
+
 - **New: R11, contract drift.** Some traces carry each tool's run-time schema inline (OTel /
   OpenInference tool definitions, an OpenAI `tools` block, on `ToolCall.schema`). R11 compares
   that against the committed `tools.json` structurally — property names, each property's `type`,

@@ -38,10 +38,19 @@ encountering it on a real trace, not the suggestion itself.
   matches). A `hard_event`: certain, but about the contract, not the agent's run, so shown and
   opt-in to gate. Fires only where both an inline and a committed schema exist and declare
   properties.
+- **R12 — unresolved side effect** — a side-effecting tool whose last call has no recorded
+  outcome, or failed with nothing after it succeeding: the "agent never found out" case R2
+  misses. A `candidate`, fail-closed (a missing result could be a truncated capture, flagged a
+  possible false positive at the trace end); never a `hard_defect`. The independent read-back
+  half (`confirmed_by`) is still below.
 
 ## Candidate rules
 
 ### Unconfirmed side effect (the second half of the side-effect story; takes the next free rule id)
+
+**Update:** the "no recorded outcome / failed-and-unrecovered" core shipped as **R12** (above).
+What remains below is the deeper half — *independent* confirmation via a declared `confirmed_by`
+read-back.
 
 Today R2 catches *known* failures: a tool returned an error and the agent proceeded (R2a/R2b), or a
 value only the failed result supplied was used in a later side-effecting call. It does **not** catch the case where the
