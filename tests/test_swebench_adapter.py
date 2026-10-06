@@ -56,7 +56,8 @@ def test_run_id_and_tool_calls_exclude_think():
     tr = _trace()
     assert tr.run_id == "sub/inst-1"
     names = [s.name for s in tr.steps if isinstance(s, ToolCall)]
-    assert names == ["execute_bash", "execute_bash", "str_replace_editor"]
+    # str_replace_editor is split by its command so edits can be side-effecting, views not.
+    assert names == ["execute_bash", "execute_bash", "str_replace_editor.view"]
 
 
 def test_think_becomes_a_thought_message():
@@ -96,3 +97,43 @@ def test_user_issue_is_seeded_for_provenance():
         isinstance(s, Message) and s.role is Role.USER and "Fix the bug" in s.content
         for s in tr.steps
     )
+
+
+def test_editor_split_by_command():
+    msgs = [
+        {"role": "user", "content": [{"type": "text", "text": "fix it"}]},
+        _call("c1", "str_replace_editor", {"command": "str_replace", "path": "/a.py",
+                                           "old_str": "x", "new_str": "y"}),
+        _obs("c1", "str_replace_editor", "edited\n[The command completed with exit code 0.]"),
+    ]
+    tr = trajectory_to_trace(msgs, run_id="s/i")
+    call = next(s for s in tr.steps if isinstance(s, ToolCall))
+    assert call.name == "str_replace_editor.str_replace"
+
+
+# --- OpenHands text format (weaker models, e.g. Devstral) --------------------------------
+
+TEXT_MESSAGES = [
+    {"role": "system", "content": "You are OpenHands."},
+    {"role": "user", "content": "<issue_description>Fix foo</issue_description>"},
+    {"role": "assistant", "content": "Let me look.\n<function=execute_bash>\n"
+     "<parameter=command>ls -la</parameter>\n</function>"},
+    {"role": "user", "content": "EXECUTION RESULT of [execute_bash]:\nfoo.py\n"
+     "[The command completed with exit code 0.]"},
+    {"role": "assistant", "content": "Now edit.\n<function=str_replace_editor>\n"
+     "<parameter=command>str_replace</parameter>\n<parameter=path>/foo.py</parameter>\n"
+     "<parameter=old_str>x</parameter>\n<parameter=new_str>y</parameter>\n</function>"},
+    {"role": "user", "content": "EXECUTION RESULT of [str_replace_editor]:\n"
+     "The file /foo.py has been edited.\n[The command completed with exit code 0.]"},
+]
+
+
+def test_text_format_actions_and_observations():
+    tr = trajectory_to_trace(TEXT_MESSAGES, run_id="s/i")
+    calls = [s for s in tr.steps if isinstance(s, ToolCall)]
+    assert [c.name for c in calls] == ["execute_bash", "str_replace_editor.str_replace"]
+    assert calls[0].args["command"] == "ls -la"
+    assert calls[1].args["path"] == "/foo.py"
+    results = {s.call_id: s for s in tr.steps if isinstance(s, ToolResult)}
+    assert all(r.status is ResultStatus.OK for r in results.values())  # both exited 0
+    assert "foo.py" in tr.result_for(calls[0]).content
