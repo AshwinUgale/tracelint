@@ -57,12 +57,21 @@ code (`0→ok`, `≠0→error`, absent→`unknown`), so R2a fires on the structu
 
 ## Contract (`tools.json`)
 
-Registry = exactly these tools → anything else is **R7**. `execute_bash` and `str_replace_editor.view`
-are **not** side-effecting; `str_replace_editor.{str_replace,insert,create}` are (`idempotent:false`)
+Registry = the **complete** OpenHands toolset enumerated across all 1,494 trajectories:
+`execute_bash`, `str_replace_editor.{view, create, str_replace, insert, undo_edit}`, and `think`
+(mapped to a thought). Anything else is **R7** — a genuinely hallucinated tool. `execute_bash` and
+`…view` are **not** side-effecting; `…{str_replace, insert, create, undo_edit}` are (`idempotent:false`)
 — enabling **R8** (duplicate edit) and **R2b** (a failed command's value reused in an edit). Schemas
-carry required args for **R1**. `execute_bash` is not side-effecting in v1 on purpose (side effects
-are per-command — `cat`/`pytest` are reads, `git commit` is a write — and a static contract can't
-split a shell string; marking it true would make R8/R5 over-fire on legit repeated `pytest`).
+carry required args for **R1**; the editor `command` is a `const` per sub-tool, so R1 still validates
+it while **R3 skips it** (it's a fixed keyword, not a value to derive). `execute_bash` is not
+side-effecting in v1 on purpose (side effects are per-command — `cat`/`pytest` are reads, `git commit`
+is a write — and a static contract can't split a shell string; marking it true would make R8/R5
+over-fire on legit repeated `pytest`).
+
+> Note from the first full run: **R7 = 0 across the corpus** — these agents never hallucinated a tool
+> (OpenHands constrains the toolset via structured tool-calling). The initial R7 hits were a single
+> real editor command (`undo_edit`) missing from the registry, now added — an honest null result for
+> R7 on this scaffold.
 
 ## Runner (`run.py`)
 
