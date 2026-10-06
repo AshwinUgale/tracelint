@@ -1,0 +1,63 @@
+{
+  "_comment": "OpenHands SWE-bench tool contract (experiment v1). Registry = exactly these tools; anything else the model emits is R7 (unknown tool). str_replace_editor is split by command (see adapter.py) so a write is side-effecting while a view is not. execute_bash is NOT side-effecting in v1: side effects are per-command (cat/pytest are reads, git commit is a write) and a static contract can't split a shell string, so marking it true would make R8/R5 over-fire on legitimate repeated pytest runs; R8-on-shell is out of scope for v1.",
+  "tools": {
+    "execute_bash": {
+      "schema": {
+        "type": "object",
+        "properties": {"command": {"type": "string"}, "timeout": {"type": "number"}},
+        "required": ["command"]
+      },
+      "metadata": {"side_effecting": false}
+    },
+    "str_replace_editor.view": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string"},
+          "path": {"type": "string"},
+          "view_range": {"type": "array"}
+        },
+        "required": ["command", "path"]
+      },
+      "metadata": {"side_effecting": false}
+    },
+    "str_replace_editor.create": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string"},
+          "path": {"type": "string"},
+          "file_text": {"type": "string"}
+        },
+        "required": ["command", "path", "file_text"]
+      },
+      "metadata": {"side_effecting": true, "idempotent": false}
+    },
+    "str_replace_editor.str_replace": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string"},
+          "path": {"type": "string"},
+          "old_str": {"type": "string"},
+          "new_str": {"type": "string"}
+        },
+        "required": ["command", "path", "old_str", "new_str"]
+      },
+      "metadata": {"side_effecting": true, "idempotent": false}
+    },
+    "str_replace_editor.insert": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "command": {"type": "string"},
+          "path": {"type": "string"},
+          "insert_line": {"type": "number"},
+          "new_str": {"type": "string"}
+        },
+        "required": ["command", "path", "new_str"]
+      },
+      "metadata": {"side_effecting": true, "idempotent": false}
+    }
+  }
+}
