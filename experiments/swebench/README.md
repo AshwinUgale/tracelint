@@ -9,12 +9,10 @@ calls**. No third-party trajectory data is committed — the runner reads it fro
 
 ## Status
 
-- **Shipped:** the trajectory → `Trace` adapter (`adapter.py`), the tool contract (`tools.json`),
-  and the runner (`run.py`, Run A keyless vs Run B with the contract). Validated on the real 2025
-  OpenHands Verified submissions.
-- **Next:** the metrics/analysis step — aggregates with Wilson intervals, census, outcome
-  association (2×2 vs `resolved`), and the stratified audit sample for hand-labeling. This is where
-  the full ~300 MB corpus is downloaded and the numbers are produced.
+The full pipeline is in: `fetch.py` (download), `adapter.py` (trajectory → `Trace`), `tools.json`
+(contract), `run.py` (Run A keyless vs Run B with the contract), and `analyze.py` (aggregates with
+Wilson intervals, census, before/after, outcome association, and the stratified audit sample). The
+remaining step is **human**: label the audit sample TP/FP, which turns the census into precision.
 
 ## Corpus (verified 2026-10-06)
 
@@ -92,7 +90,33 @@ totals. Zero model calls; wall-clock is reported.
 - Precision + association, **not recall**: most failed runs fail on *reasoning*, not structure, so
   recall vs `unresolved` is expected to be modest; precision-when-a-rule-fires is the number.
 
-## Reproduce / tests
+## Analysis (`analyze.py`)
 
-`pytest tests/test_swebench_adapter.py tests/test_swebench_run.py` (synthetic fixtures of both
-encodings — no data needed).
+Reads every `per_trajectory.csv` / `per_finding.csv` under `--runs` and writes `aggregates.json` +
+`audit_sample.csv`:
+
+- **exit-code coverage** (overall + per model);
+- **census** — per model, per rule/tier, the fraction of trajectories with ≥1 finding, each with a
+  Wilson 95% interval;
+- **before/after** — Run A (keyless) → Run B (contract): suppressed, hard-defect trajectories, R2a
+  hard vs candidate;
+- **outcome association** — for each predicate (`any_hard_defect`, `any_hard_event`, `R2a_hard`, `R4`,
+  `R8`, `R7`): P(unresolved | fired) vs P(unresolved | not fired), lift, and recall — does a finding
+  predict the run *failing*? Overall and per model;
+- **`audit_sample.csv`** — a stratified sample (up to N per rule, Run B + Run A's R2a) with an empty
+  `label` column for the hand audit. Labeling it TP/FP is what turns the census into **precision**.
+
+## Reproduce the whole study
+
+```bash
+DATA=./swebench_data   # outside the repo; ~274 MB for the three submissions
+for S in 20250524_openhands_claude_4_sonnet 20250807_openhands_gpt5 20250520_openhands_devstral_small; do
+  python experiments/swebench/fetch.py --submission "$S" --out "$DATA"
+  python experiments/swebench/run.py --submission "$S" --trajs "$DATA/$S/trajs" \
+    --results "$DATA/$S/results.json" --tools experiments/swebench/tools.json --out runs/"$S"
+done
+python experiments/swebench/analyze.py --runs runs --out results
+```
+
+Tests (no data needed — synthetic fixtures of both encodings):
+`pytest tests/test_swebench_adapter.py tests/test_swebench_run.py tests/test_swebench_analyze.py`.
