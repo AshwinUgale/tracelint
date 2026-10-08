@@ -2,6 +2,7 @@
 
     tracelint check ./trace.json --tools ./tools.json          # exit 2 on a hard_defect
     tracelint check ./spans.json --format openinference        # lint OTel/OpenInference spans
+    tracelint check ./jobs/*/*/agent/trajectory.json --format atif   # lint Harbor ATIF runs
     tracelint check ./traces/*.jsonl --rules R1 --json out.json --include-candidates
     tracelint check ./spans.json --sarif out.sarif             # for GitHub code scanning
 
@@ -93,7 +94,8 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "input format (default: the config's, else native tracelint JSON). openinference/otel "
             "reads OpenTelemetry/OpenInference spans (Phoenix, OTLP, TRAIL); openai reads a chat "
-            "message list; langfuse reads a Langfuse trace; langsmith reads a LangSmith run"
+            "message list; langfuse reads a Langfuse trace; langsmith reads a LangSmith run; "
+            "atif reads a Harbor ATIF trajectory (agent/trajectory.json)"
         ),
     )
     check.add_argument(

@@ -390,7 +390,9 @@ def test_wrong_format_is_an_input_error_that_names_the_right_one(tmp_path, doc, 
         load_source(_write(tmp_path, doc), fmt)
 
 
-@pytest.mark.parametrize("fmt", ["native", "openinference", "openai", "langfuse", "langsmith"])
+@pytest.mark.parametrize(
+    "fmt", ["native", "openinference", "openai", "langfuse", "langsmith", "atif"]
+)
 @pytest.mark.parametrize(("name", "content"), [("e.json", "[]"), ("e.jsonl", ""), ("e.json", "{}")])
 def test_empty_input_is_an_input_error(tmp_path, fmt, name, content):
     path = tmp_path / name

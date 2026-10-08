@@ -16,6 +16,8 @@ Supported ``--format`` values:
 - ``openai``                 an OpenAI chat-completions message list (or ``{"messages": [...]}``).
 - ``langfuse``               a Langfuse trace object (or a JSON array of them).
 - ``langsmith``              a LangSmith run tree (or a JSON array of them).
+- ``atif``                   a Harbor ATIF trajectory (``agent/trajectory.json``), or a JSON array
+  of them; each embedded subagent trajectory is linted as its own run.
 
 Consistent with the rest of the tool, a loader never guesses beyond the shapes its adapter
 documents. Multi-trace inputs fan out to one :class:`Trace` each: a JSON array, an OTLP export
@@ -37,6 +39,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from tracelint.adapters.atif import from_atif_trajectories, from_atif_trajectory, is_atif
 from tracelint.adapters.langfuse import from_langfuse_trace
 from tracelint.adapters.langsmith import from_langsmith_run
 from tracelint.adapters.openai import from_openai_messages
@@ -54,10 +57,19 @@ OTEL = "otel"
 OPENAI = "openai"
 LANGFUSE = "langfuse"
 LANGSMITH = "langsmith"
+ATIF = "atif"
 
 #: Every value accepted by ``load_source``/``tracelint check --format``. ``openinference`` and
 #: ``otel`` are aliases for the same OpenTelemetry/OpenInference reader.
-SUPPORTED_FORMATS: tuple[str, ...] = (NATIVE, OPENINFERENCE, OTEL, OPENAI, LANGFUSE, LANGSMITH)
+SUPPORTED_FORMATS: tuple[str, ...] = (
+    NATIVE,
+    OPENINFERENCE,
+    OTEL,
+    OPENAI,
+    LANGFUSE,
+    LANGSMITH,
+    ATIF,
+)
 
 
 # --- One-call convenience linters ---------------------------------------------------
@@ -132,6 +144,19 @@ def lint_langsmith_trace(
 ) -> LintReport:
     """Lint a LangSmith run tree in one call."""
     trace = from_langsmith_run(run, run_id=run_id)
+    return lint_trace(trace, rules or default_rules(), registry)
+
+
+def lint_atif_trajectory(
+    trajectory: dict[str, Any],
+    rules: list[Rule] | None = None,
+    registry: ToolRegistry | None = None,
+    *,
+    run_id: str | None = None,
+) -> LintReport:
+    """Lint a Harbor ATIF trajectory (its own steps; lint embedded subagents with
+    :func:`~tracelint.adapters.from_atif_trajectories`) in one call."""
+    trace = from_atif_trajectory(trajectory, run_id=run_id)
     return lint_trace(trace, rules or default_rules(), registry)
 
 
@@ -243,7 +268,8 @@ def _native_traces(path: str | Path) -> list[Trace]:
     else:
         units = [unit for doc in docs for unit in (doc if isinstance(doc, list) else [doc])]
     for i, unit in enumerate(units):
-        if not (isinstance(unit, dict) and isinstance(unit.get("steps"), list)):
+        # An ATIF trajectory has a ``steps`` list too, but its steps are not native steps.
+        if not (isinstance(unit, dict) and isinstance(unit.get("steps"), list)) or is_atif(unit):
             where = f"{path}, line {i + 1}" if jsonl else str(path)
             raise _wrong_format(where, NATIVE, unit)
     return [Trace.from_dict(unit) for unit in units]
@@ -257,6 +283,7 @@ _FORMAT_NAMES = {
     OPENAI: "OpenAI chat messages",
     LANGFUSE: "Langfuse traces",
     LANGSMITH: "LangSmith runs",
+    ATIF: "Harbor ATIF trajectories",
 }
 
 # Keys only a span record carries (flat Phoenix columns, OTel SDK / OTLP spans, TRAIL). A trace id
@@ -281,6 +308,8 @@ def _looks_like(doc: Any) -> str | None:
         return next((fmt for fmt in map(_looks_like, doc) if fmt), None)
     if not isinstance(doc, dict):
         return None
+    if is_atif(doc):  # before native: an ATIF trajectory also has a ``steps`` list
+        return ATIF
     if isinstance(doc.get("steps"), list):
         return NATIVE
     if "resourceSpans" in doc or "resource_spans" in doc:
@@ -329,6 +358,8 @@ def _traces_from_doc(doc: Any, fmt: str, *, tool_names: list[str] | set[str] | N
         return _langfuse_traces(doc, tool_names=tool_names)
     if fmt == LANGSMITH:
         return _langsmith_traces(doc)
+    if fmt == ATIF:
+        return _atif_traces(doc)
     raise ValueError(f"unknown --format {fmt!r}")  # pragma: no cover - guarded in load_source
 
 
@@ -499,4 +530,20 @@ def _langsmith_traces(doc: Any) -> list[Trace]:
         return traces
     if isinstance(doc, dict):
         return [from_langsmith_run(doc)]
+    return []
+
+
+# --- Harbor ATIF --------------------------------------------------------------------
+
+
+def _atif_traces(doc: Any) -> list[Trace]:
+    """Each ATIF trajectory in ``doc`` (one, or a JSON array), plus its embedded subagents. A
+    document that is not ATIF yields nothing, so the error names the format it looks like."""
+    if isinstance(doc, list):
+        traces: list[Trace] = []
+        for item in doc:
+            traces.extend(_atif_traces(item))
+        return traces
+    if is_atif(doc):
+        return from_atif_trajectories(doc)
     return []

@@ -14,7 +14,7 @@ inputs:
     required: false
     default: ""
   format:
-    description: "Input format: native | openinference | otel | openai | langfuse | langsmith. Input that doesn't match it fails the step (exit 3), naming the format it looks like. Default: the project config's format, else native."
+    description: "Input format: native | openinference | otel | openai | langfuse | langsmith | atif. Input that doesn't match it fails the step (exit 3), naming the format it looks like. Default: the project config's format, else native."
     required: false
     default: ""
   rules:

@@ -6,6 +6,22 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: Harbor ATIF trajectories (`--format atif`).** tracelint reads the Agent Trajectory
+  Interchange Format that [Harbor](https://github.com/harbor-framework/harbor) writes for every run
+  (`agent/trajectory.json`) — one reader for every agent Harbor runs (Claude Code, Codex, Gemini
+  CLI, OpenHands, Terminus, …), ATIF v1.2–v1.8. Embedded subagents are linted as their own runs;
+  steps copied in after a context summary are context, not replayed as new calls; the one terminal
+  screen Terminus records per batch of calls is paired with the batch's last call. ATIF has no
+  result-status field, so a failed tool is read only from the structured signals producers write
+  (`extra.is_error`, `extra.tool_result_is_error`, Harbor's `[error] tool reported failure` line,
+  `extra.status`, an exit code of 0 for success) — a non-zero exit code stays unknown, since `grep`
+  with no match exits 1 on a healthy run. Tool definitions feed `tracelint init`; library users get
+  `from_atif_trajectory`, `from_atif_trajectories`, `atif_tools_to_registry`, and
+  `lint_atif_trajectory`. An ATIF file read as native (the default) is now an input error naming
+  `--format atif`, where before it failed with an unrelated "unknown step type". Validated on real
+  trajectories from 21 harnesses on the public Terminal-Bench 2.0 leaderboard; see
+  `docs/integrations/atif.md`.
+
 - **Docs: a precision study on real agent trajectories.** `docs/experiments/swe-bench-precision.md`
   writes up a precision / over-fire probe on 200 real, verified-correct agent trajectories (the
   work that motivated the R3 fix below): 0/200 false CI failures, the loop rule holds on retries

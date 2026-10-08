@@ -109,6 +109,7 @@ tracelint check spans.json    --format openinference   # OTel/OpenInference: Pho
 tracelint check messages.json --format openai          # an OpenAI chat message list
 tracelint check trace.json    --format langfuse        # a Langfuse trace export
 tracelint check run.json      --format langsmith       # a LangSmith run tree export
+tracelint check trajectory.json --format atif          # a Harbor ATIF trajectory (any agent)
 ```
 
 **OpenTelemetry / [OpenInference](https://github.com/Arize-ai/openinference) is a *format*, not a
@@ -253,7 +254,7 @@ proposes `requires` for calls that followed others.
 
 The rules run against **one canonical trace schema**; a thin **adapter** translates each source's
 format into it, so the rules never change: `from_openai_messages`, `from_langfuse_trace`,
-`from_langsmith_run`, and `from_otel_spans`. The adapters are validated against live data, not just
+`from_langsmith_run`, `from_otel_spans`, and `from_atif_trajectory`. The adapters are validated against live data, not just
 the spec — `from_otel_spans` on real [TRAIL](https://huggingface.co/datasets/PatronusAI/TRAIL)
 benchmark traces, where tracelint deterministically localized real tool errors, a malformed call,
 and excessive-retry loops with no model in the loop. Real exports vary, so a new source may need a
@@ -280,6 +281,9 @@ has short, reproducible one-pagers, each validated on a **real captured trace**:
   [LangSmith](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/langsmith.md) ·
   [OpenLLMetry / Traceloop](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/otel.md) ·
   [OpenAI / ShareGPT message lists](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/openai.md).
+- **Agent harnesses (benchmark and RL runs):**
+  [Harbor / ATIF](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/atif.md) —
+  one reader for every agent Harbor runs (Terminal-Bench and the datasets in its registry).
 - **Eval suites (already running one?):** tracelint drops in as a deterministic, judge-free check —
   [DeepEval](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/deepeval.md)
   (`TracelintMetric`, via `pip install "tracelint[deepeval]"`) or
