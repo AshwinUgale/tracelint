@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import ast
 import json
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -82,9 +83,12 @@ def _json_like(value: Any, depth: int = 0) -> bool:
 
 def _literal(raw: str) -> tuple[Any, bool]:
     """``ast.literal_eval`` (literals only — no code execution), accepted only when the result is
-    JSON-like; ``(raw, False)`` otherwise."""
+    JSON-like; ``(raw, False)`` otherwise. Tool output is not code, so the parser's
+    ``SyntaxWarning`` on text such as ``1.5x`` is silenced rather than printed to the user."""
     try:
-        value = ast.literal_eval(raw)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            value = ast.literal_eval(raw)
     except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
         return raw, False
     return (value, True) if _json_like(value) else (raw, False)

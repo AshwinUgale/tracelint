@@ -13,6 +13,8 @@ a real user's weird trace could crash the tool.
 
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from tracelint.adapters import (
@@ -161,6 +163,21 @@ def test_python_dict_repr_is_still_parsed():
         ]
     )
     assert trace.tool_results()[0].content == {"ok": True, "n": (1, 2)}
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        '{"path": "C:\\<dir>"}',  # an invalid escape in JSON-looking output
+        "for i in range(3for",  # a number running into a keyword
+    ],
+)
+def test_tool_output_that_looks_like_bad_python_prints_no_warning(printed):
+    # Trying such output as a Python literal made the parser print SyntaxWarnings to stderr.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        from_openai_messages([{"role": "tool", "tool_call_id": "c1", "content": printed}])
+    assert not [w for w in caught if issubclass(w.category, SyntaxWarning)]
 
 
 # --- CLI never crashes: any garbage file exits cleanly (0/2/3), never a traceback ---------

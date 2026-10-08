@@ -11,7 +11,9 @@ additive features; the public API is not yet frozen).
   a printed value with tuple or mixed-type keys — e.g. a color counter's
   `{(0, 0, 0): 287982}` — became a dict nothing downstream could serialize, so the rules crashed and
   `tracelint check` exited 3 on a valid run (found on a real Terminal-Bench trajectory). Such a
-  value now stays as text; ordinary `str(dict)` output is still parsed.
+  value now stays as text; ordinary `str(dict)` output is still parsed. Trying tool output as a
+  Python literal also no longer prints the parser's `SyntaxWarning`s (e.g. for a printed
+  `"C:\<dir>"`) to stderr.
 
 - **New: Harbor ATIF trajectories (`--format atif`).** tracelint reads the Agent Trajectory
   Interchange Format that [Harbor](https://github.com/harbor-framework/harbor) writes for every run
