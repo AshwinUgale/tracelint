@@ -89,6 +89,20 @@ def test_a_wait_whose_screen_changes_is_told_apart(tmp_path):
     assert loop["runs_to_end"] == 0 and row["n_wait_loops"] == 1
 
 
+def test_a_poll_that_differs_only_by_its_chunk_id_is_not_progress(tmp_path):
+    # Codex-style polls of a running process: a fresh random chunk id and wall time each time,
+    # no new output — the same state, so not "changing".
+    poll = {"session_id": 7, "chars": ""}
+    outputs = [f"Chunk ID: {cid}\nWall time: 5.00{i} seconds\nProcess running\nOutput:\n"
+               for i, cid in enumerate(["23913d", "0b182f", "d2be97"])]
+    turns = [_turn(2 + i, f"p{i}", poll, out, second=5 * i, name="write_stdin")
+             for i, out in enumerate(outputs)]
+    _, loops, _ = analyze_trial(_write_trial(tmp_path, turns), submission="H__M")
+    (loop,) = loops
+    assert loop["is_wait"] == 1
+    assert (loop["distinct_results"], loop["distinct_results_norm"]) == (3, 1)
+
+
 def test_trial_dirs_finds_complete_trials_only(tmp_path):
     _write_trial(tmp_path, [_turn(2, "c", {"command": "ls"}, "x", second=1)])
     (tmp_path / "H__M" / "job-1" / "partial__Y").mkdir()

@@ -47,6 +47,7 @@ RULE_TIERS = [
 ]
 TIMEOUT = "AgentTimeoutError"
 _WAIT = re.compile(r"^\s*(sleep|wait)\b")
+_HEX_ID = re.compile(r"\b(?=[0-9a-f]*\d)[0-9a-f]{6,}\b", re.IGNORECASE)  # chunk ids, hashes
 _DIGITS = re.compile(r"\d+")
 _SPACE = re.compile(r"\s+")
 
@@ -104,10 +105,10 @@ def _is_wait(call: ToolCall) -> bool:
 
 
 def _normalized(result: Any) -> str:
-    """A result's content with numbers and whitespace runs collapsed, so outputs that differ only
-    by a timestamp, pid, or counter compare equal."""
+    """A result's content with ids, numbers and whitespace runs collapsed, so outputs that differ
+    only by a timestamp, pid, counter, or a random chunk id (Codex's polls) compare equal."""
     text = "" if result is None else _excerpt(result.content, 1_000_000)
-    return _SPACE.sub(" ", _DIGITS.sub("0", text)).strip()
+    return _SPACE.sub(" ", _DIGITS.sub("0", _HEX_ID.sub("#", text))).strip()
 
 
 def _excerpt(value: Any, n: int) -> str:
