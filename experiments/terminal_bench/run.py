@@ -28,7 +28,7 @@ import json
 import re
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +36,7 @@ from tracelint.adapters.atif import from_atif_trajectory
 from tracelint.findings import LintReport
 from tracelint.rules import default_rules, lint_trace
 from tracelint.rules.loops import LOOP_THRESHOLD
-from tracelint.signatures import call_args_key, result_class, result_fingerprint
+from tracelint.signatures import call_args_key, looks_empty, result_class, result_fingerprint
 from tracelint.tools import ToolRegistry
 from tracelint.trace import ResultStatus, ToolCall, Trace
 
@@ -47,6 +47,11 @@ RULE_TIERS = [
 ]
 TIMEOUT = "AgentTimeoutError"
 _WAIT = re.compile(r"^\s*(sleep|wait)\b")
+_WAIT_TOOL = re.compile(r"(^|[_.\-])(wait|poll|sleep)([_.\-]|$)", re.IGNORECASE)
+_DESCRIPTIVE = frozenset(
+    {"summary", "description", "reason", "explanation", "thought", "title", "note", "comment"}
+)
+_HEX_ID = re.compile(r"\b(?=[0-9a-f]*\d)[0-9a-f]{6,}\b", re.IGNORECASE)  # chunk ids, hashes
 _DIGITS = re.compile(r"\d+")
 _SPACE = re.compile(r"\s+")
 
@@ -59,13 +64,18 @@ def load_trial(trial_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def _ts(value: Any) -> float | None:
-    """Epoch seconds from an ISO-8601 timestamp (``...Z``), or ``None``."""
+    """Epoch seconds from an ISO-8601 timestamp, or ``None``. Harbor writes UTC, but some producers
+    drop the offset (``...Z`` / ``+00:00`` in one file, naive in another) — a naive time is UTC, not
+    this machine's local time, or the two clocks disagree by hours."""
     if not isinstance(value, str) or not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.timestamp()
 
 
 def _tokens(step: dict[str, Any]) -> int | None:
@@ -97,17 +107,21 @@ def agent_turns(doc: dict[str, Any]) -> tuple[dict[str, int], list[Turn]]:
 
 
 def _is_wait(call: ToolCall) -> bool:
-    """A poll of something running: every text argument is empty (Terminus's ``keystrokes: ""``) or
-    a ``sleep`` / ``wait`` command."""
-    texts = [v for v in call.args.values() if isinstance(v, str)]
+    """A poll of something running: a tool named for it (``wait_shell_command``), or every input
+    argument empty (Terminus's ``keystrokes: ""``, Codex's ``chars: ""``) or a ``sleep`` / ``wait``
+    command. Descriptive arguments (a ``summary`` such as "Polling the build") aren't input."""
+    if _WAIT_TOOL.search(call.name):
+        return True
+    texts = [v for k, v in call.args.items()
+             if isinstance(v, str) and str(k).lower() not in _DESCRIPTIVE]
     return bool(texts) and all(not t.strip() or _WAIT.match(t) for t in texts)
 
 
 def _normalized(result: Any) -> str:
-    """A result's content with numbers and whitespace runs collapsed, so outputs that differ only
-    by a timestamp, pid, or counter compare equal."""
+    """A result's content with ids, numbers and whitespace runs collapsed, so outputs that differ
+    only by a timestamp, pid, counter, or a random chunk id (Codex's polls) compare equal."""
     text = "" if result is None else _excerpt(result.content, 1_000_000)
-    return _SPACE.sub(" ", _DIGITS.sub("0", text)).strip()
+    return _SPACE.sub(" ", _DIGITS.sub("0", _HEX_ID.sub("#", text))).strip()
 
 
 def _excerpt(value: Any, n: int) -> str:
@@ -132,15 +146,22 @@ def _loops(trace: Trace, report: LintReport, call_turn, turns, finished):
         later = [c for c in calls if c.index > idx[-1] and (c.name, call_args_key(c)) == key]
         advanced = any(result_fingerprint(trace.result_for(c)) != fp for c in later)
         streak_results = [trace.result_for(by_index[i]) for i in idx]
+        recorded = [r for r in streak_results if r is not None]
         turn = call_turn.get(detect.call_id)
         row = {
             "tool": head.name,
             "args": _excerpt(head.args, 120),
             "repeats": len(idx),
-            # R4 compares only a coarse result class; these say whether the outputs really were
-            # the same (exactly / ignoring numbers and whitespace) — the audit's ground truth.
-            "distinct_results": len({result_fingerprint(r) for r in streak_results}),
-            "distinct_results_norm": len({_normalized(r) for r in streak_results}),
+            # R4 compares only a coarse result class; these say whether the recorded outputs
+            # really were the same (exactly / ignoring numbers, ids, whitespace): ground truth.
+            "distinct_results": len({result_fingerprint(r) for r in recorded}),
+            "distinct_results_norm": len({_normalized(r) for r in recorded}),
+            # What the trace did NOT record: calls with no result (an earlier call in a Terminus
+            # batch), empty results, and a call recorded with no arguments (a server-side tool
+            # such as OpenAI's web_search). Repeats of unrecorded calls aren't evidence of a loop.
+            "missing_results": sum(r is None for r in streak_results),
+            "empty_results": sum(r is not None and looks_empty(r.content) for r in streak_results),
+            "args_empty": int(not head.args and head.args_unavailable is None),
             "result_class": result_class(result),
             "result_excerpt": _excerpt(result.content if result else "", 160),
             "is_wait": int(_is_wait(head)),
@@ -215,7 +236,6 @@ def analyze_trial(trial_dir: Path, *, submission: str, check_determinism: bool =
         "any_hard_defect": int(report.has_hard_defect),
         "n_loops": len(loops),
         "n_wait_loops": sum(r["is_wait"] for r in loops),
-        "n_identical_loops": sum(r["distinct_results_norm"] == 1 for r in loops),
         "max_repeats": max((r["repeats"] for r in loops), default=0),
         "loop_at_end": int(any(r["runs_to_end"] for r in loops)),
         "first_loop_turns_after": first["turns_after"] if first else "",

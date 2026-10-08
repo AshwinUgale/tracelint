@@ -69,7 +69,32 @@ def test_a_stuck_loop_to_the_timeout_is_measured_from_its_detection(tmp_path):
     assert loop["tokens_after"] == 200
     assert (loop["distinct_results"], loop["distinct_results_norm"]) == (1, 1)
     assert (loop["is_wait"], loop["runs_to_end"], loop["advanced_later"]) == (0, 1, 0)
-    assert row["n_identical_loops"] == 1
+    assert (loop["missing_results"], loop["empty_results"], loop["args_empty"]) == (0, 0, 0)
+
+
+def test_unrecorded_repeats_are_marked(tmp_path):
+    # A server-side tool recorded with no arguments and an empty result (OpenAI's web_search):
+    # three such calls look identical, but the trace doesn't show what they did.
+    turns = [_turn(2 + i, f"w{i}", {}, "", second=i, name="web_search") for i in range(3)]
+    _, loops, _ = analyze_trial(_write_trial(tmp_path, turns), submission="H__M")
+    (loop,) = loops
+    assert (loop["args_empty"], loop["empty_results"], loop["missing_results"]) == (1, 3, 0)
+
+
+def test_a_poll_with_a_summary_is_still_a_wait(tmp_path):
+    poll = {"session_id": 3, "chars": "", "summary": "Polling the build"}
+    turns = [_turn(2 + i, f"p{i}", poll, "Process running\nOutput:\n", second=i,
+                   name="write_stdin") for i in range(3)]
+    _, loops, _ = analyze_trial(_write_trial(tmp_path, turns), submission="H__M")
+    assert loops[0]["is_wait"] == 1
+
+
+def test_a_tool_named_for_waiting_is_a_wait(tmp_path):
+    poll = {"command_id": 6}
+    turns = [_turn(2 + i, f"w{i}", poll, "still running", second=i, name="wait_shell_command")
+             for i in range(3)]
+    _, loops, _ = analyze_trial(_write_trial(tmp_path, turns), submission="H__M")
+    assert loops[0]["is_wait"] == 1
 
 
 def test_a_wait_whose_screen_changes_is_told_apart(tmp_path):
@@ -87,6 +112,30 @@ def test_a_wait_whose_screen_changes_is_told_apart(tmp_path):
     assert loop["distinct_results"] == 3  # ...but the output changed every time
     assert loop["distinct_results_norm"] == 1  # only the numbers changed
     assert loop["runs_to_end"] == 0 and row["n_wait_loops"] == 1
+
+
+def test_a_poll_that_differs_only_by_its_chunk_id_is_not_progress(tmp_path):
+    # Codex-style polls of a running process: a fresh random chunk id and wall time each time,
+    # no new output — the same state, so not "changing".
+    poll = {"session_id": 7, "chars": ""}
+    outputs = [f"Chunk ID: {cid}\nWall time: 5.00{i} seconds\nProcess running\nOutput:\n"
+               for i, cid in enumerate(["23913d", "0b182f", "d2be97"])]
+    turns = [_turn(2 + i, f"p{i}", poll, out, second=5 * i, name="write_stdin")
+             for i, out in enumerate(outputs)]
+    _, loops, _ = analyze_trial(_write_trial(tmp_path, turns), submission="H__M")
+    (loop,) = loops
+    assert loop["is_wait"] == 1
+    assert (loop["distinct_results"], loop["distinct_results_norm"]) == (3, 1)
+
+
+def test_naive_and_utc_timestamps_share_one_clock():
+    # Producers mix "...Z", "+00:00" and naive times; Harbor's naive times are UTC.
+    from terminal_bench.run import _ts
+
+    assert _ts("2026-02-14T15:58:30") == _ts("2026-02-14T15:58:30Z") == _ts(
+        "2026-02-14T15:58:30+00:00"
+    )
+    assert _ts("not a time") is None and _ts(None) is None
 
 
 def test_trial_dirs_finds_complete_trials_only(tmp_path):
