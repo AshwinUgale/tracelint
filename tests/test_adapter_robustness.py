@@ -23,6 +23,7 @@ from tracelint.adapters import (
     from_otel_spans,
 )
 from tracelint.cli import main
+from tracelint.rules import default_rules, lint_trace
 from tracelint.trace import Trace
 
 CONTROLLED = (ValueError, TypeError)
@@ -124,6 +125,42 @@ def test_openai_skips_non_dict_items_instead_of_crashing():
 def test_openai_rejects_scalar_with_typeerror():
     with pytest.raises(TypeError):
         from_openai_messages(5)
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        "{(0, 0, 0): 287982, (168, 168, 168): 18}",  # a tool printing pixel counts (real ATIF run)
+        "{1: 'a', 'b': 2}",  # mixed key types: not sortable, not JSON
+        "{1, 2, 3}",  # a set
+    ],
+)
+def test_a_printed_python_value_json_cannot_hold_stays_text(printed):
+    # A tool's output that happens to be a Python literal JSON can't represent used to be parsed
+    # into it, and every rule that fingerprints a result then crashed (the CLI exited 3).
+    trace = from_openai_messages(
+        [
+            {"role": "assistant", "tool_calls": [
+                {"id": "c1", "function": {"name": "count_colors", "arguments": "{}"}}
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": printed},
+        ]
+    )
+    assert trace.tool_results()[0].content == printed
+    lint_trace(trace, default_rules(), None)  # must not raise
+
+
+def test_python_dict_repr_is_still_parsed():
+    # str(dict) output (single quotes, True, tuples) is still read as the structure it encodes.
+    trace = from_openai_messages(
+        [
+            {"role": "assistant", "tool_calls": [
+                {"id": "c1", "function": {"name": "get", "arguments": '{"id": "A1"}'}}
+            ]},
+            {"role": "tool", "tool_call_id": "c1", "content": "{'ok': True, 'n': (1, 2)}"},
+        ]
+    )
+    assert trace.tool_results()[0].content == {"ok": True, "n": (1, 2)}
 
 
 # --- CLI never crashes: any garbage file exits cleanly (0/2/3), never a traceback ---------

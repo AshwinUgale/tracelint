@@ -6,6 +6,13 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fix: a tool printing a Python value JSON can't hold no longer fails the check.** Result
+  content that is a Python literal (`str(dict)` output) is parsed into the structure it encodes, but
+  a printed value with tuple or mixed-type keys — e.g. a color counter's
+  `{(0, 0, 0): 287982}` — became a dict nothing downstream could serialize, so the rules crashed and
+  `tracelint check` exited 3 on a valid run (found on a real Terminal-Bench trajectory). Such a
+  value now stays as text; ordinary `str(dict)` output is still parsed.
+
 - **New: Harbor ATIF trajectories (`--format atif`).** tracelint reads the Agent Trajectory
   Interchange Format that [Harbor](https://github.com/harbor-framework/harbor) writes for every run
   (`agent/trajectory.json`) — one reader for every agent Harbor runs (Claude Code, Codex, Gemini
