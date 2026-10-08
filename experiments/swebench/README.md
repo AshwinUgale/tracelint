@@ -146,7 +146,27 @@ python experiments/swebench/audit_r2a.py summarize --labels experiments/swebench
 ```
 
 `r2a_audit_labels.csv` holds the 135 labels (ids, tier, exit code, tool, label, a one-line reason —
-no trajectory text); `sample` re-draws the same findings from the public data (seed `20261008`).
+no trajectory text); `sample` re-draws the same findings from the public data (seed `20261008`)
+when run against the study's original findings (tracelint at the audit, before the fix below).
+
+**Follow-up: R2a fixed, then checked on a held-out sample.** The fix (see CHANGELOG): non-zero exits
+that are conventions (a search that found nothing, a Ctrl-C the agent sent) are not errors, and the
+text heuristic counts only a line that *starts* with an error report. On the audited sample it drops
+exactly the 61 informational findings and keeps every error and expected failure — but that is
+in-sample. A fresh sample of what the fixed R2a flags (seed 7, none of the audited findings; 15
+exit-code + 10 string-match findings per submission), labeled the same way, is the honest check:
+
+| R2a signal (after the fix) | strict | broad | n |
+|---|---|---|---|
+| exit code | 60% [46, 73] | **93%** [82, 98] | 45 |
+| string match | **93%** [79, 98] | 93% [79, 98] | 30 |
+
+The held-out set's 5 false positives: `pytest` exit 5 ("no tests collected", ×2) and a `grep`
+pipeline whose output shows another command's stderr — left as they are (the first is arguably a
+usage mistake; the trace can't separate the stderr) — and two text-format gaps the fix then closed
+(a test named `test_connection_error` read as an exception line; the log of a deliberate Ctrl-C),
+which are in-sample for this set. Corpus-wide R2a findings: exit code 8,638 → 6,899, string match
+5,331 → 467. Labels: `r2a_heldout_labels.csv`.
 
 ## Reproduce the whole study
 

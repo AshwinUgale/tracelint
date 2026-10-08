@@ -85,6 +85,38 @@ def test_status_comes_from_the_exit_code():
     assert by_id["c3"].status is ResultStatus.UNKNOWN  # no marker in the observation
 
 
+def test_a_search_that_found_nothing_and_a_ctrl_c_are_not_errors():
+    # The R2a re-audit's two conventions: every exit-code false positive was one of them.
+    msgs = [
+        {"role": "user", "content": [{"type": "text", "text": "fix it"}]},
+        _call("g", "execute_bash", {"command": 'cd /repo && grep -n "def save" a.py'}),
+        _obs("g", "execute_bash", "[The command completed with exit code 1.]\n"
+             "[Current working directory: /repo]\n[Command finished with exit code 1]"),
+        _call("i", "execute_bash", {"command": "C-c"}),
+        _obs("i", "execute_bash",
+             "^C\n[The command completed with exit code 130. CTRL+C was sent.]"),
+        _call("e", "execute_bash", {"command": "grep -n x missing.py"}),
+        _obs("e", "execute_bash", "grep: missing.py: No such file or directory\n"
+             "[The command completed with exit code 2.]"),
+    ]
+    by_id = {s.call_id: s for s in trajectory_to_trace(msgs, run_id="s/i").tool_results()}
+    assert by_id["g"].status is ResultStatus.OK
+    assert by_id["i"].status is ResultStatus.OK
+    assert by_id["e"].status is ResultStatus.ERROR  # grep's own error stays an error
+
+
+def test_text_format_wrapper_is_not_part_of_the_output():
+    msgs = [
+        {"role": "user", "content": "<issue_description>Fix foo</issue_description>"},
+        {"role": "assistant", "content": "<function=str_replace_editor>\n"
+         "<parameter=command>view</parameter>\n<parameter=path>/nope</parameter>\n</function>"},
+        {"role": "user", "content": "EXECUTION RESULT of [str_replace_editor]:\n"
+         "ERROR: Invalid `path` parameter: /nope does not exist."},
+    ]
+    (result,) = trajectory_to_trace(msgs, run_id="s/i").tool_results()
+    assert result.content.startswith("ERROR: Invalid")  # so R2a sees the error the tool reported
+
+
 def test_extract_exit_code_takes_the_last_marker():
     text = "x\n[The command completed with exit code 0.]\n[Command finished with exit code 2.]"
     assert extract_exit_code(text) == 2

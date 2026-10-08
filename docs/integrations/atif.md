@@ -60,10 +60,11 @@ these structured signals and nothing else — never a guess from the text:
 | a truthy `error` field in the result itself | any tool | failed |
 | `extra.is_error: false`, `extra.status: "success"` | as above | succeeded |
 | `extra.exit_code` / `return_code` / `returncode` of `0` | some submitters | succeeded |
-| anything else, including a **non-zero exit code** | | unknown |
+| a non-zero exit that is a convention: a search that printed nothing (`grep`/`rg` exit 1, `xargs grep` 123), a Ctrl-C the agent sent (130) | | succeeded |
+| anything else, including any other **non-zero exit code** | | unknown |
 
-A non-zero exit code stays *unknown* on purpose: `grep` with no match, or a reproduction script that
-is meant to fail, exits non-zero on a run that is going fine. An unknown result makes R2a fall back
+Any other non-zero exit code stays *unknown* on purpose: a reproduction script that is meant to
+fail, or a failing test run, exits non-zero on a run that is going fine. An unknown result makes R2a fall back
 to its text heuristic, as a review-only candidate, rather than assert an error. If you produce ATIF,
 `extra.is_error` on each observation result is the signal that turns R2a into a certain fact.
 

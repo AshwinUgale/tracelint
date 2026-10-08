@@ -25,9 +25,11 @@ Mapping (one trace per trajectory, ``run_id = "<submission>/<instance_id>"``):
 - every other tool call -> :class:`ToolCall`; ``str_replace_editor`` is split by its ``command``
   sub-field into ``str_replace_editor.<command>`` so a write (``str_replace``/``insert``/``create``)
   can be declared side-effecting while ``view`` is not;
-- its observation -> :class:`ToolResult` (full text kept for audit) with ``status`` from the exit
-  code
-  (``0 -> ok``, ``!= 0 -> error``, absent -> ``unknown``), so R2a fires on the structured status.
+- its observation -> :class:`ToolResult` (full text kept for audit; the text format's
+  ``EXECUTION RESULT of [NAME]:`` wrapper dropped) with ``status`` from the exit code (``0 -> ok``,
+  a non-zero exit that is a convention — a search that found nothing, a Ctrl-C the agent sent —
+  ``-> ok``, any other ``!= 0 -> error``, absent -> ``unknown``), so R2a fires on the structured
+  status. The conventions come from the R2a re-audit (README).
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ import json
 import re
 from typing import Any
 
+from tracelint.signatures import command_text, nonzero_exit_convention
 from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult, Trace
 
 #: Exit-code marker OpenHands writes into an observation; several can appear, the LAST is the final.
@@ -62,10 +65,28 @@ def extract_exit_code(observation: str) -> int | None:
     return int(matches[-1]) if matches else None
 
 
-def _status_for(exit_code: int | None) -> ResultStatus:
+#: OpenHands' own annotations on an observation (not the command's output) and the text-format
+#: wrapper ``EXECUTION RESULT of [tool]:``.
+_ANNOTATION_RE = re.compile(
+    r"\[(?:The command completed|Command finished|Current working directory|Python interpreter)"
+    r"[^\]]*\]"
+)
+_WRAPPER_RE = re.compile(r"^\s*EXECUTION RESULT of \[[^\]]*\]:\s*")
+
+
+def _printed(observation: str) -> str:
+    """What the command itself printed: the observation without OpenHands' annotations."""
+    return _ANNOTATION_RE.sub("", _WRAPPER_RE.sub("", observation or "")).strip()
+
+
+def _status_for(exit_code: int | None, command: str | None, observation: str) -> ResultStatus:
+    """``0 -> ok``; a non-zero exit that is a convention (a search that found nothing, a Ctrl-C
+    the agent sent) ``-> ok``; any other non-zero exit ``-> error``; no marker ``-> unknown``."""
     if exit_code is None:
         return ResultStatus.UNKNOWN
-    return ResultStatus.OK if exit_code == 0 else ResultStatus.ERROR
+    if exit_code == 0 or nonzero_exit_convention(command, exit_code, _printed(observation)):
+        return ResultStatus.OK
+    return ResultStatus.ERROR
 
 
 def tool_name(name: str, args: dict) -> str:
@@ -83,8 +104,9 @@ def _append_call(steps: list, call_id: str, name: str, args: dict, observation: 
         if isinstance(thought, str) and thought.strip():
             steps.append(Message(role=Role.ASSISTANT, content=thought))
         return
-    steps.append(ToolCall(call_id=call_id, name=tool_name(name, args), args=args))
-    status = _status_for(extract_exit_code(observation))
+    call = ToolCall(call_id=call_id, name=tool_name(name, args), args=args)
+    steps.append(call)
+    status = _status_for(extract_exit_code(observation), command_text(call), observation)
     steps.append(ToolResult(call_id=call_id, content=observation, status=status))
 
 
@@ -158,6 +180,7 @@ def _from_text(messages: list[dict], run_id: str) -> Trace:
             if thought:
                 steps.append(Message(role=Role.ASSISTANT, content=thought))
             following = _text(messages[i + 1].get("content")) if i + 1 < len(messages) else ""
+            following = _WRAPPER_RE.sub("", following)  # the wrapper is not the tool's output
             for name, args in _parse_text_actions(text):
                 _append_call(steps, f"c{index}", name, args, following)
                 index += 1

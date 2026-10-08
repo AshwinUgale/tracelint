@@ -7,9 +7,11 @@ R2 is split into two rules with different confidence semantics:
 is expressed (Trap 3 — "what counts as an error is partly tool-specific"):
   - ``hard_event`` for **structured** signals only: an explicit ``status="error"``, an
     ``http_status >= 400``, or a structured ``error`` field. These are unambiguous.
-  - ``candidate`` for **heuristics** on an otherwise-``unknown`` result: an exception-like string
-    in free-form content (a search/docs tool may legitimately return text containing "Exception"),
-    or an empty result. Flagged with ``possible_false_positive`` because they are not certain.
+  - ``candidate`` for **heuristics** on an otherwise-``unknown`` result: an error the output
+    *reports* — a line that starts with ``ERROR:`` / ``fatal:`` / ``ValueError:`` / a traceback /
+    ``bash: x: command not found`` (an error word inside other text, such as a viewed file's
+    ``raise ValueError``, is not one) — or an empty result, unless the call was a search that found
+    nothing. Flagged with ``possible_false_positive`` because they are not certain.
   R2a reports that an error *happened*; it is never a defect by itself, so it never fails CI.
 
 **R2b — the error was improperly consumed / ignored** (``finding_type: error_mishandled``).
@@ -51,6 +53,7 @@ from tracelint.findings import (
 from tracelint.predicates import PredicateResult
 from tracelint.provenance import build_provenance
 from tracelint.rules.base import Rule
+from tracelint.signatures import command_text, is_interrupt, is_search_command
 from tracelint.signatures import is_structured_error as _is_structured_error
 from tracelint.signatures import looks_empty as _looks_empty
 from tracelint.tools import ToolRegistry
@@ -58,22 +61,41 @@ from tracelint.trace import ResultStatus, ToolCall, ToolResult, Trace
 from tracelint.valueutil import http_status_code
 from tracelint.valueutil import significant_values as _significant_values
 
-# Heuristic markers for an exception-like string in a free-form (unknown-status) result. Kept
-# conservative — it only ever produces a *candidate* (possible false positive), so it favors the
-# forms that actually show up in tool error strings ("Error:", "Failed to ...", a traceback).
-_EXCEPTION_RE = re.compile(
-    r"traceback \(most recent call last\)|\bexception\b|\b[A-Za-z]*Error\b|"
-    r"\bfail(?:ed|ure)\b|http\s*[45]\d\d|\berrno\b",
-    re.IGNORECASE,
+# Heuristic markers for an error a tool *reports* in a free-form (unknown-status) result. A tool
+# reports an error at the start of a line — ``ERROR: ...``, ``fatal: ...``, ``ValueError: ...``, a
+# traceback, ``bash: x: command not found`` — never in the middle of other text. Matching an error
+# word anywhere read a file's own source (``raise ValueError``) as a failure: in an audit of real
+# agent runs (experiments/swebench, R2a re-audit) that was every one of the heuristic's false
+# positives, and every true one began a line. It only produces a *candidate* (possible FP).
+_ERROR_LINE_RE = re.compile(
+    r"^[ \t]*(?:\[[^\]\n]{1,24}\]:?[ \t]*)?"  # an optional log tag: "[rank0]: ", "[12:00:01] "
+    r"(?:"
+    r"traceback \(most recent call last\)"  # a Python traceback
+    r"|(?:error|fatal|exception|failed|failure)\b"  # "ERROR: ...", "fatal: ...", "Failed to ..."
+    # "ValueError: ...", "requests.ConnectionError: ...", a bare "AssertionError" — an exception
+    # line has a colon or ends the line, unlike a test named "test_connection_error (...) ... ok".
+    r"|[a-z_][\w.]*(?:error|exception)(?=:|[ \t]*$)"
+    r"|<[\w-]*error[\w-]*>"  # "<tool_use_error>..."
+    r"|[\w./-]+:[ \t]+(?:\*\*\*|error\b|fatal\b)"  # "gcc: error: ...", "make: *** ..."
+    r"|[\w./-]+:[^\n]*?(?:command not found|no such file or directory|permission denied"
+    r"|cannot access|is a directory|not a directory)"  # "bash: x: command not found"
+    r"|http(?:/[\d.]+)?[ \t]+[45]\d\d\b"  # "HTTP/1.1 404 Not Found"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
 def _exception_marker(content: Any) -> str | None:
     if isinstance(content, str):
-        m = _EXCEPTION_RE.search(content)
+        m = _ERROR_LINE_RE.search(content)
         if m:
-            return m.group(0)
+            return m.group(0).strip()
     return None
+
+
+def _searched(call: ToolCall | None) -> bool:
+    """The call ran a search command (``grep``, ``rg``, ...), for which no output means no match."""
+    return call is not None and is_search_command(command_text(call))
 
 
 # A conservative, TOP-LEVEL-only failure convention: a result dict whose own ``status`` field says
@@ -173,13 +195,17 @@ class ToolErrorEventRule(Rule):
                 if convention is not None:
                     findings.append(self._convention_candidate(result, tool, convention))
                     continue
-            # Heuristics only on an unknown-status result — trust an explicit OK.
-            if result.status is ResultStatus.OK:
+            # Heuristics only on an unknown-status result — trust an explicit OK. Nor on a Ctrl-C
+            # the agent sent: its output is the stopped command's log (often a KeyboardInterrupt).
+            interrupted = call is not None and is_interrupt(command_text(call))
+            if result.status is ResultStatus.OK or interrupted:
                 continue
             marker = _exception_marker(result.content)
             if marker is not None:
                 findings.append(self._candidate(result, tool, "exception_text", marker))
-            elif _looks_empty(result.content):
+            elif _looks_empty(result.content) and not _searched(call):
+                # An empty result is a candidate error — unless the call was a search, where
+                # nothing printed means nothing matched.
                 findings.append(self._candidate(result, tool, "empty_result", ""))
         return findings
 

@@ -24,7 +24,9 @@ semantically-identical calls compare equal.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
 from typing import Any
 
 from tracelint.trace import ResultStatus, ToolCall, ToolResult
@@ -125,6 +127,86 @@ def result_fingerprint(result: ToolResult | None) -> str:
 def is_waiting_class(rc: str) -> bool:
     """True if a coarse ``result_class`` denotes a still-in-progress (waiting) state."""
     return rc.startswith("status:") and rc.split(":", 1)[1].strip() in WAITING_STATES
+
+
+def command_text(call: ToolCall) -> str | None:
+    """The shell command a call runs, read from the usual argument names, or ``None``."""
+    for key in ("command", "cmd", "keystrokes", "script"):
+        value = call.args.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+# Programs whose exit status 1 means "searched, found nothing" (POSIX grep and its kin).
+_SEARCH_PROGRAMS = {"grep", "egrep", "fgrep", "zgrep", "rg", "ag", "ack"}
+_SHELL_OPERATORS = {"|", "||", "&&", ";", "&", "|&", ";;"}
+_COMMAND_PREFIXES = {"sudo", "command", "exec", "env", "nice", "time", "nohup"}
+_INTERRUPT_COMMANDS = {"c-c", "^c", "\x03", "ctrl+c", "ctrl-c"}
+
+
+def _final_command(command: str) -> list[str]:
+    """The words of the command whose exit status a shell reports: the last stage of the last
+    pipeline, without leading ``VAR=value`` assignments, ``timeout N``, ``sudo`` and the like.
+    Empty when the command can't be tokenized (unbalanced quotes)."""
+    lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    stage: list[str] = []
+    try:
+        for token in lexer:
+            stage = [] if token in _SHELL_OPERATORS else [*stage, token]
+    except ValueError:
+        return []
+    while stage:
+        head = os.path.basename(stage[0])
+        if "=" in stage[0] and not stage[0].startswith("-"):
+            stage = stage[1:]
+        elif head == "timeout":
+            stage = stage[2:]
+        elif head in _COMMAND_PREFIXES:
+            stage = stage[1:]
+        else:
+            break
+    return stage
+
+
+def is_search_command(command: str | None) -> bool:
+    """True when the command's final program is a search (``grep``, ``rg``, ``git grep``, or
+    ``xargs grep``), whose non-zero exit means it found nothing."""
+    words = _final_command(command or "")
+    if not words:
+        return False
+    program = os.path.basename(words[0])
+    if program in _SEARCH_PROGRAMS:
+        return True
+    if program == "git" and len(words) > 1 and words[1] == "grep":
+        return True
+    return program == "xargs" and any(os.path.basename(w) in _SEARCH_PROGRAMS for w in words[1:])
+
+
+def is_interrupt(command: str | None) -> bool:
+    """True when the command is a Ctrl-C the agent sends to stop a running process."""
+    return command is not None and command.strip().lower() in _INTERRUPT_COMMANDS
+
+
+def nonzero_exit_convention(command: str | None, exit_code: int, output: Any) -> str | None:
+    """Why a non-zero exit is not a failure, or ``None`` when it may be one.
+
+    A shell's exit status isn't an error flag; two conventions account for every non-error
+    non-zero exit in an audit of real agent runs (experiments/swebench, R2a re-audit):
+
+    - ``"no_match"`` — a search that printed nothing: ``grep`` / ``rg`` exit 1, ``xargs grep`` 123.
+    - ``"interrupted"`` — the agent itself sent Ctrl-C (exit 130) to stop a running process.
+    """
+    if command is None:
+        return None
+    if exit_code == 130 and is_interrupt(command):
+        return "interrupted"
+    printed = output.strip() if isinstance(output, str) else output
+    if exit_code in (1, 123) and looks_empty(printed) and is_search_command(command):
+        if exit_code == 1 or os.path.basename(_final_command(command)[0]) == "xargs":
+            return "no_match"
+    return None
 
 
 def is_poll_call(call: ToolCall) -> bool:

@@ -168,6 +168,21 @@ def test_result_status_reads_producer_conventions(result, status):
     assert _status_of(result).status is status
 
 
+@pytest.mark.parametrize(
+    ("command", "exit_code", "output", "status"),
+    [
+        ("grep -n foo a.py", 1, "", ResultStatus.OK),  # searched, found nothing
+        ("C-c", 130, "^C", ResultStatus.OK),  # the agent stopped a process on purpose
+        ("grep -n foo missing.py", 2, "grep: missing.py: No such file", ResultStatus.UNKNOWN),
+        ("pytest -q", 1, "1 failed", ResultStatus.UNKNOWN),
+    ],
+)
+def test_exit_code_conventions(command, exit_code, output, status):
+    turn = _agent(3, calls=[_call("c1", "bash", {"command": command})],
+                  results=[_result("c1", output, exit_code=exit_code)])
+    assert from_atif_trajectory(_trajectory(turn)).tool_results()[0].status is status
+
+
 def test_structured_failure_is_an_r2a_hard_event_but_a_nonzero_exit_is_not():
     failed = _trajectory(
         _agent(3, calls=[_call("c1", "TodoWrite", {"todos": []})],
