@@ -54,12 +54,66 @@ is `ok`. So three identical calls whose output *changed* (a growing log, a progr
 as a loop. The runner records what R4 can't see, which is the audit's ground truth:
 
 - `distinct_results` / `distinct_results_norm` — how many different outputs the repeats returned,
-  exactly and ignoring numbers and whitespace (a timestamp or counter isn't progress). `1` is a
-  genuinely stuck repeat.
+  exactly and ignoring numbers, hex ids, and whitespace (a timestamp, counter, or a poll's random
+  chunk id isn't progress). `1` is a genuinely stuck repeat.
 - `is_wait` — every text argument empty (Terminus's `keystrokes: ""`) or a `sleep` / `wait`: polling
   something that is running.
 - `advanced_later` — the same call returned something different later in the run.
 - `runs_to_end` — the run ended inside the loop; with `timed_out`, it ran until the harness killed it.
+
+## Analysis (`analyze.py`)
+
+```bash
+python experiments/terminal_bench/analyze.py --runs runs --out results
+```
+
+Each loop is classified by what its repeats actually returned:
+
+| Kind | Meaning |
+|---|---|
+| `stuck` | the same action, the same output (ignoring numbers, ids, whitespace): no progress |
+| `wait-silent` | a poll whose output didn't change, and the same poll never returned anything new |
+| `wait-advanced` | a poll whose output didn't change in the streak, but returned something new later |
+| `changing` | the output differed between repeats — progress R4's coarse result class missed |
+
+Per submission (one harness + model) and per harness, `aggregates.json` reports: the share of trials
+with a stuck loop; stuck-loop length (median / p90 / max — a harness with a loop breaker caps it);
+how often the run ended inside a stuck loop and whether by the time limit; P(run failed | stuck loop)
+against the base rate with Wilson 95% intervals; and, in runs that failed anyway, the agent turns and
+wall-clock spent after the stuck loop first became detectable — per run, and as a share of all
+failed-run wall-clock. `audit_sample.csv` draws up to 5 loops per (submission, kind) with an empty
+`label` column, to check the classification by hand.
+
+## Results (first full run, 2026-10-08)
+
+10,541 trials (23 submissions, 13 harnesses), zero model calls, 1,055/1,055 re-linted trials
+identical. Base failure rate 35.7%; 16% of trials hit the harness time limit.
+
+**R4 flagged 2,622 loops; almost none are an agent stuck.** By what the repeats actually returned:
+
+| Kind | Loops | |
+|---|---|---|
+| `changing` | 1,448 (55%) | the output progressed (training logs, compiler output, rising CPU time) |
+| `unrecorded` | 681 (26%) | every repeat had no result: Terminus-style batches, server-side `web_search` |
+| `wait-advanced` / `wait-silent` | 339 / 136 (18%) | polls of a running process |
+| `stuck` | 18 (0.7%) | the same action, the same output |
+
+A hand audit of all 18 `stuck` loops found 15 genuinely stuck — e.g. `make` × 494 with no makefile
+until the 900 s timeout, a nonexistent tool called 4×, a required argument missing 4×, the same
+failing test re-run 8× with no edit between. The other 3 were deliberate repeated measurements
+(benchmark timings, simulation scores) whose outputs differ only in digits; all 13 loops with
+*exactly* identical output were stuck. So on terminal agents R4 as designed is ~0.6% precise: its
+coarse result class (any non-empty output is `ok`) reads progress and polling as "no change", and a
+missing result reads as an identical one.
+
+**Stuck loops are rare and cheap here.** 17 trials of 10,541 (0.16%) have one, in 6 submissions.
+Only 3 of 18 were still running when the run ended (2 by timeout). In the runs that failed anyway,
+the agent spent a median 36 turns / 254 s after the loop became detectable — but that is 0.2% of all
+failed-run wall-clock. No harness shows a pattern of runaway loops; the one runaway is Claude Code +
+GLM-4.7.
+
+**Outcome.** P(run failed | stuck loop) = 0.65 [0.41, 0.83], n = 17, vs a 0.36 base (lift 1.8): the
+same direction as the SWE-bench study, on a small sample.
 
 ## Limitations
 
