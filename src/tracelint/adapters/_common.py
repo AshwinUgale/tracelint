@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import ast
 import json
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -65,9 +66,37 @@ class ToolArgs:
     unavailable: str | None = None
 
 
+def _json_like(value: Any, depth: int = 0) -> bool:
+    """Whether ``value`` is something JSON could have encoded: string-keyed dicts, lists, and
+    scalars. A Python literal can be more (tuple keys, sets, bytes) — a tool *printing* such a
+    value, e.g. ``{(0, 0, 0): 287982}`` — and that is text, not a structure the rules can read."""
+    if depth > 100:
+        return False
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return True
+    if isinstance(value, (list, tuple)):
+        return all(_json_like(v, depth + 1) for v in value)
+    if isinstance(value, dict):
+        return all(isinstance(k, str) and _json_like(v, depth + 1) for k, v in value.items())
+    return False
+
+
+def _literal(raw: str) -> tuple[Any, bool]:
+    """``ast.literal_eval`` (literals only — no code execution), accepted only when the result is
+    JSON-like; ``(raw, False)`` otherwise. Tool output is not code, so the parser's
+    ``SyntaxWarning`` on text such as ``1.5x`` is silenced rather than printed to the user."""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", SyntaxWarning)
+            value = ast.literal_eval(raw)
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        return raw, False
+    return (value, True) if _json_like(value) else (raw, False)
+
+
 def parse_serialized(raw: Any, *, lenient: bool = True) -> tuple[Any, bool]:
     """Parse a serialized value. Returns ``(value, parsed)``; ``parsed`` is False only for a string
-    that is neither JSON nor (when ``lenient``) a Python literal.
+    that is neither JSON nor (when ``lenient``) a JSON-like Python literal.
 
     Several instrumentations serialize arguments with Python's ``str(dict)`` (single quotes,
     ``True``/``None``): not JSON, but a well-formed argument object, so ``lenient`` parsing falls
@@ -80,10 +109,9 @@ def parse_serialized(raw: Any, *, lenient: bool = True) -> tuple[Any, bool]:
     except (json.JSONDecodeError, ValueError):
         pass
     if lenient:
-        try:
-            return ast.literal_eval(raw), True
-        except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
-            pass
+        value, parsed = _literal(raw)
+        if parsed:
+            return value, True
     return raw, False
 
 
@@ -215,11 +243,8 @@ def result_value(raw: Any) -> Any:
         return json.loads(raw)
     except (json.JSONDecodeError, ValueError):
         pass
-    try:
-        value = ast.literal_eval(raw)
-    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
-        return raw
-    return value if isinstance(value, (dict, list)) else raw
+    value, parsed = _literal(raw)
+    return value if parsed and isinstance(value, (dict, list)) else raw
 
 
 def tool_result_content(raw: Any) -> tuple[Any, str | None]:
