@@ -332,10 +332,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # ... your step that runs the agent and writes traces to ./traces ...
-      - uses: AshwinUgale/tracelint@v0.10.0
+      - uses: AshwinUgale/tracelint@v0.11.0
         with:
           traces: "traces/*.jsonl"
-          format: "openinference"     # or native / openai / langfuse / langsmith
+          format: "openinference"     # or native / openai / langfuse / langsmith / atif
           tools: "tools.json"          # optional — lights up R1, R3, R2 predicates
 ```
 
@@ -366,7 +366,7 @@ gate, so an `if: always()` upload step runs even when a defect fails the job:
 ```yaml
 repos:
   - repo: https://github.com/AshwinUgale/tracelint
-    rev: v0.10.0
+    rev: v0.11.0
     hooks:
       - id: tracelint
         files: ^traces/.*\.jsonl$
