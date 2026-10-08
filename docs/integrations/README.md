@@ -23,7 +23,7 @@ you can reproduce the result with no API key.
 
 ## Ingestion paths (`--format`)
 
-tracelint reads six trace formats through four adapters — one shared adapter reaches a whole
+tracelint reads seven trace formats through five adapters — one shared adapter reaches a whole
 ecosystem rather than one vendor. Each has a one-pager:
 
 | `--format` | Platform / shape | One-pager |
@@ -33,6 +33,7 @@ ecosystem rather than one vendor. Each has a one-pager:
 | `langfuse` | **Langfuse** (+ `tracelint langfuse pull` to fetch a trace) | [langfuse.md](langfuse.md) |
 | `langsmith` | **LangSmith** run tree | [langsmith.md](langsmith.md) |
 | `openai` | **OpenAI** chat message list, incl. **ShareGPT** | [openai.md](openai.md) |
+| `atif` | **Harbor** ATIF trajectories (every agent Harbor runs) | [atif.md](atif.md) |
 | `native` | tracelint's own JSON | — |
 
 Two quick entry points:

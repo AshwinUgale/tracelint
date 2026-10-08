@@ -84,6 +84,9 @@ from tracelint.scorecard import (
 
 # --- Adapters -----------------------------------------------------------------------
 from tracelint.adapters import (
+    atif_tools_to_registry,
+    from_atif_trajectories,
+    from_atif_trajectory,
     from_langfuse_trace,
     from_langsmith_run,
     from_openai_messages,
@@ -106,6 +109,7 @@ from tracelint.sarif import to_sarif
 # --- Source on-ramps: load a provider format and lint it ----------------------------
 from tracelint.sources import (
     SUPPORTED_FORMATS,
+    lint_atif_trajectory,
     lint_langfuse_trace,
     lint_langsmith_trace,
     lint_openai_trace,
@@ -188,6 +192,9 @@ __all__ = [
     "from_langsmith_run",
     "observed_tool_names",
     "from_otel_spans",
+    "from_atif_trajectory",
+    "from_atif_trajectories",
+    "atif_tools_to_registry",
     # Reporting
     "render_report",
     "render_reports",
@@ -203,6 +210,7 @@ __all__ = [
     "lint_openai_trace",
     "lint_langfuse_trace",
     "lint_langsmith_trace",
+    "lint_atif_trajectory",
     "SUPPORTED_FORMATS",
 ]
 

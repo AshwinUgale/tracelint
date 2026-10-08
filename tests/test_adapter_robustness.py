@@ -16,6 +16,7 @@ from __future__ import annotations
 import pytest
 
 from tracelint.adapters import (
+    from_atif_trajectory,
     from_langfuse_trace,
     from_langsmith_run,
     from_openai_messages,
@@ -31,6 +32,7 @@ ADAPTERS = {
     "otel": from_otel_spans,
     "openai": from_openai_messages,
     "langsmith": from_langsmith_run,
+    "atif": from_atif_trajectory,
 }
 
 # A spread of malformed / hostile inputs any real export might approximate: wrong top-level types,
@@ -63,6 +65,23 @@ PAYLOADS: dict[str, object] = {
     "deep_nesting": {
         "id": "t",
         "observations": [{"type": "tool", "name": "t", "input": {"a": {"b": {"c": {}}}}}],
+    },
+    "atif_steps_not_dicts": {"schema_version": "ATIF-v1.6", "agent": {}, "steps": [None, 3]},
+    "atif_fields_wrong_type": {
+        "schema_version": "ATIF-v1.6",
+        "agent": "x",
+        "steps": [
+            {"source": "agent", "message": 5, "tool_calls": {"x": 1}, "observation": []},
+            {"source": "agent", "tool_calls": [None, {"function_name": 7, "arguments": [1]}],
+             "observation": {"results": [None, {"source_call_id": 3, "content": {"a": 1}}]},
+             "metrics": "x", "reasoning_content": 9},
+            {"source": None, "observation": {"results": "no"}},
+        ],
+    },
+    "atif_subagents_bad": {
+        "schema_version": "ATIF-v1.7",
+        "steps": [],
+        "subagent_trajectories": [None, {"trajectory_id": 1}, {"steps": "x"}],
     },
 }
 
@@ -109,7 +128,9 @@ def test_openai_rejects_scalar_with_typeerror():
 
 # --- CLI never crashes: any garbage file exits cleanly (0/2/3), never a traceback ---------
 
-@pytest.mark.parametrize("fmt", ["native", "openai", "langfuse", "langsmith", "openinference"])
+@pytest.mark.parametrize(
+    "fmt", ["native", "openai", "langfuse", "langsmith", "openinference", "atif"]
+)
 def test_cli_never_crashes_on_garbage_input(tmp_path, fmt):
     bad = tmp_path / "bad.json"
     bad.write_text('{"totally": "not a trace"}', encoding="utf-8")

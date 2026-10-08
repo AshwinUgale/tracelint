@@ -852,6 +852,10 @@ _CAPTURE_HINT = {
     "langfuse": "record each tool observation's input and output",
     "langsmith": "record each tool run's inputs and outputs",
     "openai": "include the tool-call arguments and the tool-result messages",
+    "atif": (
+        "record each tool call's arguments and each observation result's content, with its "
+        "source_call_id"
+    ),
     "native": "populate each tool_call's args and each tool_result's content",
 }
 
