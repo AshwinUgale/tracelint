@@ -115,6 +115,39 @@ Reads every `per_trajectory.csv` / `per_finding.csv` under `--runs` and writes `
 - **`audit_sample.csv`** — a stratified sample (up to N per rule, Run B + Run A's R2a) with an empty
   `label` column for the hand audit. Labeling it TP/FP is what turns the census into **precision**.
 
+## R2a re-audit: exit code vs string match (2026-10-08)
+
+The first audit labeled every exit-code finding (`hard_event`, exit ≠ 0) a true error by
+definition, so its "100% precise from the exit code" was circular. `audit_r2a.py` re-audits R2a by
+reading each finding's command and output and judging what happened — ignoring the exit code. Each
+is `error` (the command failed at its job: not found, usage or syntax error, an unintended crash,
+missing file), `expected_failure` (it worked and reported a failure the agent was after: failing
+tests, a repro script showing the bug), `informational` (non-zero or an error word by convention:
+`grep` with no match, a deliberate Ctrl-C, a file's own text), or `unclear`. A seeded sample,
+stratified by model (30 exit-code + 15 string-match findings per submission):
+
+| R2a signal | strict (`error`) | broad (+ `expected_failure`) | n |
+|---|---|---|---|
+| exit code (`hard_event`) | **60%** [49, 69] | **76%** [67, 84] | 89 (+1 unclear) |
+| string match (`candidate`) | **11%** [5, 24] | 11% [5, 24] | 45 |
+
+The structured signal is 5–7× more precise than guessing from text, but not 100%. Every one of the
+21 exit-code false positives fits one of two conventions: a search that found nothing (`grep`, `rg`,
+`find | xargs grep`; exit 1 / 123), and the agent deliberately sending Ctrl-C (exit 130) — on this
+sample, recognising those two would leave only errors and expected failures (68/68). The string-match
+false positives are all file views whose source code merely contains `raise ValueError`; its 5 true
+errors are editor messages that *begin* with `ERROR:`. By model, exit-code precision (strict / broad)
+is 47% / 63% for Devstral, 62% / 79% for Claude 4 Sonnet, 70% / 87% for GPT-5 — weaker models make
+more failed calls *and* more no-match searches.
+
+```bash
+python experiments/swebench/audit_r2a.py sample --data "$DATA" --runs runs --out sample.csv
+python experiments/swebench/audit_r2a.py summarize --labels experiments/swebench/r2a_audit_labels.csv
+```
+
+`r2a_audit_labels.csv` holds the 135 labels (ids, tier, exit code, tool, label, a one-line reason —
+no trajectory text); `sample` re-draws the same findings from the public data (seed `20261008`).
+
 ## Reproduce the whole study
 
 ```bash
