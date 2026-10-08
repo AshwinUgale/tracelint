@@ -47,9 +47,13 @@ thing that's wrong. Needs a schema to run — if none is declared, R1 is suppres
 **Tier:** `hard_event` (a structured error signal) / `candidate` (a heuristic match)
 
 A tool returned an error: an error status on the span or run, a LangChain `ToolMessage` with
-`status: "error"`, a non-empty `error` field, or (as a candidate) an exception-like string. Fields
+`status: "error"`, a non-empty `error` field, or (as a candidate) an error the output *reports* — a
+line that starts with `ERROR:`, `fatal:`, `ValueError: …`, a traceback, or `bash: x: command not
+found`. An error word inside other text (a viewed file's `raise ValueError`) is not one. Fields
 *inside* a result such as `status_code: 404` are the tool's own data, not an error, until
-`failure_when` declares what failure looks like for that tool.
+`failure_when` declares what failure looks like for that tool. Two non-zero exits are conventions,
+not failures: a search that found nothing (`grep`/`rg` exit 1, `xargs grep` 123, no output) and a
+Ctrl-C the agent sent (130).
 
 **What to do:** make the agent handle or retry the error. If the "error" is really expected data,
 declare `failure_when` so tracelint stops flagging it.

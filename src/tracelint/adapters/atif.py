@@ -32,10 +32,12 @@ tiered as a candidate):
   Claude Code converters), the line ``[error] tool reported failure`` that Harbor's Claude Code
   converter appends to a failed result, ``extra.status`` of ``error`` / ``failed`` / ``failure``
   (Strands), or a truthy ``error`` field in the result itself;
-- succeeded: one of those flags ``false``, ``extra.status`` of ``success`` / ``ok``, or an exit
-  code of ``0`` in ``extra.exit_code`` / ``return_code`` / ``returncode``;
-- otherwise unknown. A non-zero exit code is not read as a failure: ``grep`` with no match, or a
-  reproduction script that is meant to fail, exits non-zero on a run that is going fine.
+- succeeded: one of those flags ``false``, ``extra.status`` of ``success`` / ``ok``, an exit code
+  of ``0`` in ``extra.exit_code`` / ``return_code`` / ``returncode``, or a non-zero exit that is a
+  convention rather than a failure — a search that found nothing (``grep`` / ``rg`` exit 1,
+  ``xargs grep`` 123, no output) or a Ctrl-C the agent sent (130);
+- otherwise unknown. Any other non-zero exit code is not read as a failure: a reproduction script
+  that is meant to fail, or a failing test run, exits non-zero on a run that is going fine.
 
 Tool definitions in ``agent.tool_definitions`` (OpenAI function format, v1.5+) are attached to each
 call as ``ToolCall.schema`` for ``tracelint init`` and R11, like the other adapters' discovered
@@ -51,6 +53,7 @@ from typing import Any
 
 from tracelint.adapters._common import content_error, model_call_args, tool_result_content
 from tracelint.adapters.openai import openai_tools_to_registry
+from tracelint.signatures import command_text, nonzero_exit_convention
 from tracelint.tools import ToolRegistry
 from tracelint.trace import (
     Message,
@@ -129,9 +132,10 @@ def _integer(value: Any) -> int | None:
 
 
 def _result_status(
-    result: dict[str, Any], content: Any, text: str
+    result: dict[str, Any], content: Any, text: str, command: str | None = None
 ) -> tuple[ResultStatus, str | None]:
-    """``(status, error)`` from the structured signals ATIF producers record (module docstring)."""
+    """``(status, error)`` from the structured signals ATIF producers record (module docstring);
+    ``command`` is the shell command the call ran, for reading its exit code."""
     extra = result.get("extra") if isinstance(result.get("extra"), dict) else {}
     status = extra.get("status")
     status = status.strip().lower() if isinstance(status, str) else None
@@ -144,8 +148,12 @@ def _result_status(
         return ResultStatus.ERROR, error
     if any(extra.get(key) is False for key in _ERROR_FLAGS) or status in _OK_STATUSES:
         return ResultStatus.OK, None
-    if any(_integer(extra.get(key)) == 0 for key in _EXIT_CODE_KEYS):
-        return ResultStatus.OK, None
+    for key in _EXIT_CODE_KEYS:
+        code = _integer(extra.get(key))
+        # 0 succeeded; so did a non-zero exit that is a convention, not a failure (a search that
+        # found nothing, a Ctrl-C the agent sent). Any other non-zero exit stays unknown.
+        if code is not None and (code == 0 or nonzero_exit_convention(command, code, text)):
+            return ResultStatus.OK, None
     return ResultStatus.UNKNOWN, None
 
 
@@ -177,7 +185,7 @@ def _step_meta(step: dict[str, Any], default_model: Any) -> StepMeta | None:
 
 
 def _observation_steps(
-    step: dict[str, Any], *, copied: bool, call_ids: list[str]
+    step: dict[str, Any], *, copied: bool, call_ids: list[str], commands: dict[str, str | None]
 ) -> list[Step]:
     """A step's observation: a :class:`ToolResult` per result answering one of ``call_ids`` (the
     step's tool calls), a system :class:`Message` for anything else the agent was shown.
@@ -200,7 +208,7 @@ def _observation_steps(
         content, text = _result_content(result.get("content"))
         call_id = unanswered[-1] if result is joint else result.get("source_call_id")
         if call_id not in (None, "") and not copied:
-            status, error = _result_status(result, content, text)
+            status, error = _result_status(result, content, text, commands.get(str(call_id)))
             out.append(
                 ToolResult(call_id=str(call_id), content=content, status=status, error=error)
             )
@@ -224,6 +232,7 @@ def from_atif_trajectory(trajectory: Any, *, run_id: str | None = None) -> Trace
     schemas = _tool_schemas(agent.get("tool_definitions"))
 
     steps: list[Step] = []
+    commands: dict[str, str | None] = {}  # call id -> the shell command it ran
     final = None
     for position, raw in enumerate(raw_steps):
         if not isinstance(raw, dict):
@@ -249,20 +258,22 @@ def from_atif_trajectory(trajectory: Any, *, run_id: str | None = None) -> Trace
                     args = model_call_args(call.get("arguments"))
                     call_id = str(call.get("tool_call_id") or f"atif-{position}-{n}")
                     call_ids.append(call_id)
-                    steps.append(
-                        ToolCall(
-                            call_id=call_id,
-                            name=name,
-                            args=args.args,
-                            raw_text=args.raw_text,
-                            schema=schemas.get(name),
-                        )
+                    tool_call = ToolCall(
+                        call_id=call_id,
+                        name=name,
+                        args=args.args,
+                        raw_text=args.raw_text,
+                        schema=schemas.get(name),
                     )
+                    commands[call_id] = command_text(tool_call)
+                    steps.append(tool_call)
             if len(steps) > first:
                 steps[first].meta = _step_meta(raw, agent.get("model_name"))
         elif source in ("user", "system") and text:
             steps.append(Message(Role.parse(source), text))
-        steps.extend(_observation_steps(raw, copied=copied, call_ids=call_ids))
+        steps.extend(
+            _observation_steps(raw, copied=copied, call_ids=call_ids, commands=commands)
+        )
 
     resolved = run_id or trajectory.get("trajectory_id") or trajectory.get("session_id")
     return Trace(run_id=str(resolved or "atif-run"), steps=steps, final=final)

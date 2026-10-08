@@ -1,0 +1,76 @@
+submission,instance_id,step,tier,exit_code,tool,label,note
+20250520_openhands_devstral_small,django__django-15732,89,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,django__django-13346,43,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,django__django-16938,9,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,sympy__sympy-18698,15,candidate,,execute_bash,informational,agent sent Ctrl-C on purpose; output is the stopped command's log
+20250520_openhands_devstral_small,django__django-11149,65,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,django__django-11490,9,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,sphinx-doc__sphinx-7748,76,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,django__django-12193,9,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,django__django-16082,53,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,sympy__sympy-12489,30,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250520_openhands_devstral_small,django__django-11400,123,hard_event,1,execute_bash,error,test or script could not run: settings/app/module setup
+20250520_openhands_devstral_small,sphinx-doc__sphinx-7590,252,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250520_openhands_devstral_small,django__django-13809,73,hard_event,1,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250520_openhands_devstral_small,django__django-11163,42,hard_event,1,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250520_openhands_devstral_small,django__django-11820,103,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250520_openhands_devstral_small,pydata__xarray-7393,190,hard_event,4,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250520_openhands_devstral_small,psf__requests-2317,76,hard_event,1,execute_bash,error,agent's own script crashed (wrong API / bug in the script)
+20250520_openhands_devstral_small,django__django-11532,53,hard_event,1,execute_bash,error,test or script could not run: settings/app/module setup
+20250520_openhands_devstral_small,django__django-14155,115,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250520_openhands_devstral_small,django__django-11885,144,hard_event,1,execute_bash,error,test or script could not run: settings/app/module setup
+20250520_openhands_devstral_small,sympy__sympy-13372,107,hard_event,1,execute_bash,error,tool not installed (command not found / no module)
+20250520_openhands_devstral_small,pydata__xarray-4356,57,hard_event,5,execute_bash,informational,pytest exit 5: no tests collected
+20250520_openhands_devstral_small,django__django-11433,145,hard_event,1,execute_bash,error,test or script could not run: settings/app/module setup
+20250520_openhands_devstral_small,sympy__sympy-15809,63,hard_event,1,execute_bash,error,tool not installed (command not found / no module)
+20250520_openhands_devstral_small,django__django-12325,113,hard_event,1,execute_bash,error,agent's own script crashed (wrong API / bug in the script)
+20250524_openhands_claude_4_sonnet,django__django-14534,126,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,sympy__sympy-19783,83,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,sympy__sympy-19637,21,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,sympy__sympy-13798,43,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,django__django-11400,133,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,sympy__sympy-12489,29,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,psf__requests-2317,15,candidate,,execute_bash,informational,a test's name ends in 'error' (test_connection_error ... ok)
+20250524_openhands_claude_4_sonnet,django__django-11179,35,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,django__django-14534,42,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,django__django-11163,130,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250524_openhands_claude_4_sonnet,sphinx-doc__sphinx-8595,152,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250524_openhands_claude_4_sonnet,django__django-13158,161,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250524_openhands_claude_4_sonnet,django__django-15695,12,hard_event,1,execute_bash,error,tool not installed (command not found / no module)
+20250524_openhands_claude_4_sonnet,pydata__xarray-6461,152,hard_event,4,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250524_openhands_claude_4_sonnet,django__django-13346,163,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250524_openhands_claude_4_sonnet,sphinx-doc__sphinx-8459,137,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250524_openhands_claude_4_sonnet,django__django-12858,223,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250524_openhands_claude_4_sonnet,sphinx-doc__sphinx-9591,26,hard_event,5,execute_bash,informational,pytest exit 5: no tests collected
+20250524_openhands_claude_4_sonnet,django__django-16032,203,hard_event,1,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250524_openhands_claude_4_sonnet,sphinx-doc__sphinx-8721,89,hard_event,1,execute_bash,expected_failure,agent's repro/check script reported the bug / failing checks
+20250524_openhands_claude_4_sonnet,django__django-13786,31,hard_event,1,execute_bash,informational,pipeline's final grep found nothing; output is another command's stderr
+20250524_openhands_claude_4_sonnet,django__django-12308,30,hard_event,2,execute_bash,error,shell / regex syntax error in the command
+20250524_openhands_claude_4_sonnet,sympy__sympy-12489,11,hard_event,1,execute_bash,error,tool not installed (command not found / no module)
+20250524_openhands_claude_4_sonnet,sphinx-doc__sphinx-9591,297,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250524_openhands_claude_4_sonnet,sympy__sympy-23534,67,hard_event,1,execute_bash,expected_failure,agent's repro/check script reported the bug / failing checks
+20250807_openhands_gpt5,django__django-12419,20,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,django__django-14855,86,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,django__django-11477,20,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,psf__requests-1921,40,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,sphinx-doc__sphinx-11445,34,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,astropy__astropy-8872,22,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,pydata__xarray-6599,12,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,astropy__astropy-8872,12,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,pytest-dev__pytest-6197,10,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,django__django-13012,40,candidate,,str_replace_editor.view,error,editor rejected the view (path does not exist / range past end)
+20250807_openhands_gpt5,matplotlib__matplotlib-14623,59,hard_event,1,execute_bash,error,agent's own script crashed (wrong API / bug in the script)
+20250807_openhands_gpt5,sphinx-doc__sphinx-7440,44,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250807_openhands_gpt5,matplotlib__matplotlib-26208,26,hard_event,2,execute_bash,error,shell / regex syntax error in the command
+20250807_openhands_gpt5,django__django-16032,52,hard_event,127,execute_bash,error,tool not installed (command not found / no module)
+20250807_openhands_gpt5,sympy__sympy-15599,10,hard_event,2,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250807_openhands_gpt5,django__django-14434,38,hard_event,2,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250807_openhands_gpt5,django__django-16661,52,hard_event,1,execute_bash,error,a file or directory the command needed does not exist
+20250807_openhands_gpt5,pydata__xarray-7229,44,hard_event,127,execute_bash,error,tool not installed (command not found / no module)
+20250807_openhands_gpt5,django__django-16527,39,hard_event,1,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250807_openhands_gpt5,django__django-15037,130,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250807_openhands_gpt5,django__django-14349,12,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests
+20250807_openhands_gpt5,django__django-13670,14,hard_event,2,execute_bash,error,a file or directory the command needed does not exist
+20250807_openhands_gpt5,sympy__sympy-17630,4,hard_event,127,execute_bash,error,tool not installed (command not found / no module)
+20250807_openhands_gpt5,django__django-12754,38,hard_event,2,execute_bash,error,"usage error: bad flag, argument, or test label"
+20250807_openhands_gpt5,sphinx-doc__sphinx-8548,62,hard_event,1,execute_bash,expected_failure,test run worked and reported failing tests

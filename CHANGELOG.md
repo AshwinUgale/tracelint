@@ -6,6 +6,23 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **R2a precision: an error is what a tool reports, not an error word anywhere.** A hand audit of
+  R2a on real agent runs (`experiments/swebench/`, R2a re-audit) found two fixable sources of false
+  errors, now gone:
+  - **The text heuristic** (a candidate) matched an error word anywhere in the output, so a viewed
+    file's own source (`raise ValueError`) read as a failure — 40 of its 45 audited findings. It
+    now counts a line that *starts* with an error report: `ERROR:`, `fatal:`, `ValueError: …`, a
+    traceback, `bash: x: command not found`, `make: ***`, `<tool_use_error>` (optionally after a
+    log tag such as `[rank0]:`). On a held-out sample its precision is 93%; on 10k terminal-agent
+    runs it also now catches shell errors it used to miss (`command not found`, `No such file or
+    directory`, `Permission denied`). It no longer scans the output of a Ctrl-C the agent sent.
+  - **Non-zero exits that aren't failures**: a search that found nothing (`grep` / `rg` exit 1,
+    `xargs grep` 123, no output) and a Ctrl-C the agent sent (130) — every one of the 21 audited
+    exit-code false errors. `tracelint.signatures.nonzero_exit_convention` names them; the ATIF
+    adapter reads such an exit as success, and R2a no longer flags an empty search result as a
+    possible error. On a held-out sample, exit-code errors are 93% real errors or failures the
+    agent was looking for (failing tests, a reproduced bug).
+
 - **R4 precision: a loop is now the same call returning the identical result.** On 10,541 real
   agent runs (the Terminal-Bench 2.0 study in `experiments/terminal_bench/`), R4 flagged 2,622
   loops and a hand audit found 15 agents genuinely stuck. Three causes, all fixed:

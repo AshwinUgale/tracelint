@@ -45,3 +45,11 @@ def test_committed_labels_reproduce_the_published_numbers():
     assert summary["hard_event/all"]["strict"]["p"] == 0.596
     assert summary["hard_event/all"]["broad"]["p"] == 0.764
     assert summary["candidate/all"]["strict"]["p"] == 0.111
+
+
+def test_held_out_labels_reproduce_the_published_numbers():
+    with LABELS.with_name("r2a_heldout_labels.csv").open(encoding="utf-8") as fh:
+        summary = summarize(list(csv.DictReader(fh)))
+    assert summary["hard_event/all"]["broad"]["p"] == 0.933
+    assert summary["hard_event/all"]["strict"]["p"] == 0.6
+    assert summary["candidate/all"]["strict"]["p"] == 0.933
