@@ -6,6 +6,26 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **R4 precision: a loop is now the same call returning the identical result.** On 10,541 real
+  agent runs (the Terminal-Bench 2.0 study in `experiments/terminal_bench/`), R4 flagged 2,622
+  loops and a hand audit found 15 agents genuinely stuck. Three causes, all fixed:
+  - R4 compared repeats by a coarse result class, in which any non-empty output was the same `ok`
+    — so a growing build log or training progress read as "no change" (55% of its loops). It now
+    compares the results themselves, exactly.
+  - A missing result counted as identical to another (26%): an earlier call in a batch that
+    returns one observation (Terminus), or a server-side tool such as OpenAI's `web_search`. R4
+    and R5 now treat a missing result as unknown and disclose those calls as not checked
+    (`cause: result_unrecorded`), as they already did for unknown arguments.
+  - Polling wasn't recognised unless declared in `tools.json` (18%). A call that waits on
+    something running — empty keystrokes or input, a `sleep` / `wait` command, a tool named for
+    waiting — repeats by design; it is now flagged only when the trace ended while it was still
+    waiting with nothing new.
+
+  On that corpus R4 now flags 31 loops instead of 2,622: 19 identical repeats (17 an agent stuck
+  on review — e.g. `make` × 494 with no makefile; 2 an unchanged `tail` of a log, effectively a
+  poll) and 12 polls still waiting when the run ended. On the SWE-bench corpus, whose loops were
+  already identical repeats, it keeps 28 of the 29 loop runs. R4 stays a review-only candidate.
+
 - **Fix: a tool printing a Python value JSON can't hold no longer fails the check.** Result
   content that is a Python literal (`str(dict)` output) is parsed into the structure it encodes, but
   a printed value with tuple or mixed-type keys — e.g. a color counter's

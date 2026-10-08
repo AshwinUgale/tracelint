@@ -4,11 +4,16 @@ Both look across the *sequence* of tool calls, and both are **candidates** — a
 proof of a bug (Trap 4: a retry-with-backoff is a loop, polling is repeated identical calls,
 pagination is near-identical calls). They are flagged with evidence, never asserted.
 
-**R4 — loop:** ``LOOP_THRESHOLD`` (3) consecutive calls with an identical signature
-``(tool, normalized_args, result_class)`` and **no change in state**. A single retry (2 identical)
-is normal and not flagged. A legitimate poll is excluded two ways: a tool declared ``polling`` in
-its metadata is trusted, and a run in a waiting state that *eventually advances* to a different
-``result_class`` is a progressing poll, not a stuck loop.
+**R4 — loop:** ``LOOP_THRESHOLD`` (3) consecutive calls to the same tool with the same arguments
+that returned **the identical result** each time: the agent repeated itself and learned nothing. A
+single retry (2 identical) is normal and not flagged. A repeat whose output changed is progress, not
+a loop — a growing build log, a training run's progress — so outputs are compared exactly, not by a
+coarse "ok" class (on 10,541 real agent runs, that coarse comparison made 55% of R4's loops output
+that was progressing). Polling is excluded three ways: a tool declared ``polling`` in its metadata
+is trusted; a run in a waiting state (``status: pending``) that *eventually advances* is a
+progressing poll; and a call that waits on something running (:func:`is_poll_call` — empty input,
+``sleep``, a tool named for waiting) repeats by design, so it is flagged only when the trace ended
+while it was still waiting with nothing new.
 
 **R5 — redundant call:** a later call with the identical ``(tool, normalized_args)`` and the
 **identical result** (fingerprint) as an earlier one, with real work in between (so it is not a
@@ -18,9 +23,10 @@ Side-effect status is read from tool metadata, never guessed from a name; a tool
 registry has an unverifiable side-effect status, so the finding still surfaces (the result is
 byte-identical) but **discloses** the undeclared tool rather than silently assuming it inert.
 
-A call whose arguments the trace did not record (redacted, positional, ...) never matches another
-call — equality is unknowable — so where it could have formed a loop or a repeat, it is disclosed as
-not checked instead of silently passing.
+A call whose arguments the trace did not record (redacted, positional, ...), or whose result it did
+not record (an earlier call in a batch that returns one observation, a server-side tool), never
+matches another call — equality is unknowable — so where it could have formed a loop or a repeat, it
+is disclosed as not checked instead of silently passing or being asserted.
 """
 
 from __future__ import annotations
@@ -31,6 +37,7 @@ from tracelint.findings import ConfidenceTier, Finding
 from tracelint.rules.base import Rule
 from tracelint.signatures import (
     call_args_key,
+    is_poll_call,
     is_waiting_class,
     result_class,
     result_fingerprint,
@@ -46,30 +53,53 @@ class _CallInfo:
     call: ToolCall
     args_key: str
     rclass: str
-    result_fp: str
-    fingerprint: str
+    #: The exact result fingerprint, or ``None`` when no result was recorded (unknown).
+    result_fp: str | None
+    #: The call waits on something already running (:func:`is_poll_call`).
+    poll: bool
+
+    @property
+    def signature(self) -> str:
+        """What a repeat must match: the tool, its arguments, and its exact result. A call with no
+        recorded result matches nothing — its result is unknown, not equal to another's."""
+        if self.result_fp is None:
+            return f"\x00no-result:{self.call.index}:{self.call.call_id}"
+        return f"{self.call.name}|{self.args_key}|{self.result_fp}"
 
 
 def _analyze(trace: Trace) -> list[_CallInfo]:
     infos: list[_CallInfo] = []
     for call in trace.tool_calls():
         result = trace.result_for(call)
-        args_key = call_args_key(call)
-        result_fp = result_fingerprint(result)
         infos.append(
             _CallInfo(
                 call=call,
-                args_key=args_key,
+                args_key=call_args_key(call),
                 rclass=result_class(result),
-                result_fp=result_fp,
-                fingerprint=f"{call.name}|{args_key}|{result_fp}",
+                result_fp=result_fingerprint(result) if result is not None else None,
+                poll=is_poll_call(call),
             )
         )
     return infos
 
 
+def _same_call_runs(infos: list[_CallInfo]) -> list[tuple[int, int]]:
+    """``(start, end)`` of each maximal run of consecutive calls to one tool with one argument set,
+    whatever they returned."""
+    runs: list[tuple[int, int]] = []
+    i, n = 0, len(infos)
+    while i < n:
+        j = i
+        key = (infos[i].call.name, infos[i].args_key)
+        while j + 1 < n and (infos[j + 1].call.name, infos[j + 1].args_key) == key:
+            j += 1
+        runs.append((i, j))
+        i = j + 1
+    return runs
+
+
 class LoopRule(Rule):
-    """R4: N consecutive identical no-progress calls (excluding legitimate polls)."""
+    """R4: N consecutive identical calls with the identical result (excluding legitimate polls)."""
 
     id = "R4"
     finding_type = "loop"
@@ -82,28 +112,20 @@ class LoopRule(Rule):
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         infos = _analyze(trace)
         findings: list[Finding] = []
-        i = 0
-        n = len(infos)
+        i, n = 0, len(infos)
         while i < n:
             j = i
-            sig = (infos[i].call.name, infos[i].args_key, infos[i].rclass)
-            while (
-                j + 1 < n
-                and (
-                    infos[j + 1].call.name,
-                    infos[j + 1].args_key,
-                    infos[j + 1].rclass,
-                )
-                == sig
-            ):
+            while j + 1 < n and infos[j + 1].signature == infos[i].signature:
                 j += 1
-            run_len = j - i + 1
-            if run_len >= LOOP_THRESHOLD and not self._is_legit_poll(infos, i, j, registry):
+            if j - i + 1 >= LOOP_THRESHOLD and not self._is_legit_poll(infos, i, j, registry):
                 findings.append(self._loop_finding(infos[i : j + 1]))
             i = j + 1
-        disclosure = self.unknown_args_suppression(self._unknown_in_runs(infos, registry), "loops")
-        if disclosure is not None:
-            findings.append(disclosure)
+        for disclosure in (
+            self.unknown_args_suppression(self._unknown_in_runs(infos, registry), "loops"),
+            self.unrecorded_result_suppression(self._unrecorded_in_runs(infos, registry), "loops"),
+        ):
+            if disclosure is not None:
+                findings.append(disclosure)
         return findings
 
     def _unknown_in_runs(self, infos: list[_CallInfo], registry: ToolRegistry) -> list[ToolCall]:
@@ -122,6 +144,22 @@ class LoopRule(Rule):
             i = j + 1
         return unknown
 
+    def _unrecorded_in_runs(
+        self, infos: list[_CallInfo], registry: ToolRegistry
+    ) -> list[ToolCall]:
+        """Calls with no recorded result inside a run of ``LOOP_THRESHOLD``+ consecutive identical
+        calls whose recorded results (if any) agree — a loop R4 can neither confirm nor rule out."""
+        missing: list[ToolCall] = []
+        for i, j in _same_call_runs(infos):
+            run = infos[i : j + 1]
+            unrecorded = [c.call for c in run if c.result_fp is None]
+            recorded = {c.result_fp for c in run if c.result_fp is not None}
+            meta = registry.metadata_for(run[0].call.name)
+            excused = bool(meta and meta.polling) or (run[0].poll and j != len(infos) - 1)
+            if len(run) >= LOOP_THRESHOLD and unrecorded and len(recorded) <= 1 and not excused:
+                missing.extend(unrecorded)
+        return missing
+
     def _is_legit_poll(
         self, infos: list[_CallInfo], i: int, j: int, registry: ToolRegistry
     ) -> bool:
@@ -129,33 +167,43 @@ class LoopRule(Rule):
         meta = registry.metadata_for(head.call.name)
         if meta and meta.polling:
             return True  # declared polling — trust the metadata (spec §II.5)
-        if not is_waiting_class(head.rclass):
-            return False
-        # A waiting run that eventually advances (same call, different class later) is a real poll.
-        for later in infos[j + 1 :]:
-            if (
+        if is_waiting_class(head.rclass):
+            # A waiting run that eventually advances (same call, different state later) is a poll.
+            return any(
                 later.call.name == head.call.name
                 and later.args_key == head.args_key
                 and later.rclass != head.rclass
-            ):
-                return True
+                for later in infos[j + 1 :]
+            )
+        if head.poll:
+            # A call that waits on something running repeats by design: it is stuck only if the
+            # trace ended while it was still waiting with nothing new.
+            return j != len(infos) - 1
         return False
 
     def _loop_finding(self, run: list[_CallInfo]) -> Finding:
         head = run[0]
+        if head.poll:
+            summary = (
+                f"{head.call.name!r} polled {len(run)} times in a row with an unchanged result, "
+                "and the trace ended still waiting"
+            )
+        else:
+            summary = (
+                f"{head.call.name!r} called {len(run)} times in a row with identical arguments "
+                "and an identical result"
+            )
         return Finding(
             rule=self.id,
             finding_type=self.finding_type,
             tier=ConfidenceTier.CANDIDATE,
-            summary=(
-                f"{head.call.name!r} called {len(run)} times in a row with identical arguments and "
-                f"no change in result state ({head.rclass})"
-            ),
+            summary=summary,
             evidence={
                 "step_indices": [c.call.index for c in run],
                 "tool": head.call.name,
                 "repeats": len(run),
                 "result_class": head.rclass,
+                "poll": head.poll,
             },
             possible_false_positive=True,
         )
@@ -175,11 +223,11 @@ class RedundantCallRule(Rule):
     def run(self, trace: Trace, registry: ToolRegistry) -> list[Finding]:
         infos = _analyze(trace)
         findings: list[Finding] = []
-        seen: dict[str, int] = {}  # fingerprint -> position of the earliest occurrence
+        seen: dict[str, int] = {}  # signature -> position of the earliest occurrence
         for pos, info in enumerate(infos):
-            prev = seen.get(info.fingerprint)
+            prev = seen.get(info.signature)
             if prev is None:
-                seen[info.fingerprint] = pos
+                seen[info.signature] = pos
                 continue
             if pos - prev == 1:
                 continue  # adjacent identical calls are loop territory (R4), not redundancy
@@ -190,10 +238,13 @@ class RedundantCallRule(Rule):
             # but disclose the unverified premise rather than silently assuming the tool is inert.
             undeclared = self._undeclared_between(infos, prev, pos, registry)
             findings.append(self._redundant_finding(infos[prev], info, undeclared))
-            seen[info.fingerprint] = pos  # chain to the most recent occurrence
-        disclosure = self.unknown_args_suppression(self._unknown_in_repeats(infos), "redundancy")
-        if disclosure is not None:
-            findings.append(disclosure)
+            seen[info.signature] = pos  # chain to the most recent occurrence
+        for disclosure in (
+            self.unknown_args_suppression(self._unknown_in_repeats(infos), "redundancy"),
+            self.unrecorded_result_suppression(self._unrecorded_in_repeats(infos), "redundancy"),
+        ):
+            if disclosure is not None:
+                findings.append(disclosure)
         return findings
 
     def _unknown_in_repeats(self, infos: list[_CallInfo]) -> list[ToolCall]:
@@ -201,7 +252,8 @@ class RedundantCallRule(Rule):
         once — a redundant repeat R5 can neither confirm nor rule out."""
         same_result: dict[tuple[str, str], list[ToolCall]] = {}
         for info in infos:
-            same_result.setdefault((info.call.name, info.result_fp), []).append(info.call)
+            if info.result_fp is not None:
+                same_result.setdefault((info.call.name, info.result_fp), []).append(info.call)
         return [
             call
             for calls in same_result.values()
@@ -209,6 +261,22 @@ class RedundantCallRule(Rule):
             for call in calls
             if call.args_unavailable is not None
         ]
+
+    def _unrecorded_in_repeats(self, infos: list[_CallInfo]) -> list[ToolCall]:
+        """Calls with no recorded result that repeat a non-adjacent identical call whose recorded
+        results (if any) agree — a redundant repeat R5 can neither confirm nor rule out."""
+        by_call: dict[tuple[str, str], list[_CallInfo]] = {}
+        for info in infos:
+            by_call.setdefault((info.call.name, info.args_key), []).append(info)
+        positions = {id(info): pos for pos, info in enumerate(infos)}
+        missing: list[ToolCall] = []
+        for group in by_call.values():
+            spots = [positions[id(info)] for info in group]
+            spread = len(group) > 1 and max(spots) - min(spots) > 1  # not just adjacent repeats
+            recorded = {info.result_fp for info in group if info.result_fp is not None}
+            if spread and len(recorded) <= 1:
+                missing.extend(info.call for info in group if info.result_fp is None)
+        return missing
 
     def _mutating_between(
         self, infos: list[_CallInfo], prev: int, pos: int, registry: ToolRegistry

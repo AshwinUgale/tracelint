@@ -5,11 +5,17 @@ fine (hashing a raw payload with timestamps/ids) and nothing ever looks identica
 hide too. Two derived notions are kept, for two different questions:
 
 - ``result_class`` — a **coarse** bucket (``error`` / ``empty`` / ``status:<state>`` / ``ok``)
-  that captures whether *state advanced*. A poll advances ``status:pending → status:completed``,
-  giving different classes at the advancing step — which is exactly how a legitimate poll is told
-  apart from a stuck loop.
+  that captures whether a *waiting* state advanced. A poll advances ``status:pending →
+  status:completed``, giving different classes at the advancing step — which is how a legitimate
+  poll is told apart from a stuck one.
 - ``result_fingerprint`` — a **fine** canonical form of the whole result, for "the identical call
-  produced the identical result" (redundancy).
+  produced the identical result". Both R4 and R5 compare repeats by it: on 10,541 real agent runs
+  (experiments/terminal_bench) comparing the coarse class instead read a growing build log or
+  training progress as "no change", and 55% of R4's loops were output that was progressing. A
+  missing result is never identical to anything (``None`` is unknown, not equal).
+
+:func:`is_poll_call` recognises a call that waits on something already running — empty input,
+``sleep``, or a tool named for waiting — which repeats by design.
 
 ``normalize_args`` canonicalizes arguments and strips volatile fields (timestamps, request ids) so
 semantically-identical calls compare equal.
@@ -42,6 +48,16 @@ VOLATILE_ARG_KEYS = {
 }
 
 _EMPTY_TEXT_RE = re.compile(r"^\s*(no results?|not found|none found|0 results?)\s*$", re.IGNORECASE)
+
+# A tool whose name says it waits (``wait_shell_command``, ``pollJob``, ``sleep``).
+_POLL_NAME_TOKENS = {"wait", "poll", "polling", "sleep"}
+_NAME_TOKEN_RE = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+")
+# An input that only waits: a ``sleep`` / ``wait`` command (``sleep 30 && tail build.log`` too).
+_WAIT_INPUT_RE = re.compile(r"^\s*(sleep|wait)\b", re.IGNORECASE)
+# Arguments that describe a call rather than feed it (Codex's ``summary: "Polling the build"``).
+_DESCRIPTIVE_ARG_KEYS = {
+    "summary", "description", "reason", "explanation", "thought", "title", "note", "comment",
+}
 
 
 def is_structured_error(result: ToolResult) -> bool:
@@ -109,3 +125,19 @@ def result_fingerprint(result: ToolResult | None) -> str:
 def is_waiting_class(rc: str) -> bool:
     """True if a coarse ``result_class`` denotes a still-in-progress (waiting) state."""
     return rc.startswith("status:") and rc.split(":", 1)[1].strip() in WAITING_STATES
+
+
+def is_poll_call(call: ToolCall) -> bool:
+    """True for a call that waits on something already running, so repeating it is the point:
+    a tool named for waiting (``wait_shell_command``), or a call whose every input argument is
+    empty (a terminal agent's ``keystrokes: ""``, Codex's ``chars: ""``) or a ``sleep`` / ``wait``
+    command. Descriptive arguments (``summary``, ``description``) are not input."""
+    tokens = {t.lower() for t in _NAME_TOKEN_RE.findall(call.name)}
+    if tokens & _POLL_NAME_TOKENS:
+        return True
+    inputs = [
+        v
+        for k, v in call.args.items()
+        if isinstance(v, str) and str(k).lower() not in _DESCRIPTIVE_ARG_KEYS
+    ]
+    return bool(inputs) and all(not v.strip() or _WAIT_INPUT_RE.match(v) for v in inputs)

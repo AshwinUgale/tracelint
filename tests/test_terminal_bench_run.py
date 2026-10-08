@@ -97,7 +97,9 @@ def test_a_tool_named_for_waiting_is_a_wait(tmp_path):
     assert loops[0]["is_wait"] == 1
 
 
-def test_a_wait_whose_screen_changes_is_told_apart(tmp_path):
+def test_a_wait_whose_screen_changes_is_not_a_loop(tmp_path):
+    # R4 used to group these (it compared a coarse result class); this study is what showed that
+    # was wrong. It now compares outputs, so a build making progress is not a loop.
     wait = {"keystrokes": "", "duration": 30}
     screens = ["Building... 10%", "Building... 40%", "Building... 90%"]
     turns = [_turn(2 + i, f"w{i}", wait, s, second=10 * i, name="bash_command")
@@ -105,27 +107,20 @@ def test_a_wait_whose_screen_changes_is_told_apart(tmp_path):
     turns.append(_turn(5, "d", {"keystrokes": "ls\n", "duration": 1}, "out", second=40,
                        name="bash_command"))
     row, loops, _ = analyze_trial(_write_trial(tmp_path, turns, reward=1.0), submission="H__M")
-
-    assert row["resolved"] == 1 and row["timed_out"] == 0
-    (loop,) = loops  # R4 compares a coarse result class, so it groups these three waits
-    assert loop["is_wait"] == 1
-    assert loop["distinct_results"] == 3  # ...but the output changed every time
-    assert loop["distinct_results_norm"] == 1  # only the numbers changed
-    assert loop["runs_to_end"] == 0 and row["n_wait_loops"] == 1
+    assert row["resolved"] == 1 and loops == [] and row["n_loops"] == 0
 
 
-def test_a_poll_that_differs_only_by_its_chunk_id_is_not_progress(tmp_path):
+def test_outputs_differing_only_by_ids_and_numbers_normalize_equal():
     # Codex-style polls of a running process: a fresh random chunk id and wall time each time,
-    # no new output — the same state, so not "changing".
-    poll = {"session_id": 7, "chars": ""}
+    # no new output — the same state.
+    from terminal_bench.run import _normalized
+
+    from tracelint.trace import ToolResult
+
     outputs = [f"Chunk ID: {cid}\nWall time: 5.00{i} seconds\nProcess running\nOutput:\n"
                for i, cid in enumerate(["23913d", "0b182f", "d2be97"])]
-    turns = [_turn(2 + i, f"p{i}", poll, out, second=5 * i, name="write_stdin")
-             for i, out in enumerate(outputs)]
-    _, loops, _ = analyze_trial(_write_trial(tmp_path, turns), submission="H__M")
-    (loop,) = loops
-    assert loop["is_wait"] == 1
-    assert (loop["distinct_results"], loop["distinct_results_norm"]) == (3, 1)
+    assert len({_normalized(ToolResult("c", text)) for text in outputs}) == 1
+    assert _normalized(ToolResult("c", "loss 1.2")) != _normalized(ToolResult("c", "done"))
 
 
 def test_naive_and_utc_timestamps_share_one_clock():
