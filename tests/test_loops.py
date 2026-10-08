@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tracelint import (
     ConfidenceTier,
     ToolMetadata,
@@ -11,6 +13,7 @@ from tracelint import (
     lint_trace,
 )
 from tracelint.rules import LoopRule, RedundantCallRule
+from tracelint.signatures import is_poll_call
 from tracelint.trace import ResultStatus, ToolCall, ToolResult
 
 
@@ -72,6 +75,64 @@ def test_waiting_run_that_never_advances_is_flagged():
         steps += _call_result(f"c{i}", "poll", {"job": 7}, {"status": "pending"})
     f = _r4(steps).active_findings[0]
     assert f.tier is ConfidenceTier.CANDIDATE
+
+
+def test_the_same_failing_command_with_the_same_error_is_a_loop():
+    # A genuinely stuck agent (seen on a real run 494 times until the timeout).
+    steps = []
+    for i in range(5):
+        steps += _call_result(
+            f"c{i}", "Bash", {"command": "make"}, "make: *** No targets specified.",
+            status=ResultStatus.ERROR,
+        )
+    (f,) = _r4(steps).active_findings
+    assert f.evidence["repeats"] == 5 and f.evidence["poll"] is False
+    assert "identical result" in f.summary
+
+
+def test_a_repeat_whose_output_progresses_is_not_a_loop():
+    # The same check returning a growing log / training progress: R4 used to compare only a coarse
+    # "ok" class and read this as no change (55% of its loops on 10k real agent runs).
+    steps = []
+    for i, pct in enumerate((10, 40, 90)):
+        steps += _call_result(f"c{i}", "Bash", {"command": "tail -n 1 train.log"}, f"epoch {pct}%")
+    assert _r4(steps).active_findings == []
+
+
+def test_identical_calls_with_no_recorded_result_are_disclosed_not_flagged():
+    # A batch that returns one observation (Terminus), or a server-side tool: no result per call.
+    steps = [ToolCall(f"c{i}", "web_search", {}) for i in range(3)]
+    report = _r4(steps)
+    assert report.active_findings == []
+    (disclosure,) = report.suppressions
+    assert disclosure.evidence["cause"] == "result_unrecorded"
+    assert disclosure.step_indices == [0, 1, 2]
+
+
+def test_a_poll_that_the_agent_moves_on_from_is_not_a_loop():
+    wait = {"keystrokes": "", "duration": 30}
+    steps = []
+    for i in range(4):
+        steps += _call_result(f"w{i}", "bash_command", wait, "New Terminal Output:\n")
+    steps += _call_result("x", "bash_command", {"keystrokes": "ls\n"}, "a.py")
+    assert _r4(steps).active_findings == []
+
+
+def test_a_poll_still_unchanged_when_the_trace_ends_is_flagged():
+    wait = {"keystrokes": "", "duration": 30}
+    steps = []
+    for i in range(4):
+        steps += _call_result(f"w{i}", "bash_command", wait, "New Terminal Output:\n")
+    (f,) = _r4(steps).active_findings
+    assert f.evidence["poll"] is True and "ended still waiting" in f.summary
+
+
+def test_a_tool_named_for_waiting_is_a_poll():
+    steps = []
+    for i in range(3):
+        steps += _call_result(f"w{i}", "wait_shell_command", {"command_id": 6}, "still running")
+    steps += _call_result("x", "read_file", {"path": "out.txt"}, "done")
+    assert _r4(steps).active_findings == []
 
 
 def test_r4_suppressed_below_threshold():
@@ -138,6 +199,33 @@ def test_adjacent_identical_is_not_redundant_here():
     steps = _call_result("c0", "get", {"id": 1}, {"v": 1})
     steps += _call_result("c1", "get", {"id": 1}, {"v": 1})
     assert _r5(steps).active_findings == []
+
+
+def test_repeats_with_no_recorded_result_are_disclosed_not_redundant():
+    steps = [ToolCall("c0", "web_search", {})]
+    steps += _call_result("c1", "get_settings", {"user": 9}, {"theme": "dark"})
+    steps += [ToolCall("c2", "web_search", {})]
+    report = _r5(steps)
+    assert report.active_findings == []
+    (disclosure,) = report.suppressions
+    assert disclosure.evidence["cause"] == "result_unrecorded"
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "poll"),
+    [
+        ("bash_command", {"keystrokes": "", "duration": 60}, True),  # terminal agent's wait
+        ("write_stdin", {"session_id": 4, "chars": "", "summary": "Polling the build"}, True),
+        ("Bash", {"command": "sleep 180 && tail build.log"}, True),
+        ("wait_shell_command", {"command_id": 6}, True),
+        ("pollJob", {"job": 7}, True),
+        ("Bash", {"command": "make"}, False),
+        ("web_search", {}, False),  # no input recorded: not evidence of a poll
+        ("get_status", {"job": 7}, False),
+    ],
+)
+def test_is_poll_call(name, args, poll):
+    assert is_poll_call(ToolCall("c", name, args)) is poll
 
 
 def test_r5_suppressed_with_one_call():

@@ -88,8 +88,14 @@ provenance in the contract so the high-confidence tier can apply.
 
 **Tier:** `candidate`
 
-The same call repeats with no change in state between repeats. Deliberate retries and polling are
-excluded — this is a stuck agent, not a legitimate wait.
+The same call (same tool, same arguments) runs 3+ times in a row and returns **the identical
+result** every time — the agent is repeating itself and learning nothing. A repeat whose output
+changed (a build log growing, training progress) is progress, not a loop. Polling is excluded: a
+tool declared `polling`, a waiting state (`status: pending`) that later advances, and a call that
+waits on something running (empty keystrokes, `sleep`, a tool named for waiting) — the last is
+flagged only if the trace ended while it was still waiting with nothing new. A call with no recorded
+result is never treated as identical to another; where it could have formed a loop, it is disclosed
+as not checked.
 
 **What to do:** add a termination condition or make each iteration make progress.
 
@@ -99,7 +105,8 @@ excluded — this is a stuck agent, not a legitimate wait.
 **Tier:** `candidate`
 
 An identical call returns an identical result with no state change in between — wasted work, not a
-loop.
+loop. A call with no recorded result is never treated as a repeat of another; it is disclosed as not
+checked.
 
 **What to do:** cache the first result or drop the duplicate call.
 

@@ -23,6 +23,7 @@ from typing import NamedTuple
 
 from tracelint.findings import (
     ARGS_UNKNOWN,
+    RESULT_UNRECORDED,
     SUPPRESS_NEEDS_CONTRACT,
     SUPPRESS_NOT_APPLICABLE,
     SUPPRESS_NOT_RECORDED,
@@ -114,6 +115,40 @@ class Rule(ABC):
                 "step_indices": [c.index for c in unknown],
                 "tools": tools,
                 "cause": ARGS_UNKNOWN,
+            },
+            suppressed_reason=reason,
+            suppressed_category=SUPPRESS_NOT_RECORDED,
+        )
+
+    def unrecorded_result_suppression(
+        self, calls: Iterable[ToolCall], checked: str
+    ) -> Finding | None:
+        """One suppression for the ``calls`` this rule could not check because the trace recorded
+        no result for them, or ``None`` if none.
+
+        The counterpart of :meth:`unknown_args_suppression` for results: a missing result is
+        unknown, so it can't be shown equal to another call's — and skipping the call silently would
+        read as a clean pass. Pass only the calls where a finding was otherwise possible.
+        """
+        missing = sorted({c.index: c for c in calls}.values(), key=lambda c: c.index)
+        if not missing:
+            return None
+        tools = sorted({c.name for c in missing})
+        n = len(missing)
+        reason = (
+            f"{n} call{'s' if n != 1 else ''} to {', '.join(repr(t) for t in tools)} not checked "
+            f"for {checked} — no result was recorded for them (e.g. an earlier call in a batch "
+            "that returns one observation, or a server-side tool)"
+        )
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.CANDIDATE,
+            summary=f"rule {self.id} suppressed for {n} call{'s' if n != 1 else ''}: {reason}",
+            evidence={
+                "step_indices": [c.index for c in missing],
+                "tools": tools,
+                "cause": RESULT_UNRECORDED,
             },
             suppressed_reason=reason,
             suppressed_category=SUPPRESS_NOT_RECORDED,

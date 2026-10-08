@@ -115,6 +115,13 @@ GLM-4.7.
 **Outcome.** P(run failed | stuck loop) = 0.65 [0.41, 0.83], n = 17, vs a 0.36 base (lift 1.8): the
 same direction as the SWE-bench study, on a small sample.
 
+**Follow-up: R4 fixed.** These results drove an R4 change (see CHANGELOG): it now compares the
+repeats' results exactly, treats a missing result as unknown, and counts a poll only if the trace
+ended while it was still waiting. Re-run on this corpus, R4 flags **31 loops instead of 2,622** — 19
+identical repeats (17 stuck on review, 2 an unchanged `tail` of a log) and 12 polls still waiting
+at the end — with no `changing` or `unrecorded` loops left. On the SWE-bench corpus it keeps 28 of
+the 29 loop runs (P(unresolved) 89%), so that study's loops were identical repeats.
+
 ## Limitations
 
 - Association, not causation. Keyless only: no per-harness tool contract, so contract rules

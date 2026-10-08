@@ -32,6 +32,10 @@ from typing import Any
 #: ``evidence["cause"]`` of a suppression caused by call arguments the trace did not record — a gap
 #: in the record that a ``tools.json`` cannot fill (unlike a missing schema or contract).
 ARGS_UNKNOWN = "arguments_unknown"
+#: ``evidence["cause"]`` of a suppression caused by a tool result the trace did not record (an
+#: earlier call in a batch that returns one observation, a server-side tool): a missing result is
+#: unknown, never the same as another call's.
+RESULT_UNRECORDED = "result_unrecorded"
 
 #: Why a rule abstained (``Finding.suppressed_category``), so a report advises precisely
 #: instead of a blanket "run init". ``ARGS_UNKNOWN`` above is one specific NOT_RECORDED cause.
