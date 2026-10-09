@@ -96,7 +96,9 @@ class LangfuseIntegration:
         rules: list[Rule] | None = None,
     ) -> LangfuseCheckResult:
         trace = self.fetch_trace(trace_id, tool_names=tool_names)
-        report = lint_trace(trace, rules or default_rules(), registry or ToolRegistry())
+        report = lint_trace(
+            trace, rules or default_rules(), registry if registry is not None else ToolRegistry()
+        )
         plans = plan_scores(trace, report, scope=trace_id)
         written = self._write(trace_id, plans) if write_back else 0
         return LangfuseCheckResult(trace=trace, report=report, plans=plans, written=written)

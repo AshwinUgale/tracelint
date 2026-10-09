@@ -6,6 +6,22 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: R13, off-limits source.** A benchmark publishes what an agent must not use: each task's
+  solution and tests, the task repository and its mirrors, the leaderboard's own pages. A contract
+  can now declare those sources beside `tools`
+  (`"off_limits": {"sources": ["tbench.ai", "terminal-bench"], "reason": "..."}`), and R13 flags a
+  call that requests one by URL (a fetch tool, a `curl` in a shell command) or searches for one (an
+  argument named `query`, `q`, `queries`, …), as a `hard_defect`. The evidence says what the call
+  got back (`outcome`), and a URL the prompt itself gave is marked a possible false positive.
+  - A source matches as a whole token, in any case, with `-`, `_` and a space alike; a URL is
+    percent-decoded first, so a search engine URL counts as a search.
+  - A source's name anywhere else in a call is not a request. On the Terminal-Bench 2.0
+    leaderboard runs it appears in 308 runs' arguments for ordinary reasons (a task whose input is
+    the string `"terminal-bench"`, calendar headers, canary strings), and R13 flags none of them.
+  - Opt-in: a contract without `off_limits` gets nothing new. A malformed `off_limits` is an input
+    error (exit 3). A `tools.json` can hold only the policy; that registry no longer reads as
+    "no registry" inside `lint_trace`, the DeepEval/promptfoo scorer and `langfuse check`.
+
 ## [0.11.0]
 
 Contracts, CI adoption, and precision measured on real agent runs.

@@ -110,6 +110,15 @@ Design constraints, so it stays in character with the rest of the tool:
 The two shapes are one theme — *a side effect nobody confirmed* — and should probably ship as one
 rule.
 
+### Protected paths (the other half of benchmark integrity)
+
+R13 flags a run that reaches a declared off-limits *source*. The local counterpart is a declared
+protected *path*: the run wrote to, or read, the verifier's tests or the reward file. It is deferred
+because the data hasn't shown it yet. On the Terminal-Bench 2.0 leaderboard runs, every write under
+`/tests` was harmless (agents rebuilding the grader's layout to test their own work), since the
+tests are copied in only after the agent finishes. Build it when a benchmark where the agent can
+reach its grader asks for it, declared the same way as `off_limits`.
+
 ## Exploratory
 
 ### Runtime enforcement (a different product, not a rule)

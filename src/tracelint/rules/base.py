@@ -166,7 +166,7 @@ def lint_trace(
     a crashing rule is a bug in the linter, not a finding about the trace, and hiding it would
     undermine the tool's credibility.
     """
-    registry = registry or ToolRegistry()
+    registry = registry if registry is not None else ToolRegistry()
     findings: list[Finding] = []
     coverage: list[Coverage] = []
     for rule in rules:
