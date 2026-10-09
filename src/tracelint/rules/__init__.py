@@ -12,6 +12,7 @@ from tracelint.rules.contract_drift import ContractDriftRule
 from tracelint.rules.error_handling import ErrorHandlingRule, ToolErrorEventRule
 from tracelint.rules.hallucination import HallucinatedArgRule
 from tracelint.rules.loops import LoopRule, RedundantCallRule
+from tracelint.rules.off_limits import OffLimitsSourceRule
 from tracelint.rules.preconditions import PreconditionRule
 from tracelint.rules.result_contract import ResultContractRule
 from tracelint.rules.schema_violation import SchemaViolationRule
@@ -34,6 +35,7 @@ _RULE_CLASSES: list[type[Rule]] = [
     ResultContractRule,
     ContractDriftRule,
     UnresolvedSideEffectRule,
+    OffLimitsSourceRule,
 ]
 
 

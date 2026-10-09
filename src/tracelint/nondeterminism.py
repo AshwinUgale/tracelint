@@ -106,5 +106,5 @@ def lint_runs(
     traces: list[Trace], rules: list, registry: ToolRegistry | None = None
 ) -> list[LintReport]:
     """Lint several traces (repeated runs of one scenario) with the same rules and registry."""
-    registry = registry or ToolRegistry()
+    registry = registry if registry is not None else ToolRegistry()
     return [lint_trace(trace, rules, registry) for trace in traces]

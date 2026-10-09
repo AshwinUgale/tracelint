@@ -12,6 +12,9 @@ A ``ToolSpec`` bundles the three things different rules need about a tool:
 
 If a tool is unknown to the registry, rules that need its schema/metadata **suppress** rather
 than guess — the registry is a source of ground truth, and missing ground truth fails closed.
+
+Beside the tools, a contract can declare ``off_limits``: sources the run must not reach, such as a
+benchmark's published solutions (R13). It belongs to the environment, not to one tool.
 """
 
 from __future__ import annotations
@@ -24,6 +27,50 @@ from typing import Any
 from tracelint.predicates import FailurePredicate
 
 _REQUIREMENT_KEYS = {"tool", "succeeded", "same"}
+_OFF_LIMITS_KEYS = {"sources", "reason"}
+
+
+@dataclass(frozen=True)
+class OffLimits:
+    """Sources the run must not reach (R13), declared beside ``tools`` in the contract::
+
+        "off_limits": {"sources": ["tbench.ai", "terminal-bench"],
+                       "reason": "the benchmark publishes each task's solution"}
+
+    A source is a domain (``tbench.ai``), a domain and path (``github.com/org/repo``) or a name
+    (``terminal-bench``). See :mod:`tracelint.rules.off_limits` for how one matches.
+    """
+
+    sources: tuple[str, ...]
+    reason: str | None = None
+
+    @classmethod
+    def from_dict(cls, data: Any) -> OffLimits:
+        example = '{"sources": ["tbench.ai"]}'
+        if not isinstance(data, dict):
+            raise ValueError(f"off_limits must be an object, e.g. {example}")
+        unknown = sorted(set(data) - _OFF_LIMITS_KEYS)
+        if unknown:
+            raise ValueError(
+                f"off_limits: unknown key(s) {', '.join(unknown)}; expected sources, reason"
+            )
+        sources = data.get("sources")
+        if (
+            not isinstance(sources, list)
+            or not sources
+            or not all(isinstance(s, str) and s.strip() for s in sources)
+        ):
+            raise ValueError(f"off_limits.sources must be a non-empty list of strings: {example}")
+        reason = data.get("reason")
+        if reason is not None and not isinstance(reason, str):
+            raise ValueError("off_limits.reason must be a string")
+        return cls(tuple(s.strip() for s in sources), reason or None)
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"sources": list(self.sources)}
+        if self.reason:
+            out["reason"] = self.reason
+        return out
 
 
 @dataclass(frozen=True)
@@ -237,8 +284,12 @@ def _extract_value_origins(
 class ToolRegistry:
     """Name → :class:`ToolSpec`. The rules' source of ground truth about tools."""
 
-    def __init__(self, tools: dict[str, ToolSpec] | None = None) -> None:
+    def __init__(
+        self, tools: dict[str, ToolSpec] | None = None, off_limits: OffLimits | None = None
+    ) -> None:
         self._tools: dict[str, ToolSpec] = dict(tools or {})
+        #: Sources the run must not reach (R13), or ``None`` when the contract declares none.
+        self.off_limits = off_limits
 
     def __contains__(self, name: object) -> bool:
         return name in self._tools
@@ -279,9 +330,16 @@ class ToolRegistry:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ToolRegistry:
-        """Load from ``{tool_name: {schema, metadata, ...}}`` or ``{"tools": {...}}``."""
+        """Load from ``{tool_name: {schema, metadata, ...}}`` or ``{"tools": {...}}``, either with
+        an optional top-level ``off_limits`` (R13)."""
         table = data.get("tools", data)
-        return cls({name: ToolSpec.from_dict(name, spec) for name, spec in table.items()})
+        if table is data:
+            table = {name: spec for name, spec in data.items() if name != "off_limits"}
+        off_limits = data.get("off_limits")
+        return cls(
+            {name: ToolSpec.from_dict(name, spec) for name, spec in table.items()},
+            off_limits=OffLimits.from_dict(off_limits) if off_limits is not None else None,
+        )
 
     @classmethod
     def load(cls, path: str | Path) -> ToolRegistry:

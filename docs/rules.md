@@ -192,3 +192,20 @@ action, is its own risk. A finding at the very end of a trace is flagged `possib
 (the trace may simply have been cut off).
 
 **What to do:** record the call's result so the outcome is known, or handle the failure explicitly.
+
+<a id="r13"></a>
+## R13 — off-limits source
+
+**Tier:** `hard_defect` (opt-in; declared with `off_limits` in `tools.json`)
+
+A call requested, or searched for, a source the contract rules out, such as a benchmark's published
+solutions, its task repository and mirrors, or the leaderboard's own pages. A call reaches a source
+through a URL in its arguments (a fetch tool's `url`, a `curl` in a shell command) or a search query
+(an argument named `query`, `q`, `queries`, `search_query`, `search_term` or `search_queries`). A
+source's name anywhere else in a call, such as a task's own data or a file header, is not a request
+for it. The evidence says what the call got back (`outcome`). When the prompt itself gave the exact
+URL, the finding is marked `possible_false_positive`.
+
+**What to do:** find out what the agent was looking for and whether it used it; if the run solved
+the task from an off-limits source, its result doesn't count. If a source is legitimately needed
+(the task names it), remove it from `off_limits` or ignore the finding with that reason.

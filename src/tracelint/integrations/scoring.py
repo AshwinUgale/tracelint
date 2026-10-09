@@ -61,7 +61,7 @@ def score_trace(
     pass and 0.0 on a fail.
     """
     chosen = rules if rules is not None else select_rules(None)
-    report = lint_trace(trace, chosen, registry or ToolRegistry())
+    report = lint_trace(trace, chosen, registry if registry is not None else ToolRegistry())
     report.fail_on = fail_on
     passed = report.exit_code == 0
     return TracelintScore(1.0 if passed else 0.0, passed, reason_for(report), report)

@@ -68,6 +68,34 @@ fail, or a failing test run, exits non-zero on a run that is going fine. An unkn
 to its text heuristic, as a review-only candidate, rather than assert an error. If you produce ATIF,
 `extra.is_error` on each observation result is the signal that turns R2a into a certain fact.
 
+## Check what a run reached (benchmark integrity)
+
+A benchmark publishes what an agent must not use: each task's solution and tests, the task
+repository and its mirrors, the leaderboard's own pages. Declare those sources in a `tools.json`
+(it needs no tools) and R13 flags any call that requests one by URL or searches for it:
+
+```json
+{
+  "off_limits": {
+    "sources": ["tbench.ai", "terminal-bench", "harbor-framework", "harborframework",
+                "laude-institute"],
+    "reason": "the benchmark publishes each task's solution and tests"
+  }
+}
+```
+
+```bash
+tracelint check jobs/<job>/*/agent/trajectory.json --format atif --tools off_limits.json --rules R13
+```
+
+That list is an example for Terminal-Bench, not an official one. A match is a `hard_defect` (exit
+2), with what the call got back in its evidence (`outcome`: returned, failed, or no result
+recorded). R13 looks only at URLs and search queries. On the Terminal-Bench 2.0 leaderboard runs,
+the benchmark's name appears in the arguments of hundreds of runs for ordinary reasons (a task whose
+input is the string `"terminal-bench"`, calendar files whose header names it, canary strings), and
+none of those is a request. A call recorded with no arguments, such as a server-side search whose
+query the producer didn't write down, has nothing to check.
+
 ## Validated on real trajectories
 
 The adapter was run on real trajectories from the public
