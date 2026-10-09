@@ -26,7 +26,7 @@ inputs:
     required: false
     default: ""
   version:
-    description: "tracelint release to install from PyPI instead (e.g. '0.10.0'). Default: the tracelint at the ref you pinned this action to (@v0.10.0 runs 0.10.0)."
+    description: "tracelint release to install from PyPI instead (e.g. '0.11.0'). Default: the tracelint at the ref you pinned this action to (@v0.11.0 runs 0.11.0)."
     required: false
     default: ""
   args:

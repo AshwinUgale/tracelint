@@ -6,6 +6,24 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.11.0]
+
+Contracts, CI adoption, and precision measured on real agent runs.
+
+- **Contracts:** four rules check what a tool's contract declares: R9 (preconditions), R10 (result
+  contract), R11 (contract drift) and R12 (unresolved side effect). `tracelint init --from-mcp`
+  writes a contract from an MCP `tools/list` response.
+- **CI adoption:** a project config, `--fail-on`, ignores with reasons, and a baseline with a
+  coverage ratchet, so a project whose traces already have findings can adopt tracelint without a
+  red build. `tracelint doctor` explains why rules abstained and names the fix.
+- **Inputs and integrations:** Harbor ATIF trajectories (`--format atif`), OTel GenAI tool
+  definitions, a DeepEval metric and a promptfoo assertion.
+- **Precision:** studies on ~10,500 Terminal-Bench 2.0 runs and on SWE-bench trajectories drove
+  fixes to R2a, R3 and R4, so those rules report far fewer findings on existing traces.
+
+The one change you may need to act on is marked **Behavior change**: JSON output's `findings` now
+holds only the active findings.
+
 - **R2a precision: an error is what a tool reports, not an error word anywhere.** A hand audit of
   R2a on real agent runs (`experiments/swebench/`, R2a re-audit) found two fixable sources of false
   errors, now gone:
@@ -60,8 +78,9 @@ additive features; the public API is not yet frozen).
   screen Terminus records per batch of calls is paired with the batch's last call. ATIF has no
   result-status field, so a failed tool is read only from the structured signals producers write
   (`extra.is_error`, `extra.tool_result_is_error`, Harbor's `[error] tool reported failure` line,
-  `extra.status`, an exit code of 0 for success) — a non-zero exit code stays unknown, since `grep`
-  with no match exits 1 on a healthy run. Tool definitions feed `tracelint init`; library users get
+  `extra.status`, an exit code of 0 for success) — any other non-zero exit code stays unknown,
+  since a command can exit non-zero on a healthy run (see R2a precision, above, for the search
+  and Ctrl-C conventions read as success). Tool definitions feed `tracelint init`; library users get
   `from_atif_trajectory`, `from_atif_trajectories`, `atif_tools_to_registry`, and
   `lint_atif_trajectory`. An ATIF file read as native (the default) is now an input error naming
   `--format atif`, where before it failed with an unrelated "unknown step type". Validated on real
@@ -118,8 +137,7 @@ additive features; the public API is not yet frozen).
   resolve it — each under a stable anchor. The SARIF `helpUri` now links a GitHub code-scanning
   alert straight to its rule's anchor (previously every rule pointed at the repository root), and
   the text report ends with a pointer to the page whenever it names a rule. A test keeps the page,
-  the shipped rule set, and the help links from drifting apart. (The remaining report-readability
-  item — mapping a SARIF result's `startLine` to the finding's trace step — is still open.)
+  the shipped rule set, and the help links from drifting apart.
 
 - **OTel-GenAI ingestion: read `gen_ai.tool.definitions`.** The OTel adapter already read tool
   schemas from a TOOL span's `tool.parameters` and from OpenInference `llm.tools.*.json_schema`;
@@ -171,8 +189,7 @@ additive features; the public API is not yet frozen).
   `side_effecting` drives the hard-defect rules, they are applied only when the server states
   them explicitly — a tool with no hint is left with a `_todo` to classify, not a guessed
   default, so a server can't manufacture a false red. Accepts the JSON-RPC envelope, a bare
-  `{"tools": ...}`, or a plain list. (First of the audit's MCP-native-contracts items; a
-  result-contract rule from `outputSchema` and a contract-drift check follow.)
+  `{"tools": ...}`, or a plain list.
 
 - **Call/result pairing is no longer O(n^2) on long traces.** `Trace.call_for`, `result_for`
   and `pairs` scanned the step list on every lookup, so the rules that pair calls with results
@@ -199,7 +216,8 @@ additive features; the public API is not yet frozen).
   instead of only the run id (keyless native traces no longer print a bare `: 0 finding(s)`), a run
   over several files gets a one-line cross-file **summary** header, and a short **tier legend**
   explains the `[hard_defect]` / `[hard_event]` / `[candidate]` labels.
-- **JSON output no longer folds suppressions or ignored findings into `findings`.** `findings` is
+- **Behavior change: JSON output no longer folds suppressions or ignored findings into
+  `findings`.** `findings` is
   now the active findings only, so its count matches the text report; suppressions (not checked) and
   ignored (accepted) findings are disclosed in their own `suppressions` and `ignored` arrays, and
   each report carries its `source` file path.
