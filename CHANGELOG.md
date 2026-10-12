@@ -6,6 +6,14 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.12.0]
+
+Benchmark integrity. R13 flags a run that requested, or searched for, a source its contract rules
+out, such as a benchmark's published solutions, its task repository and mirrors, or its leaderboard
+pages. A leaderboard can check what each submitted run reached, and an RL pipeline can drop runs
+that fetched their answers before they become training data. Nothing else changes: a contract
+without `off_limits` gets the same results as on 0.11.
+
 - **New: R13, off-limits source.** A benchmark publishes what an agent must not use: each task's
   solution and tests, the task repository and its mirrors, the leaderboard's own pages. A contract
   can now declare those sources beside `tools`
