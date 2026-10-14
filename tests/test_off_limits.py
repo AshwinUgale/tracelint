@@ -8,6 +8,7 @@ data, a file header, a canary string) is not a request for it. Opt-in: no ``off_
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 
@@ -68,6 +69,19 @@ def test_a_url_inside_a_shell_command_is_a_request():
     (f,) = _r13(_shell(f"curl -sL -o main.db {url}"), _ok()).active_findings
     assert f.evidence["field"] == "command" and f.evidence["source"] == "terminal-bench"
     assert f.evidence["matched"].startswith("https://huggingface.co/datasets/someone/")
+
+
+def test_a_long_run_of_letters_is_scanned_in_linear_time():
+    # A file write carrying a base64 blob: one long run of letters. The URL pattern once tried
+    # every start position to the end of the run, so 40 KB took half a minute and 1 MB, hours.
+    blob = "QUFB" * 250_000
+    write = ToolCall("c1", "Write", {"file_path": "/app/img.b64", "content": blob})
+    glued = _shell(f"echo {blob}https://www.tbench.ai/registry/task", call_id="c2")
+    start = time.perf_counter()
+    rep = _r13(write, _ok(), glued, _ok("c2"))
+    assert time.perf_counter() - start < 10
+    (f,) = rep.active_findings  # the blob alone is no request; the URL glued to one still is
+    assert f.evidence["call_id"] == "c2" and f.evidence["source"] == "tbench.ai"
 
 
 def test_a_search_naming_a_source_is_a_hard_defect():

@@ -6,6 +6,13 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **Fixed: R13 is linear in argument size.** The URL pattern let every position in a long run of
+  letters with no `://` (a base64 blob or a minified file being written) scan to the end of the
+  run, so R13 took about 30 s on a 40 KB argument and hours on a megabyte. A scheme is now at most
+  32 characters and a string without `://` is skipped: the same calls are flagged, and a megabyte
+  now takes well under a second. (A URL glued to the end of a longer run of letters keeps only
+  32 of them in `matched`.)
+
 ## [0.12.0]
 
 Benchmark integrity. R13 flags a run that requested, or searched for, a source its contract rules
