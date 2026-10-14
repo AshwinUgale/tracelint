@@ -125,7 +125,10 @@ _RULE_META: dict[str, dict[str, str]] = {
     },
     "R13": {
         "name": "OffLimitsSource",
-        "text": "A call requested or searched for a source the contract declares off-limits.",
+        "text": (
+            "A call requested or searched for a source the contract declares off-limits, or got "
+            "one back in its result."
+        ),
         "level": "error",
     },
 }

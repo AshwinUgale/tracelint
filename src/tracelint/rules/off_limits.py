@@ -31,6 +31,13 @@ call naming it. What the call got back is in the evidence (``outcome``), since a
 failed is still an attempt. When the exact URL was given in the prompt, the finding is marked a
 possible false positive: the task itself pointed there. Calls whose arguments the trace did not
 record can't be checked and are disclosed as such. A contract without ``off_limits`` adds nothing.
+
+A call can also be shown a source without naming it. Search engines index a benchmark's public
+task repository, so a search for a task's distinctive parameter names returns links to that task's
+solution. A call whose arguments named no source but whose result holds a URL naming one is an
+**exposure**, a ``hard_event`` (``signal`` ``result``): the run certainly saw the source, but
+whether it used it is for a reader to judge. A call with a request finding gets no second one for
+its result. A result is read for URLs only, never for the bare name.
 """
 
 from __future__ import annotations
@@ -46,7 +53,7 @@ from tracelint.findings import ConfidenceTier, Coverage, Finding
 from tracelint.rules.base import Rule
 from tracelint.rules.error_handling import _failed
 from tracelint.tools import OffLimits, ToolRegistry
-from tracelint.trace import Message, Role, ToolCall, Trace
+from tracelint.trace import Message, Role, ToolCall, ToolResult, Trace
 
 #: Argument names that hold a search query.
 QUERY_KEYS = frozenset({"query", "q", "queries", "search_query", "search_term", "search_queries"})
@@ -58,11 +65,12 @@ _URL_RE = re.compile(r"[a-z][a-z0-9+.-]{0,31}://[^\s'\"<>`]+", re.IGNORECASE)
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
 _SEPARATORS = re.compile(r"[-_\s]+")
 _TEXT_LIMIT = 300
+_LIST_LIMIT = 10  # URLs or queries listed in an exposure's evidence
 
 
 @dataclass(frozen=True)
 class _Match:
-    surface: str  # "url" or "query"
+    surface: str  # "url", "query", or "result"
     field: str | None  # the argument the text came from
     source: str  # the declared source it names
     text: str  # the URL or the query
@@ -83,11 +91,33 @@ def find_matches(args: Any, off_limits: OffLimits) -> list[_Match]:
     for field, text in _strings(args):
         if field is not None and field.lower() in QUERY_KEYS:
             found += [_Match("query", field, s, text) for s, p in patterns if p.search(text)]
-        for raw in _URL_RE.findall(text) if "://" in text else ():
-            url = raw.rstrip(".,;:)]}")
-            decoded = unquote_plus(url)
-            found += [_Match("url", field, s, url) for s, p in patterns if p.search(decoded)]
+        found += [_Match("url", field, s, url) for s, url in _named_urls(text, patterns)]
     return found
+
+
+def find_exposures(content: Any, off_limits: OffLimits) -> list[_Match]:
+    """Every URL in a tool result's ``content`` that names a declared source."""
+    patterns = [(s, source_pattern(s)) for s in off_limits.sources]
+    return [
+        _Match("result", field, s, url)
+        for field, text in _strings(content)
+        for s, url in _named_urls(text, patterns)
+    ]
+
+
+def _named_urls(
+    text: str, patterns: list[tuple[str, re.Pattern[str]]]
+) -> Iterator[tuple[str, str]]:
+    """Each URL in ``text`` that names a source, percent-decoded to match, with that source."""
+    for raw in _URL_RE.findall(text) if "://" in text else ():
+        url = raw.rstrip(".,;:)]}")
+        decoded = unquote_plus(url)
+        yield from ((s, url) for s, p in patterns if p.search(decoded))
+
+
+def _queries(args: Any) -> list[str]:
+    """The search queries among a call's arguments."""
+    return [t for f, t in _strings(args) if f is not None and f.lower() in QUERY_KEYS]
 
 
 def _strings(value: Any, field: str | None = None) -> Iterator[tuple[str | None, str]]:
@@ -103,7 +133,8 @@ def _strings(value: Any, field: str | None = None) -> Iterator[tuple[str | None,
 
 
 class OffLimitsSourceRule(Rule):
-    """R13: a call requested or searched for a source the contract's ``off_limits`` rules out."""
+    """R13: a call requested or searched for a source the contract's ``off_limits`` rules out,
+    or (a lower tier) got one back in its result without naming it."""
 
     id = "R13"
     finding_type = "off_limits_source"
@@ -128,13 +159,70 @@ class OffLimitsSourceRule(Rule):
         unknown: list[ToolCall] = []
         for call in trace.tool_calls():
             if call.args_unavailable is not None:
-                unknown.append(call)
-                continue
-            matches = find_matches(call.args, policy)
-            if matches:
-                findings.append(self._finding(trace, registry, call, matches, policy, prompt))
+                unknown.append(call)  # its request can't be checked; what it got back still can
+            else:
+                matches = find_matches(call.args, policy)
+                if matches:
+                    findings.append(self._finding(trace, registry, call, matches, policy, prompt))
+                    continue
+            result = trace.result_for(call)
+            exposed = find_exposures(result.content, policy) if result is not None else []
+            if result is not None and exposed:
+                findings.append(self._exposure(call, result, exposed, policy, prompt))
         skipped = self.unknown_args_suppression(unknown, "off-limits sources")
         return findings + ([skipped] if skipped else [])
+
+    def _exposure(
+        self,
+        call: ToolCall,
+        result: ToolResult,
+        matches: list[_Match],
+        policy: OffLimits,
+        prompt: str,
+    ) -> Finding:
+        first = matches[0]
+        urls = list(dict.fromkeys(m.text for m in matches))
+        queries = _queries(call.args) if call.args_unavailable is None else []
+        evidence: dict[str, Any] = {
+            "step_indices": [call.index, result.index],
+            "tool": call.name,
+            "call_id": call.call_id,
+            "signal": "result",
+            "source": first.source,
+            "matched": first.text[:_TEXT_LIMIT],
+        }
+        if len(urls) > 1:
+            evidence["urls"] = [u[:_TEXT_LIMIT] for u in urls[:_LIST_LIMIT]]
+            evidence["url_count"] = len(urls)
+        if queries:
+            evidence["query"] = queries[0][:_TEXT_LIMIT]
+        if len(queries) > 1:
+            evidence["queries"] = [q[:_TEXT_LIMIT] for q in queries[:_LIST_LIMIT]]
+        sources = list(dict.fromkeys(m.source for m in matches))
+        if len(sources) > 1:
+            evidence["sources"] = sources
+        if policy.reason:
+            evidence["reason"] = policy.reason
+        given = first.text in prompt
+        if given:
+            evidence["in_prompt"] = True
+        text = first.text if len(first.text) <= 120 else first.text[:117] + "..."
+        more = f" (and {len(urls) - 1} more)" if len(urls) > 1 else ""
+        asked = ""
+        if queries:
+            q = queries[0] if len(queries[0]) <= 80 else queries[0][:77] + "..."
+            asked = f" for {q!r}"
+        return Finding(
+            rule=self.id,
+            finding_type=self.finding_type,
+            tier=ConfidenceTier.HARD_EVENT,
+            summary=(
+                f"{call.name!r}{asked} got back {text!r}{more}, which names the off-limits "
+                f"source {first.source!r}"
+            ),
+            evidence=evidence,
+            possible_false_positive=given,
+        )
 
     def _finding(
         self,

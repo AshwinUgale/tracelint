@@ -6,6 +6,19 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: R13 reports exposure to an off-limits source.** Search engines index a benchmark's public
+  task repository, so a search that quotes a task's own parameter names can return links to its
+  solution without naming the benchmark. When a call's arguments named no declared source but its
+  result contains a URL naming one, R13 now reports a `hard_event` with `signal` `result`. The
+  evidence lists the matching URLs and the call's search query. A request stays a `hard_defect`, and
+  a call with a request finding gets no exposure finding as well. An exposure doesn't fail CI unless
+  you pass `--fail-on hard_event`. Results are read for URLs only, never for the bare name.
+  - On the Terminal-Bench 3 and 4 leaderboards, checked against the independent audit in
+    terminal-bench#2218, requests caught 49 of its 74 confirmed-use trials from the published
+    trajectories. Adding exposures catches 56. Of the 88 audited trials flagged by a request or an
+    exposure, 56 (64%) had confirmed use, against 49 of 61 (80%) for requests alone.
+  - Opt-in as before: a contract without `off_limits` gets nothing new. Ignores and CI baselines
+    keep exposures apart from requests (the signal is part of the key).
 - **Fixed: R13 is linear in argument size.** The URL pattern let every position in a long run of
   letters with no `://` (a base64 blob or a minified file being written) scan to the end of the
   run, so R13 took about 30 s on a 40 KB argument and hours on a megabyte. A scheme is now at most
