@@ -2,7 +2,8 @@
 
 The operator declares the sources once (``off_limits`` beside ``tools``); a call names one through a
 URL in its arguments or a search query. A benchmark's name anywhere else in a call (a task's own
-data, a file header, a canary string) is not a request for it. Opt-in: no ``off_limits``, no output.
+data, a file header, a canary string) is not a request for it. A call that named no source but got
+a URL naming one back is an exposure, a ``hard_event``. Opt-in: no ``off_limits``, no output.
 """
 
 from __future__ import annotations
@@ -38,8 +39,30 @@ def _shell(command, call_id="c1"):
     return ToolCall(call_id, "Bash", {"command": command})
 
 
+def _search(query, call_id="c1"):
+    return ToolCall(call_id, "web_search", {"query": query, "num_results": 5})
+
+
 def _ok(call_id="c1"):
     return ToolResult(call_id, "<html>...</html>", status=ResultStatus.OK)
+
+
+def _returned(content, call_id="c1"):
+    return ToolResult(call_id, content, status=ResultStatus.OK)
+
+
+# A search for a task's own parameter names, answered from the benchmark's indexed task repository.
+TASK_QUERY = '"hub_to_blade_fillet_arc_radius" "blade_profile_length"'
+SEARCH_RESULTS = (
+    f"# Web Search Results for {TASK_QUERY}\n\n"
+    "## 1. tasks/impeller/instruction.md\n"
+    "URL: https://github.com/acme/bench-tasks/blob/main/tasks/impeller/instruction.md\n\n"
+    "A semi-open impeller has ...\n\n"
+    "## 2. tasks/impeller/solution/solve.py\n"
+    "URL: https://github.com/acme/bench-tasks/blob/main/tasks/impeller/solution/solve.py\n\n"
+    "## 3. Impeller design basics\n"
+    "URL: https://example.com/impellers\n"
+)
 
 
 def test_r13_is_registered():
@@ -49,6 +72,9 @@ def test_r13_is_registered():
 def test_without_a_policy_the_rule_adds_nothing():
     rep = _r13(_fetch("https://www.tbench.ai/registry/task"), _ok(), registry=ToolRegistry())
     assert rep.findings == [] and rep.coverage == []
+    shown = ToolResult("c1", "URL: https://tbench.ai/registry/task", status=ResultStatus.OK)
+    rep = _r13(_search("sqlite wal recovery"), shown, registry=ToolRegistry())
+    assert rep.findings == []
 
 
 def test_a_fetch_of_an_off_limits_url_is_a_hard_defect():
@@ -193,6 +219,138 @@ def test_the_baseline_key_names_the_tool_argument_and_surface():
     (f,) = _r13(_fetch("https://tbench.ai/x"), _ok()).active_findings
     key = finding_key(f)
     assert key.tools == ("WebFetch",) and key.fields == ("url",) and key.signal == "url"
+
+
+# --- exposure: a source in what a call got back ----------------------------------------------
+
+
+def test_a_search_that_returns_a_source_it_did_not_name_is_an_exposure():
+    rep = _r13(_search(TASK_QUERY), _returned(SEARCH_RESULTS))
+    (f,) = rep.active_findings
+    assert f.rule == "R13" and f.finding_type == "off_limits_source"
+    assert f.tier is ConfidenceTier.HARD_EVENT and rep.exit_code == 0  # reported, not a CI failure
+    ev = f.evidence
+    assert ev["signal"] == "result" and ev["step_indices"] == [0, 1]
+    assert ev["tool"] == "web_search" and ev["call_id"] == "c1"
+    assert ev["source"] == "github.com/acme/bench-tasks" and ev["query"] == TASK_QUERY
+    assert ev["matched"].endswith("/tasks/impeller/instruction.md")
+    assert ev["urls"][1].endswith("/solution/solve.py") and ev["url_count"] == 2
+    assert ev["reason"] == POLICY["reason"] and "field" not in ev
+    assert "got back" in f.summary and "(and 1 more)" in f.summary and TASK_QUERY in f.summary
+    assert f.possible_false_positive is False
+
+
+def test_a_call_that_named_the_source_gets_no_second_finding_for_its_result():
+    page = _returned("See https://www.tbench.ai/registry/task/solution for the answer")
+    (f,) = _r13(_fetch("https://www.tbench.ai/registry/task"), page).active_findings
+    assert f.tier is ConfidenceTier.HARD_DEFECT and f.evidence["signal"] == "url"
+
+
+def test_requests_and_exposures_are_reported_in_call_order():
+    rep = _r13(
+        _search(TASK_QUERY),
+        _returned(SEARCH_RESULTS),
+        _fetch("https://github.com/acme/bench-tasks/tree/main/tasks/impeller/solution", "c2"),
+        _returned("import cadquery ...", "c2"),
+    )
+    assert [(f.evidence["call_id"], f.tier) for f in rep.active_findings] == [
+        ("c1", ConfidenceTier.HARD_EVENT),
+        ("c2", ConfidenceTier.HARD_DEFECT),
+    ]
+    assert rep.exit_code == 2
+
+
+def test_urls_in_a_structured_result_are_read():
+    hits = [
+        {"title": "SQLite WAL", "url": "https://sqlite.org/wal.html"},
+        {"title": "terminal bench task", "url": "https://example.org/terminal_bench/wal/solution"},
+    ]
+    (f,) = _r13(_search("sqlite wal recovery"), _returned({"results": hits})).active_findings
+    assert f.evidence["source"] == "terminal-bench" and f.evidence["signal"] == "result"
+    assert f.evidence["matched"] == "https://example.org/terminal_bench/wal/solution"
+    assert "urls" not in f.evidence  # one URL: matched says it all
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # The name with no URL: a canary string, a calendar header, a task's own data.
+        "# BENCHMARK DATA SHOULD NEVER APPEAR. terminal-bench-canary GUID 26b5c67b",
+        "PRODID:-//Terminal-Bench//Scheduler//EN",
+        "results for tbench.ai: none found",
+        # URLs that only look like a source.
+        "URL: https://nottbench.ai/page",
+        "URL: https://example.com/my-terminal-benchmark",
+        "URL: https://github.com/acme/bench-tasksuite",
+    ],
+)
+def test_a_result_without_a_url_naming_a_source_is_not_an_exposure(content):
+    assert _r13(_search("sqlite wal recovery"), _returned(content)).active_findings == []
+
+
+def test_a_percent_encoded_url_in_a_result_is_decoded():
+    shown = _returned("https://www.google.com/url?q=https%3A%2F%2Ftbench.ai%2Fregistry")
+    (f,) = _r13(_search("sqlite wal recovery"), shown).active_findings
+    assert f.evidence["source"] == "tbench.ai" and f.tier is ConfidenceTier.HARD_EVENT
+
+
+def test_an_exposure_from_a_non_search_call_has_no_query():
+    shown = _returned("Cloning into 'x'...\nremote: see https://tbench.ai/task for details")
+    (f,) = _r13(_shell("git clone https://example.com/x.git"), shown).active_findings
+    assert f.evidence["signal"] == "result" and "query" not in f.evidence
+    assert f.summary.startswith("'Bash' got back 'https://tbench.ai/task'")
+
+
+def test_every_query_of_a_multi_query_search_is_in_the_evidence():
+    call = ToolCall("c1", "web_search", {"queries": ["impeller blade fillet", "blade_root_radius"]})
+    (f,) = _r13(call, _returned(SEARCH_RESULTS)).active_findings
+    assert f.evidence["query"] == "impeller blade fillet"
+    assert f.evidence["queries"] == ["impeller blade fillet", "blade_root_radius"]
+
+
+def test_an_exposure_to_a_url_the_prompt_gave_is_a_possible_false_positive():
+    url = "https://github.com/acme/bench-tasks/blob/main/tasks/impeller/instruction.md"
+    rep = _r13(Message(Role.USER, f"Do not open {url}."), _search(TASK_QUERY), _returned(url))
+    (f,) = rep.active_findings
+    assert f.possible_false_positive is True and f.evidence["in_prompt"] is True
+
+
+def test_a_call_with_unrecorded_arguments_is_still_checked_for_exposure():
+    hidden = ToolCall("c1", "web_search", {}, args_unavailable="arguments not captured")
+    rep = _r13(hidden, _returned(SEARCH_RESULTS))
+    (f,) = rep.active_findings
+    assert f.tier is ConfidenceTier.HARD_EVENT and "query" not in f.evidence
+    (s,) = rep.suppressions  # the request side still couldn't be checked
+    assert s.evidence["cause"] == ARGS_UNKNOWN
+
+
+def test_a_call_with_no_result_has_no_exposure():
+    assert _r13(_search(TASK_QUERY)).active_findings == []
+
+
+def test_a_long_result_is_scanned_in_linear_time():
+    blob = "QUFB" * 250_000
+    shown = _returned(f"{blob} {blob}https://tbench.ai/registry/task")
+    start = time.perf_counter()
+    rep = _r13(_search("sqlite wal recovery"), shown)
+    assert time.perf_counter() - start < 10
+    (f,) = rep.active_findings
+    assert f.evidence["source"] == "tbench.ai" and f.evidence["signal"] == "result"
+
+
+def test_an_exposure_has_its_own_baseline_key():
+    (f,) = _r13(_search(TASK_QUERY), _returned(SEARCH_RESULTS)).active_findings
+    key = finding_key(f)
+    assert key.tools == ("web_search",) and key.fields == () and key.signal == "result"
+
+
+def test_an_exposure_gates_only_when_the_project_opts_into_events(tmp_path):
+    trace = build_trace("run", [_search(TASK_QUERY), _returned(SEARCH_RESULTS)])
+    (tmp_path / "trace.json").write_text(trace.to_json(), encoding="utf-8")
+    (tmp_path / "tools.json").write_text(json.dumps({"off_limits": POLICY}), encoding="utf-8")
+    args = ["check", str(tmp_path / "trace.json"), "--tools", str(tmp_path / "tools.json")]
+    assert main(args) == 0
+    assert main([*args, "--fail-on", "hard_event"]) == 1
 
 
 # --- the contract --------------------------------------------------------------------------

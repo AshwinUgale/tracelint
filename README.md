@@ -159,7 +159,7 @@ link there, one anchor per rule.
 | R10 | result contract — a tool's result violates the output JSON Schema its contract declares (e.g. MCP `outputSchema`) | `hard_event` (opt-in; only tools with an `output_schema`) |
 | R11 | contract drift — a tool's schema carried in the trace differs from the committed `tools.json` | `hard_event` (opt-in; needs an inline and a committed schema) |
 | R12 | unresolved side effect — a side-effecting call with no recorded outcome, or a failure nothing recovered | `candidate` (opt-in; per side-effecting tool) |
-| R13 | off-limits source — a call requested or searched for a source the contract rules out (e.g. a benchmark's published solutions) | `hard_defect` (opt-in; declared with `off_limits`) |
+| R13 | off-limits source — a call requested or searched for a source the contract rules out (e.g. a benchmark's published solutions), or got one back without naming it | `hard_defect`; `hard_event` for an exposure in a result (opt-in; declared with `off_limits`) |
 
 `hard_event` and `hard_defect` are orthogonal to the finding kind: a tool-error event is a
 `hard_event` from a structured signal (the span's or run's own error status, a LangChain
@@ -268,7 +268,9 @@ benchmark's published solutions, its task repository and mirrors, its leaderboar
 
 A call that names one in a URL (a fetch, a `curl`) or a search query is a `hard_defect`, whatever
 it got back. A source matches as a whole word in any case, with `-`, `_` and a space alike. Its name
-elsewhere in a call (a task's own data, a file header) is not a request and isn't flagged.
+elsewhere in a call (a task's own data, a file header) is not a request and isn't flagged. A call
+that named no source but got a URL naming one back (a search for a task's own wording that returns
+its solution) is an exposure, reported as a `hard_event`.
 
 The rules run against **one canonical trace schema**; a thin **adapter** translates each source's
 format into it, so the rules never change: `from_openai_messages`, `from_langfuse_trace`,

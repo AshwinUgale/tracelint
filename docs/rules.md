@@ -196,7 +196,8 @@ action, is its own risk. A finding at the very end of a trace is flagged `possib
 <a id="r13"></a>
 ## R13 — off-limits source
 
-**Tier:** `hard_defect` (opt-in; declared with `off_limits` in `tools.json`)
+**Tier:** `hard_defect` for a request; `hard_event` for an exposure (opt-in; declared with
+`off_limits` in `tools.json`)
 
 A call requested, or searched for, a source the contract rules out, such as a benchmark's published
 solutions, its task repository and mirrors, or the leaderboard's own pages. A call reaches a source
@@ -206,6 +207,24 @@ source's name anywhere else in a call, such as a task's own data or a file heade
 for it. The evidence says what the call got back (`outcome`). When the prompt itself gave the exact
 URL, the finding is marked `possible_false_positive`.
 
+**Exposure.** A call can be shown a source without naming it: search engines index a benchmark's
+public task repository, so a search that quotes a task's own parameter names can return links to
+that task's solution. When a call's arguments named no source but its result contains a URL naming
+one, R13 reports an exposure: a `hard_event` with `signal` `result`. The run certainly saw the
+source, but whether it used it is for you to judge, so an exposure doesn't fail CI unless you pass
+`--fail-on hard_event`. The evidence lists the matching URLs (`matched`, and `urls` with
+`url_count` when there are several) and the call's search query (`query`) if it had one. A call that
+already has a request finding gets no exposure finding as well. Results are read for URLs only,
+never for the bare name, and a call whose arguments weren't recorded is still checked for exposure.
+
+On the Terminal-Bench 3 and 4 leaderboards (15,990 trials, checked against an independent audit that
+found 74 trials with confirmed use of an off-limits source), requests caught 49 of the 74 from the
+published trajectories, and every trial they flagged was one the audit also judged relevant. Adding
+exposures raised that to 56 of 74. Of the 88 audited trials flagged by a request or an exposure, 56
+(64%) had confirmed use, against 49 of 61 (80%) for requests alone, which is why exposure is a lower
+tier.
+
 **What to do:** find out what the agent was looking for and whether it used it; if the run solved
-the task from an off-limits source, its result doesn't count. If a source is legitimately needed
-(the task names it), remove it from `off_limits` or ignore the finding with that reason.
+the task from an off-limits source, its result doesn't count. For an exposure, check whether the
+agent opened the link or reproduced what it pointed to. If a source is legitimately needed (the task
+names it), remove it from `off_limits` or ignore the finding with that reason.
