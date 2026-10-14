@@ -51,7 +51,10 @@ from tracelint.trace import Message, Role, ToolCall, Trace
 #: Argument names that hold a search query.
 QUERY_KEYS = frozenset({"query", "q", "queries", "search_query", "search_term", "search_queries"})
 
-_URL_RE = re.compile(r"[a-z][a-z0-9+.-]*://[^\s'\"<>`]+", re.IGNORECASE)
+# The scheme is capped at 32 characters: uncapped, a long run of letters with no "://" (a base64
+# blob, a minified file) made every start position scan to the end of the run — quadratic, hours
+# for a megabyte. Real schemes are short.
+_URL_RE = re.compile(r"[a-z][a-z0-9+.-]{0,31}://[^\s'\"<>`]+", re.IGNORECASE)
 _SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*://")
 _SEPARATORS = re.compile(r"[-_\s]+")
 _TEXT_LIMIT = 300
@@ -80,7 +83,7 @@ def find_matches(args: Any, off_limits: OffLimits) -> list[_Match]:
     for field, text in _strings(args):
         if field is not None and field.lower() in QUERY_KEYS:
             found += [_Match("query", field, s, text) for s, p in patterns if p.search(text)]
-        for raw in _URL_RE.findall(text):
+        for raw in _URL_RE.findall(text) if "://" in text else ():
             url = raw.rstrip(".,;:)]}")
             decoded = unquote_plus(url)
             found += [_Match("url", field, s, url) for s, p in patterns if p.search(decoded)]
