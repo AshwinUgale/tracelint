@@ -17,6 +17,9 @@ additive features; the public API is not yet frozen).
     terminal-bench#2218, requests caught 49 of its 74 confirmed-use trials from the published
     trajectories. Adding exposures catches 56. Of the 88 audited trials flagged by a request or an
     exposure, 56 (64%) had confirmed use, against 49 of 61 (80%) for requests alone.
+  - Outside an audited set, most exposures are incidental. On the Terminal-Bench 2.0 leaderboard,
+    exposures added 21 runs to the 7 that requests flagged. Most were searches doing the task's own
+    research whose results included the benchmark's page for that task.
   - Opt-in as before: a contract without `off_limits` gets nothing new. Ignores and CI baselines
     keep exposures apart from requests (the signal is part of the key).
 - **Fixed: R13 is linear in argument size.** The URL pattern let every position in a long run of

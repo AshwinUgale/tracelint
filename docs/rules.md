@@ -224,6 +224,12 @@ exposures raised that to 56 of 74. Of the 88 audited trials flagged by a request
 (64%) had confirmed use, against 49 of 61 (80%) for requests alone, which is why exposure is a lower
 tier.
 
+Outside an audited set, most exposures are incidental. On the Terminal-Bench 2.0 leaderboard (10,541
+runs), requests flagged 7 runs and exposures added 21 more. Most of those 21 came from searches
+doing the task's own research: a source tarball the task said to build, or a public leaderboard the
+task asked about. The benchmark's page for that task happened to be among the results. Read an
+exposure as "look here", not as a lookup.
+
 **What to do:** find out what the agent was looking for and whether it used it; if the run solved
 the task from an off-limits source, its result doesn't count. For an exposure, check whether the
 agent opened the link or reproduced what it pointed to. If a source is legitimately needed (the task
