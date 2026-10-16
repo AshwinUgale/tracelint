@@ -6,6 +6,16 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.13.0]
+
+R13 sees more of what a run reached, and handles any trace size. It now also reports an exposure:
+a declared source turning up in a call's result without the call naming it. Exposures are a
+lower-tier `hard_event`, measured against an independent audit of the Terminal-Bench 3 and 4
+leaderboards. Its URL scan, quadratic on long runs of letters in 0.12, is now linear. Nothing changes
+for a contract without `off_limits`. With one, request findings and their ignore and baseline keys
+are unchanged. Exposures arrive as new findings that don't fail CI unless you pass
+`--fail-on hard_event`.
+
 - **New: R13 reports exposure to an off-limits source.** Search engines index a benchmark's public
   task repository, so a search that quotes a task's own parameter names can return links to its
   solution without naming the benchmark. When a call's arguments named no declared source but its
