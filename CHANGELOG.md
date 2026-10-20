@@ -6,6 +6,21 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+- **New: record quality in `tracelint doctor`.** Rules judge what the agent did; these checks judge
+  whether the trace records it. They are format-neutral (`tracelint.record`) and never count against
+  the agent.
+  - **Measures:** results recorded, outcome recorded (a result says whether it succeeded), arguments
+    recorded, and reasoning recorded (heuristic: placeholder or empty assistant turns excluded).
+  - **Per trace:** runs that end on an unanswered call, subagent runs that were launched but not
+    exported (heuristic: by tool name), duplicate call ids, redacted values, and empty traces.
+  - `doctor` now lists unreadable files and keeps going.
+  - `--group-by dir|model` breaks the measures down; `--json PATH` writes the per-trace checks.
+  - `--fail-under NAME=PERCENT` exits 1 when a measure is below the threshold. Without it, `doctor`
+    stays advisory.
+  - On the Terminal-Bench 2.0 leaderboard (10,541 runs): 67.1% of tool calls had a recorded result,
+    3.5% of results said whether they succeeded, and 456 runs launched subagents whose runs aren't
+    in the export. See docs/record-quality.md.
+
 ## [0.13.0]
 
 R13 sees more of what a run reached, and handles any trace size. It now also reports an exposure:
