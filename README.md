@@ -304,6 +304,10 @@ has short, reproducible one-pagers, each validated on a **real captured trace**:
 - **Agent harnesses (benchmark and RL runs):**
   [Harbor / ATIF](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/atif.md) —
   one reader for every agent Harbor runs (Terminal-Bench and the datasets in its registry).
+- **Transcript scanning:** [Inspect Scout](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/inspect-scout.md)
+  — the rules as Scout scanners (`pip install "tracelint[scout]"`, then
+  `scout scan tracelint/tracelint`), over Inspect logs and everything Scout imports (Phoenix,
+  LangSmith, Logfire, Weave, MLflow, Claude Code, Harbor), with each finding citing its message.
 - **Eval suites (already running one?):** tracelint drops in as a deterministic, judge-free check —
   [DeepEval](https://github.com/AshwinUgale/tracelint/blob/main/docs/integrations/deepeval.md)
   (`TracelintMetric`, via `pip install "tracelint[deepeval]"`) or

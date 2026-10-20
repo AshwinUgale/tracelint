@@ -64,6 +64,20 @@ judge-free structural check beside your existing ones.
 pip install "tracelint[deepeval]"   # DeepEval; promptfoo is a Node tool and needs no extra
 ```
 
+## Inside Inspect Scout
+
+[Inspect Scout](https://meridianlabs-ai.github.io/inspect_scout) scans transcripts — Inspect eval
+logs, and the traces it imports from Phoenix, LangSmith, Logfire, Weave, MLflow, Claude Code and
+Harbor — with scanners. tracelint's rules ship as Scout scanners, so they run beside your other
+scanners and each finding links to its message in `scout view`:
+
+```bash
+pip install "tracelint[scout]"                       # Python 3.11+
+scout scan tracelint/tracelint -T ./logs              # add -S tools=tools.json for contract rules
+```
+
+See [inspect-scout.md](inspect-scout.md).
+
 ## What tracelint proves vs. suggests
 
 - **hard_defect** (fails CI, exit 2): schema violation (R1), a value only a failed call returned,

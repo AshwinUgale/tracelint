@@ -13,6 +13,7 @@ from tracelint.adapters.atif import (
     from_atif_trajectories,
     from_atif_trajectory,
 )
+from tracelint.adapters.inspect import from_inspect_messages, inspect_trace
 from tracelint.adapters.langfuse import from_langfuse_trace, observed_tool_names
 from tracelint.adapters.langsmith import from_langsmith_run
 from tracelint.adapters.openai import from_openai_messages, openai_tools_to_registry
@@ -28,4 +29,6 @@ __all__ = [
     "from_atif_trajectory",
     "from_atif_trajectories",
     "atif_tools_to_registry",
+    "from_inspect_messages",
+    "inspect_trace",
 ]

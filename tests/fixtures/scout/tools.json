@@ -1,0 +1,12 @@
+{
+  "tools": {
+    "get_order": {"schema": {"type": "object", "properties": {"order_id": {"type": "integer"}}, "required": ["order_id"]}},
+    "search_orders": {"schema": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}},
+    "get_tracking": {"schema": {"type": "object", "properties": {"order_id": {"type": "integer"}}, "required": ["order_id"]}},
+    "send_email": {
+      "schema": {"type": "object", "properties": {"to": {"type": "string"}, "body": {"type": "string"}}, "required": ["to", "body"]},
+      "metadata": {"side_effecting": true}
+    }
+  },
+  "off_limits": {"sources": ["answers.example.com"], "reason": "publishes the expected answers"}
+}
