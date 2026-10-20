@@ -199,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor = sub.add_parser(
         "doctor",
-        help="diagnose why rules couldn't run on a trace (instrumentation / contract gaps)",
+        help="check the traces' record quality and diagnose why rules couldn't run on them",
     )
     doctor.add_argument("traces", nargs="+", help="trace file(s): .json / .jsonl / a JSON array")
     doctor.add_argument(
@@ -211,6 +211,24 @@ def build_parser() -> argparse.ArgumentParser:
         choices=list(SUPPORTED_FORMATS),
         default=None,
         help="input format (default: the config's, else native)",
+    )
+    doctor.add_argument(
+        "--group-by",
+        dest="group_by",
+        choices=["model", "dir"],
+        default=None,
+        help="also break record quality down by model or by each trace file's folder",
+    )
+    doctor.add_argument(
+        "--json", dest="json_out", metavar="PATH", help="write the record checks as JSON to PATH"
+    )
+    doctor.add_argument(
+        "--fail-under",
+        dest="fail_under",
+        action="append",
+        metavar="NAME=PERCENT",
+        help="exit 1 when a record measure (results, outcome, arguments, reasoning) is below "
+        "PERCENT across the traces; repeatable. Without it doctor is advisory",
     )
     doctor.set_defaults(func=_cmd_doctor)
 
@@ -470,21 +488,84 @@ def _cmd_langfuse_check(args: argparse.Namespace) -> int:
     return result.report.exit_code
 
 
+def _top_folders(paths: list[str]) -> list[str]:
+    """Each path's first folder below the folder all of them share — per-harness or per-run layouts
+    (``runs/<harness>/<job>/<trial>/trajectory.json``) group by ``<harness>``."""
+    import os
+
+    parents = [os.path.abspath(os.path.dirname(p)) for p in paths]
+    try:
+        common = os.path.commonpath(parents)
+    except ValueError:  # different drives
+        return [os.path.basename(p) or "." for p in parents]
+    out = []
+    for parent in parents:
+        rel = os.path.relpath(parent, common)
+        out.append("." if rel == "." else Path(rel).parts[0])
+    return out
+
+
 def _cmd_doctor(args: argparse.Namespace) -> int:
     from tracelint.config import Config, find_config, load_config
+    from tracelint.record import (
+        below_thresholds,
+        check_records,
+        parse_thresholds,
+        render_record_quality,
+        summarize,
+    )
     from tracelint.report import render_diagnosis
     from tracelint.rules import default_rules
+    from tracelint.sources import OPENINFERENCE, OTEL
 
+    thresholds = parse_thresholds(args.fail_under or [])
     config_path = find_config()
     config = load_config(config_path) if config_path else Config()
     tools = args.tools or (str(config.tools) if config.tools else None)
     registry = ToolRegistry.load(tools) if tools else ToolRegistry()
     fmt = args.fmt or config.format
-    reports = [
-        lint_trace(trace, default_rules(), registry)
-        for trace, _path in load_sources(args.traces, fmt or "native")
-    ]
+    load_fmt = fmt or "native"
+    unreadable: list[str] = []
+    if load_fmt in (OPENINFERENCE, OTEL):
+        loaded = load_sources(args.traces, load_fmt)  # a run's spans can span files: all at once
+    else:
+        loaded = []
+        for path in args.traces:  # one bad file is a finding about the record, not a crash
+            try:
+                loaded.extend((trace, str(path)) for trace in load_source(path, load_fmt))
+            except (ValueError, OSError) as exc:
+                message = str(exc)
+                unreadable.append(message if str(path) in message else f"{path}: {message}")
+    if not loaded:
+        for line in unreadable:
+            print(f"tracelint doctor: {line}", file=sys.stderr)
+        return EXIT_INPUT_ERROR
+    reports = [lint_trace(trace, default_rules(), registry) for trace, _path in loaded]
+    groups = _top_folders([path for _t, path in loaded]) if args.group_by == "dir" else None
+    checks = check_records([trace for trace, _path in loaded], groups=groups)
+    if args.group_by == "model":
+        for check in checks:
+            check.group = check.model or "(no model recorded)"
+    summary = summarize(checks, unreadable=unreadable)
+    by_group = None
+    if args.group_by:
+        names = sorted({check.group or "" for check in checks})
+        by_group = {name: summarize(c for c in checks if (c.group or "") == name) for name in names}
+
     print(render_diagnosis(reports, fmt=fmt, has_tools=tools is not None))
+    print()
+    print(render_record_quality(summary, by_group))
+    if args.json_out:
+        payload = {
+            "summary": summary.to_dict(),
+            "groups": {k: v.to_dict() for k, v in (by_group or {}).items()},
+            "traces": [check.to_dict() for check in checks],
+        }
+        Path(args.json_out).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    failed = below_thresholds(summary, thresholds)
+    if failed:
+        print(f"\nBelow --fail-under: {'; '.join(failed)}")
+        return EXIT_GATE
     return EXIT_OK
 
 
