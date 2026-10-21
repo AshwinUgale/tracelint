@@ -30,12 +30,18 @@ additive features; the public API is not yet frozen).
     R8, R9, R10, R12, and R13 when the contract declares `off_limits`. `-S rules=` picks rules, and
     `-S min_tier=` drops lower tiers.
   - `tool_errors`, `tool_loops`, `redundant_calls` and `malformed_arguments` run one rule each.
+  - `record_quality` runs the record-quality checks behind `doctor` on each transcript. It judges
+    the record, not the agent. Its value is the record's issue codes (`results_missing`,
+    `ends_unanswered`, …), `[]` when there are none. The two heuristic checks, placeholder turns and
+    missing subagents, are marked as heuristic. A subagent Scout kept as an agent span counts as
+    recorded.
   - A result's value is the finding count. It is `None` when the rule could not check the
     transcript, never a silent zero. Each finding cites its messages (`[M5]`, linked in `scout
     view`), and the metadata carries the full evidence.
   - Scanned through Scout, 18 Terminal-Bench 2.0 trajectories got the same findings, tier by tier, as
     `tracelint check --format atif` on the same files. R13 through Scout flagged the same 12 of 25
-    integrity-pilot runs as the ATIF path, the 7 known requests among them.
+    integrity-pilot runs as the ATIF path, the 7 known requests among them. `record_quality`
+    reported the same issue codes as the ATIF path on all 43 of those trajectories.
   - See [docs/integrations/inspect-scout.md](docs/integrations/inspect-scout.md).
 - **New: a reader for Inspect's chat messages** (`from_inspect_messages`, `inspect_trace`), the model
   every Scout transcript uses. It reads server-side tool uses (a provider's web search) as calls and

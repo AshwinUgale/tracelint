@@ -53,8 +53,9 @@ print(rules[["transcript_id", "label", "value"]])
 | `tool_loops` | R4: the same call repeated with no progress | one result |
 | `redundant_calls` | R5: a call repeating an identical earlier call and result | one result |
 | `malformed_arguments` | R6: arguments the model emitted as invalid JSON | one result |
+| `record_quality` | not a rule: is the record complete? ([below](#record-quality-judging-the-record-not-the-agent)) | one result; `value` is a list of issue codes |
 
-Every scanner takes:
+The rule scanners take:
 
 - `tools`: a `tools.json` contract, as a path or its dict. `tracelint init` drafts one from a trace,
   and `tracelint init --from-mcp` from an MCP server's tool list.
@@ -65,9 +66,9 @@ Every scanner takes:
 rule can be named, including R2b, R3 and R11. Each rule is described in the
 [rule reference](../rules.md).
 
-## Results
+## Rule results
 
-Each result follows Scout's `grep_scanner`:
+Each rule scanner's result follows Scout's `grep_scanner`:
 
 - `value` is the number of findings at or above `min_tier`. It is `0` when there were none, and also
   when the rule has nothing to look at (R4 on a run with two calls). It is **`None` when the rule
@@ -90,9 +91,51 @@ Each result follows Scout's `grep_scanner`:
 `metadata` of these rows into columns: `metadata.rule`, `metadata.tiers`, `metadata.findings`, and
 so on. The single-rule scanners keep `metadata` as one JSON column.
 
+## Record quality: judging the record, not the agent
+
+The rule scanners judge what the agent did. `record_quality` asks something earlier: does the
+transcript record the run completely enough to trust those verdicts, or a judge's? It runs the
+[record-quality checks](../record-quality.md) behind `tracelint doctor`, one result per
+transcript, and never counts anything against the agent.
+
+```bash
+scout scan tracelint/record_quality -T ./transcripts
+```
+
+- `value` is the list of the record's issues, as codes. It is `[]` when there are none, the same
+  shape as a Scout multi-label answer. `scan_results_df` keeps the list as JSON text, so read it
+  with `json.loads`.
+
+  | Code | Meaning |
+  |---|---|
+  | `empty` | the transcript has no steps |
+  | `results_missing` | tool calls with no recorded result |
+  | `arguments_missing` | tool calls whose arguments were not recorded |
+  | `placeholder_turns` | assistant turns that are a placeholder line (`Executed Bash call_…`) instead of the agent's text. *Heuristic: known placeholder forms.* |
+  | `ends_unanswered` | the run stops on a call with no result, so the record may be truncated |
+  | `subagents_missing` | a subagent was launched (`Task`, `Agent`, `spawn_agent`, …) but its run is not in the transcript. *Heuristic: by tool name.* |
+  | `duplicate_call_ids` | two calls share an id, so results can't be matched to calls reliably |
+  | `redactions` | values a filter replaced (`[REDACTED]`) |
+
+- `explanation` gives one line per issue, in `doctor`'s words, with the heuristic ones marked
+  `(heuristic)` and the messages they concern cited, for example
+  `ends on a call with no result: [M10]`.
+- `metadata` holds the counts from `tracelint doctor --json` (`calls`, `results_recorded`,
+  `outcome_recorded`, `placeholder_turns`, `subagent_runs`, …), this transcript's `coverage`
+  percentages (`results`, `outcome`, `arguments`, `reasoning`), and `heuristic`, which lists the
+  codes present that rest on a heuristic.
+
+Scout keeps a subagent it imported, such as Claude Code's `Task`, as an `agent` span in the
+transcript's events, linked from the launching call. A launch whose span is there counts as a
+recorded run, so a complete Claude Code import is not reported as missing its subagents.
+
+Outcome coverage runs low on every Inspect transcript: Inspect records when a tool fails but never
+when it succeeds. That is a measure in the metadata, not an issue.
+
 ## What tracelint reads
 
-The scanners read the transcript's messages and its `tool` events. Inspect's chat messages map onto
+The scanners read the transcript's messages and its `tool` events (`record_quality` also reads
+its `span_begin` events, for subagents). Inspect's chat messages map onto
 tracelint's trace:
 
 - System, user and assistant text become messages, and so does assistant reasoning unless it is
@@ -141,6 +184,10 @@ All checks below ran Inspect Scout 0.6.0, importing and scanning through `scout 
   each. The scan ran with no errors. 145 tool errors came through as `hard_event`; reading the
   messages alone, all of them were candidates or missed. Those failures exist only on the
   transcript's tool events, which is why the scanners load events as well as messages.
+- **Record quality.** On the same 43 Harbor trajectories, `record_quality` reported the same issue
+  codes as `tracelint.record` run through the native ATIF reader, on every trajectory. On the
+  Claude Code sessions, the 12 `Task` subagents Scout kept as agent spans counted as recorded.
+  Without the span events, all 12 would have been reported missing.
 
 ## Scope
 

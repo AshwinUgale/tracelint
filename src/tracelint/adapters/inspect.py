@@ -153,9 +153,28 @@ def _event_errors(events: Iterable[Any] | None) -> dict[str, Any]:
     return errors
 
 
-def _server_tool_steps(block: Any) -> list[Step]:
+def subagent_calls(events: Iterable[Any] | None) -> set[str]:
+    """Ids of the tool calls whose subagent run the transcript's events record. Scout keeps a
+    subagent (Claude Code's ``Task``, an Inspect agent run as a tool) as an ``agent`` span, linked
+    from the launching call's ``tool`` event by ``agent_span_id``; a handoff (``agent``) runs in the
+    message thread itself."""
+    events = list(events or ())
+    spans = {
+        str(_get(e, "id")) for e in events if _get(e, "event") == "span_begin" and _get(e, "id")
+    }
+    recorded: set[str] = set()
+    for event in events:
+        if _get(event, "event") != "tool" or not _get(event, "id"):
+            continue
+        span = _get(event, "agent_span_id")
+        if (span and str(span) in spans) or _get(event, "agent"):
+            recorded.add(str(_get(event, "id")))
+    return recorded
+
+
+def _server_tool_steps(block: Any, fallback_id: str) -> list[Step]:
     """A server-side tool use (``tool_use`` content): the call and the result recorded with it."""
-    call_id = str(_get(block, "id") or "")
+    call_id = str(_get(block, "id") or fallback_id)
     args = tool_input_args(_get(block, "arguments"))
     call = ToolCall(
         call_id=call_id,
@@ -167,7 +186,7 @@ def _server_tool_steps(block: Any) -> list[Step]:
     return [call, _result(call_id, _get(block, "result"), _get(block, "error"))]
 
 
-def _assistant_steps(message: Any) -> list[Step]:
+def _assistant_steps(message: Any, position: int) -> list[Step]:
     """An assistant turn: its reasoning and text (in content order), server-side tool uses, then
     the client-side tool calls it requested."""
     steps: list[Step] = []
@@ -191,14 +210,15 @@ def _assistant_steps(message: Any) -> list[Step]:
                 steps.append(Message(Role.ASSISTANT, reasoning))
         elif kind == "tool_use":
             flush()
-            steps.extend(_server_tool_steps(block))
+            steps.extend(_server_tool_steps(block, f"inspect-{position}-use-{len(steps)}"))
     flush()
 
     for n, call in enumerate(_items(_get(message, "tool_calls"))):
         args, raw_text = _call_args(call)
         steps.append(
             ToolCall(
-                call_id=str(_get(call, "id") or f"inspect-call-{n}"),
+                # a call recorded without an id gets one unique in the trace, never a shared ""
+                call_id=str(_get(call, "id") or f"inspect-{position}-{n}"),
                 name=str(_get(call, "function") or ""),
                 args=args,
                 raw_text=raw_text,
@@ -243,7 +263,7 @@ def inspect_trace(
         role = str(_get(message, "role") or "").lower()
         new: list[Step]
         if role == "assistant":
-            new = _assistant_steps(message)
+            new = _assistant_steps(message, position)
             served = {s.call_id for s in new if isinstance(s, ToolResult)}  # server-side tool uses
             turn = [s for s in new if isinstance(s, ToolCall) and s.call_id not in served]
             text = _text(_get(message, "content"))

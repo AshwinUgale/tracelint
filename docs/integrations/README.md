@@ -74,6 +74,7 @@ scanners and each finding links to its message in `scout view`:
 ```bash
 pip install "tracelint[scout]"                       # Python 3.11+
 scout scan tracelint/tracelint -T ./logs              # add -S tools=tools.json for contract rules
+scout scan tracelint/record_quality -T ./logs         # is each transcript complete enough to trust?
 ```
 
 See [inspect-scout.md](inspect-scout.md).

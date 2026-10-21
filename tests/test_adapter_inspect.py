@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from tracelint.adapters import from_inspect_messages, inspect_trace
+from tracelint.adapters import from_inspect_messages, inspect_trace, subagent_calls
 from tracelint.findings import ConfidenceTier
 from tracelint.rules import lint_trace, select_rules
 from tracelint.trace import Message, ResultStatus, Role, ToolCall, ToolResult
@@ -240,3 +240,31 @@ def test_steps_are_canonical_types():
         [_assistant("a", [_call("c1", "x")]), _tool("t", "c1", "y")]
     )
     assert isinstance(trace.steps[0], ToolCall) and isinstance(trace.steps[1], ToolResult)
+
+
+def test_subagent_calls_are_launches_whose_run_the_events_record():
+    events = [
+        {"event": "tool", "id": "c1", "agent_span_id": "agent-c1"},
+        {"event": "span_begin", "id": "agent-c1", "type": "agent", "name": "general-purpose"},
+        {"event": "tool", "id": "c2", "agent_span_id": "agent-c2"},  # its span is not there
+        {"event": "tool", "id": "c3", "agent": "researcher"},  # a handoff, in the thread itself
+        {"event": "tool", "id": "c4"},
+    ]
+    assert subagent_calls(events) == {"c1", "c3"}
+    assert subagent_calls(None) == set()
+
+
+def test_calls_recorded_without_an_id_get_distinct_ids():
+    # e.g. a producer's server-side web_search_call with tool_call_id "" in two turns
+    trace = from_inspect_messages(
+        [
+            _assistant("a1", [_call("", "web_search", {"query": "x"})]),
+            _tool("t1", "", "r1", function="web_search"),
+            _assistant("a2", [_call("", "web_search", {"query": "y"})]),
+            _tool("t2", "", "r2", function="web_search"),
+        ]
+    )
+    first, second = trace.tool_calls()
+    assert first.call_id != second.call_id
+    assert trace.result_for(first).content == "r1"
+    assert trace.result_for(second).content == "r2"

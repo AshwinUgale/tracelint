@@ -12,13 +12,16 @@ from pathlib import Path
 
 import pytest
 
+from tracelint.adapters import from_inspect_messages
 from tracelint.contract import discover_mcp_contract
 from tracelint.integrations.scout import (
     CONTRACT_RULES,
     KEYLESS_RULES,
+    check_messages,
     lint_messages,
     resolve_rules,
 )
+from tracelint.record import check_record
 from tracelint.tools import ToolRegistry
 
 FIXTURES = Path(__file__).parent / "fixtures" / "scout"
@@ -172,3 +175,68 @@ def test_the_registry_module_imports_without_scout():
     # The inspect_ai entry point is installed with tracelint whether or not the [scout] extra is,
     # so the module Inspect imports must never fail for want of Scout.
     importlib.import_module("tracelint.integrations.scout._registry")
+
+
+# --- record quality -----------------------------------------------------------------------------
+
+
+def _incomplete_record():
+    """A transcript whose record has every structural gap ``record_quality`` reports: a call with
+    no result (the run stops on it), a web search recorded with broken arguments, a placeholder
+    turn, a reused call id, a redacted value, and two subagent launches of which Scout kept only
+    the first as an agent span."""
+    doc = json.loads((FIXTURES / "incomplete_record.json").read_text(encoding="utf-8"))
+    return doc["messages"], doc["events"]
+
+
+def test_record_quality_of_a_complete_record(transcript):
+    record = check_messages(transcript["messages"], events=transcript["events"])
+    assert record.value == []
+    assert record.explanation == "No record issues found (7 tool calls, 7 with a result)."
+    assert record.metadata["coverage"]["results"] == 100.0
+    # the three failures: Inspect has no field that records a success
+    assert record.metadata["outcome_recorded"] == 3
+
+
+def test_record_quality_reports_each_gap_with_its_messages():
+    messages, events = _incomplete_record()
+    record = check_messages(messages, events=events)
+    assert record.value == [
+        "results_missing",
+        "arguments_missing",
+        "placeholder_turns",
+        "ends_unanswered",
+        "subagents_missing",
+        "duplicate_call_ids",
+        "redactions",
+    ]
+    assert record.explanation.splitlines() == [
+        "1/6 calls have no result: [M10]",
+        "1/6 calls have no arguments: [M9]",
+        "1/1 assistant turns are placeholders (heuristic): [M2]",
+        "ends on a call with no result: [M10]",
+        "1 subagent run(s) not recorded (heuristic): [M4]",
+        "1 duplicate call id(s): [M7]",
+        "1 redacted value(s)",
+    ]
+    assert record.metadata["heuristic"] == ["placeholder_turns", "subagents_missing"]
+    assert record.metadata["subagent_runs"] == 1  # the span Scout kept counts as recorded
+    assert [c.message_id for c in record.citations] == ["a1", "a2", "a3", "a4", "a5"]
+
+
+def test_record_quality_without_the_subagent_spans():
+    messages, _ = _incomplete_record()
+    record = check_messages(messages)
+    assert "2 subagent run(s) not recorded (heuristic): [M4]" in record.explanation.splitlines()
+
+
+def test_record_quality_of_an_empty_transcript():
+    record = check_messages([])
+    assert record.value == ["empty"]
+    assert record.explanation == "empty: no steps"
+
+
+def test_record_issue_codes_match_doctors_phrases():
+    messages, events = _incomplete_record()
+    check = check_record(from_inspect_messages(messages, events=events))
+    assert [i.text for i in check.record_issues()] == check.issues()

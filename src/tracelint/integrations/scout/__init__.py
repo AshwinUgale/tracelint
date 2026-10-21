@@ -13,7 +13,8 @@ namespace through the ``inspect_ai`` entry point, so the Scout CLI finds them by
     scout scan tracelint/tracelint -T ./logs
     scout scan tracelint/tracelint -T ./logs -S tools=tools.json
 
-Scanners (all take ``tools`` and ``min_tier``; see :mod:`tracelint.integrations.scout.scanners`):
+Scanners (see :mod:`tracelint.integrations.scout.scanners`; the rule scanners take ``tools`` and
+``min_tier``):
 
 - ``tracelint`` — every selected rule in one pass. One result per rule, labelled with the rule's
   finding type (``tool_error_event``, ``loop``, ...), like Scout's ``grep_scanner`` with a dict of
@@ -22,10 +23,13 @@ Scanners (all take ``tools`` and ``min_tier``; see :mod:`tracelint.integrations.
   ``tools`` contract is given.
 - ``tool_errors`` (R2a), ``tool_loops`` (R4), ``redundant_calls`` (R5), ``malformed_arguments``
   (R6) — one rule each, one result.
+- ``record_quality`` — not a rule: whether the transcript records the run completely enough to
+  trust (:mod:`tracelint.record`). One result whose ``value`` is the record's issue codes, ``[]``
+  when there are none (:func:`check_messages`).
 
-Each result's ``value`` is the number of findings at or above ``min_tier`` (default: every tier),
-``0`` when there were none, and ``None`` when the rule could not check the transcript (the contract
-lacks what it needs, or the transcript did not record it) — never a silent clean pass. The
+Each rule result's ``value`` is the number of findings at or above ``min_tier`` (default: every
+tier), ``0`` when there were none, and ``None`` when the rule could not check the transcript (the
+contract lacks what it needs, or the transcript did not record it) — never a silent clean pass. The
 explanation lists each finding with the messages it cites (``[M3]``, numbered like Scout's own
 ``grep_scanner``), ``references`` link those messages, and ``metadata`` carries the rule id, the
 count per tier, each finding's evidence, coverage and what went unchecked.
@@ -42,11 +46,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from tracelint.adapters.inspect import inspect_trace
+from tracelint.adapters.inspect import inspect_trace, subagent_calls
 from tracelint.findings import SUPPRESS_NOT_APPLICABLE, ConfidenceTier, Coverage, Finding
+from tracelint.record import PLACEHOLDER, SUBAGENT_LAUNCH, check_record, summarize
 from tracelint.rules import Rule, lint_trace, select_rules
 from tracelint.tools import ToolRegistry
-from tracelint.trace import Trace
+from tracelint.trace import Role, ToolCall, Trace
 
 #: Rules that need nothing but the transcript.
 KEYLESS_RULES = ("R2a", "R4", "R5", "R6")
@@ -248,11 +253,112 @@ def lint_messages(
     ]
 
 
+# --- Record quality -----------------------------------------------------------------------------
+
+_RECORD_CITES = 10  # messages cited per record issue; the counts are in metadata
+
+
+@dataclass
+class RecordResult:
+    """A transcript's record quality, in the shape of a Scout ``Result``."""
+
+    value: list[str]
+    explanation: str
+    citations: list[Citation] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _record_steps(trace: Trace, recorded_subagents: set[str]) -> dict[str, list[int]]:
+    """The steps behind each record issue that points at particular steps, for citations."""
+    calls = trace.tool_calls()
+    seen: set[str] = set()
+    duplicates = []
+    for call in calls:
+        if call.call_id in seen:
+            duplicates.append(call.index)
+        seen.add(call.call_id)
+    last = trace.steps[-1] if trace.steps else None
+    return {
+        "results_missing": [c.index for c in calls if trace.result_for(c) is None],
+        "arguments_missing": [c.index for c in calls if c.args_unavailable is not None],
+        "placeholder_turns": [
+            m.index
+            for m in trace.messages()
+            if m.role is Role.ASSISTANT and PLACEHOLDER.match(m.content or "")
+        ],
+        "ends_unanswered": [last.index] if isinstance(last, ToolCall) else [],
+        "subagents_missing": [
+            c.index
+            for c in calls
+            if SUBAGENT_LAUNCH.search(c.name or "") and c.call_id not in recorded_subagents
+        ],
+        "duplicate_call_ids": duplicates,
+    }
+
+
+def check_messages(
+    messages: Iterable[Any],
+    *,
+    events: Iterable[Any] | None = None,
+    run_id: str = "inspect-run",
+) -> RecordResult:
+    """The record quality of a transcript (:mod:`tracelint.record`): is it complete enough for
+    the rules, or a judge, to trust? It judges the record, never the agent.
+
+    ``value`` is the codes of the record's issues (``results_missing``, ``ends_unanswered``, ...),
+    ``[]`` when there are none — the shape of a Scout multi-label answer. ``events`` are the
+    transcript's ``tool`` and ``span_begin`` events: a failure recorded there is an outcome, and a
+    subagent whose run Scout kept as an ``agent`` span is a recorded run, not a missing one.
+    """
+    events = list(events or ())
+    trace, positions = inspect_trace(messages, events=events, run_id=run_id)
+    recorded = subagent_calls(events)
+    launches = [c for c in trace.tool_calls() if SUBAGENT_LAUNCH.search(c.name or "")]
+    check = check_record(trace, subagent_runs=sum(c.call_id in recorded for c in launches))
+    issues = check.record_issues()
+    steps = _record_steps(trace, recorded)
+
+    citations: dict[int, Citation] = {}
+    lines = []
+    for issue in issues:
+        cited: dict[int, Citation] = {}
+        for i in steps.get(issue.code, []):
+            if positions[i] not in cited:
+                source = trace.steps[i].source
+                cited[positions[i]] = Citation(
+                    positions[i], source.observation_id if source else None
+                )
+        shown = [cited[p] for p in sorted(cited)][:_RECORD_CITES]
+        for c in shown:
+            citations.setdefault(c.position, c)
+        where = " ".join(c.cite for c in shown) + (" …" if len(cited) > len(shown) else "")
+        heuristic = " (heuristic)" if issue.heuristic else ""
+        lines.append(f"{issue.text}{heuristic}{': ' + where if where else ''}")
+    if not lines:
+        lines.append(
+            f"No record issues found ({check.calls} tool calls, {check.results_recorded} with a "
+            "result)."
+        )
+    metadata = {
+        **check.to_dict(),
+        "coverage": summarize([check]).coverage(),
+        "heuristic": [i.code for i in issues if i.heuristic],
+    }
+    return RecordResult(
+        [i.code for i in issues],
+        "\n".join(lines),
+        [citations[p] for p in sorted(citations)],
+        metadata,
+    )
+
+
 __all__ = [
     "CONTRACT_RULES",
     "KEYLESS_RULES",
     "Citation",
+    "RecordResult",
     "RuleResult",
+    "check_messages",
     "lint_messages",
     "resolve_contract",
     "resolve_rules",

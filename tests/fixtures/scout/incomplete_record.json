@@ -1,0 +1,33 @@
+{
+ "transcript_id": "synthetic-incomplete-record",
+ "source_type": "synthetic",
+ "messages": [
+  {"id": "u", "role": "user", "content": "Fix the failing test."},
+  {"id": "a1", "role": "assistant", "content": "Executed Bash call_1",
+   "tool_calls": [{"id": "c1", "function": "Bash", "arguments": {"cmd": "ls"}}]},
+  {"id": "t1", "role": "tool", "tool_call_id": "c1", "content": "a.py"},
+  {"id": "a2", "role": "assistant", "content": "",
+   "tool_calls": [
+    {"id": "c2", "function": "Task", "arguments": {"prompt": "investigate"}},
+    {"id": "c3", "function": "Task", "arguments": {"prompt": "review"}}
+   ]},
+  {"id": "t2", "role": "tool", "tool_call_id": "c2", "content": "found it"},
+  {"id": "t3", "role": "tool", "tool_call_id": "c3", "content": "looks fine"},
+  {"id": "a3", "role": "assistant", "content": "",
+   "tool_calls": [{"id": "c1", "function": "Read", "arguments": {"path": "a.py"}}]},
+  {"id": "t4", "role": "tool", "tool_call_id": "c1", "content": "token = [REDACTED]"},
+  {"id": "a4", "role": "assistant", "content": [
+   {"type": "tool_use", "tool_type": "web_search", "id": "ws", "name": "web_search",
+    "arguments": "{\"query\": ", "result": "no results"}
+  ]},
+  {"id": "a5", "role": "assistant", "content": "",
+   "tool_calls": [{"id": "c4", "function": "Bash", "arguments": {"cmd": "pytest"}}]}
+ ],
+ "events": [
+  {"event": "tool", "id": "c2", "function": "Task", "arguments": {"prompt": "investigate"},
+   "agent_span_id": "agent-c2"},
+  {"event": "span_begin", "id": "agent-c2", "type": "agent", "name": "general-purpose"},
+  {"event": "tool", "id": "c3", "function": "Task", "arguments": {"prompt": "review"},
+   "agent_span_id": "agent-c3"}
+ ]
+}

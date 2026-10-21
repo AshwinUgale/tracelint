@@ -26,6 +26,7 @@ from inspect_scout import (  # noqa: E402
 
 from tracelint.integrations.scout.scanners import (  # noqa: E402
     malformed_arguments,
+    record_quality,
     redundant_calls,
     tool_errors,
     tool_loops,
@@ -34,7 +35,14 @@ from tracelint.integrations.scout.scanners import (  # noqa: E402
 
 FIXTURES = Path(__file__).parent / "fixtures" / "scout"
 TOOLS = FIXTURES / "tools.json"
-SCANNERS = ("tracelint", "tool_errors", "tool_loops", "redundant_calls", "malformed_arguments")
+SCANNERS = (
+    "tracelint",
+    "tool_errors",
+    "tool_loops",
+    "redundant_calls",
+    "malformed_arguments",
+    "record_quality",
+)
 
 
 @pytest.fixture
@@ -98,6 +106,36 @@ def test_min_tier(transcript):
     assert _run(tool_loops(min_tier="hard_event"), transcript).value == 0
 
 
+def _incomplete_record() -> Transcript:
+    path = FIXTURES / "incomplete_record.json"
+    return Transcript.model_validate_json(path.read_text("utf-8"))
+
+
+def test_record_quality_on_scouts_objects(transcript):
+    clean = _run(record_quality(), transcript)
+    assert (clean.value, clean.label, clean.references) == ([], None, [])
+
+    record = _run(record_quality(), _incomplete_record())
+    assert record.value == [
+        "results_missing",
+        "arguments_missing",
+        "placeholder_turns",
+        "ends_unanswered",
+        "subagents_missing",  # c3: its tool event points at an agent span that is not there
+        "duplicate_call_ids",
+        "redactions",
+    ]
+    assert [(r.cite, r.id) for r in record.references] == [
+        ("[M2]", "a1"),
+        ("[M4]", "a2"),
+        ("[M7]", "a3"),
+        ("[M9]", "a4"),
+        ("[M10]", "a5"),
+    ]
+    assert record.metadata["heuristic"] == ["placeholder_turns", "subagents_missing"]
+    assert record.metadata["subagent_runs"] == 1
+
+
 def test_bad_arguments_fail_when_the_scanner_is_created():
     with pytest.raises(ValueError, match="unknown rule"):
         tracelint(rules=["R99"])
@@ -138,21 +176,29 @@ def test_the_scanners_are_registered_under_the_tracelint_namespace():
 def test_scan_end_to_end(transcript, tmp_path):
     async def write() -> None:
         async with transcripts_db(str(tmp_path / "db")) as db:
-            await db.insert([transcript])
+            await db.insert([transcript, _incomplete_record()])
 
     asyncio.run(write())
     status = scan(
-        scanners=[tracelint(tools=str(TOOLS)), tool_loops()],
+        scanners=[tracelint(tools=str(TOOLS)), tool_loops(), record_quality()],
         transcripts=transcripts_from(str(tmp_path / "db")),
         scans=str(tmp_path / "scans"),
         display="none",
     )
     assert status.complete
     frames = scan_results_df(status.location).scanners
-    rules = frames["tracelint"].set_index("label")
+    rules = frames["tracelint"]
+    rules = rules[rules["transcript_id"] == transcript.transcript_id].set_index("label")
     assert int(rules.loc["off_limits_source", "value"]) == 1
     assert rules.loc["loop", "metadata.rule"] == "R4"  # Scout spreads a result set's metadata
     assert frames["tracelint"]["scan_error"].isna().all()
-    (loop,) = frames["tool_loops"].itertuples()
+    loops = frames["tool_loops"]
+    (loop,) = loops[loops["transcript_id"] == transcript.transcript_id].itertuples()
     assert loop.value == 1
     assert [r["id"] for r in json.loads(loop.message_references)] == ["m-a2", "m-a3", "m-a4"]
+    records = frames["record_quality"].set_index("transcript_id")
+    assert records["scan_error"].isna().all()
+    assert set(records["value_type"]) == {"array"}  # the data frame keeps the list as JSON
+    assert json.loads(records.loc[transcript.transcript_id, "value"]) == []
+    issues = json.loads(records.loc["synthetic-incomplete-record", "value"])
+    assert "ends_unanswered" in issues and "subagents_missing" in issues

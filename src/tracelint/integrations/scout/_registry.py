@@ -14,6 +14,7 @@ from importlib.util import find_spec
 if find_spec("inspect_scout") is not None:
     from tracelint.integrations.scout.scanners import (  # noqa: F401 - imported to register
         malformed_arguments,
+        record_quality,
         redundant_calls,
         tool_errors,
         tool_loops,

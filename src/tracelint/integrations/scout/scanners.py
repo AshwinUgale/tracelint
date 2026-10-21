@@ -10,9 +10,10 @@ messages each finding is about. They are registered as ``tracelint/<name>`` thro
 
     scan([tracelint(tools="tools.json"), tool_loops()], transcripts=transcripts_from("./logs"))
 
-Every scanner takes ``tools`` (a ``tools.json`` path or its dict; optional) and ``min_tier``
+The rule scanners take ``tools`` (a ``tools.json`` path or its dict; optional) and ``min_tier``
 (``candidate`` / ``hard_event`` / ``hard_defect``: the lowest tier counted, default every tier).
-The result shapes are described in :mod:`tracelint.integrations.scout`.
+``record_quality`` judges the record rather than the agent and takes no arguments. The result
+shapes are described in :mod:`tracelint.integrations.scout`.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from tracelint.findings import ConfidenceTier
 from tracelint.integrations.scout import (
     Citation,
     RuleResult,
+    check_messages,
     lint_messages,
     resolve_contract,
     resolve_rules,
@@ -137,4 +139,33 @@ def malformed_arguments(tools: Tools = None, min_tier: str = "candidate") -> Sca
     return _scan_fn(["R6"], tools, min_tier, labelled=False)
 
 
-__all__ = ["malformed_arguments", "redundant_calls", "tool_errors", "tool_loops", "tracelint"]
+@scanner(messages="all", events=["tool", "span_begin"])
+def record_quality() -> Scanner[Transcript]:
+    """Record quality: is the transcript complete enough to trust? This judges the record, never
+    the agent — calls with no result or no arguments, a run that ends on an unanswered call,
+    duplicate call ids, redacted values, and (heuristics) placeholder turns and subagent runs that
+    were launched but not recorded. ``value`` is the issues' codes, ``[]`` when there are none."""
+
+    async def scan(transcript: Transcript) -> Result:
+        record = check_messages(
+            transcript.messages, events=transcript.events, run_id=transcript.transcript_id
+        )
+        references = [_reference(c, transcript) for c in record.citations]
+        return Result(
+            value=record.value,
+            explanation=record.explanation,
+            references=[r for r in references if r is not None],
+            metadata=record.metadata,
+        )
+
+    return scan
+
+
+__all__ = [
+    "malformed_arguments",
+    "record_quality",
+    "redundant_calls",
+    "tool_errors",
+    "tool_loops",
+    "tracelint",
+]
