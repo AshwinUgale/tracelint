@@ -6,6 +6,25 @@ additive features; the public API is not yet frozen).
 
 ## [Unreleased]
 
+## [0.14.0]
+
+Two additions, neither of which judges the agent differently.
+
+- **Record quality:** `tracelint doctor` now checks whether the traces are complete enough to trust,
+  for example whether results, outcomes, arguments and reasoning are recorded, or whether subagent
+  runs were exported.
+- **Inspect Scout:** tracelint runs as Inspect Scout scanners, reaching every trace source Scout
+  imports, with a new reader for Inspect's chat messages.
+
+Compatibility:
+- `tracelint check` and every rule give the same results as on 0.13: no rule or existing reader
+  changed.
+- `doctor` prints a new record-quality section. When one input file can't be read, `doctor` now
+  lists it and checks the rest instead of stopping with exit 3; it exits 3 only when nothing is
+  readable.
+- `doctor` stays advisory unless you pass the new `--fail-under`.
+- The Scout extra needs Python 3.11+, but the core does not.
+
 - **New: record quality in `tracelint doctor`.** Rules judge what the agent did; these checks judge
   whether the trace records it. They are format-neutral (`tracelint.record`) and never count against
   the agent.
