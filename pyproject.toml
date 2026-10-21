@@ -48,6 +48,10 @@ langfuse = ["langfuse>=3.0"]
 # DeepEval metric, so a team's existing DeepEval suite gets a deterministic structural check. The
 # pure core (score_trace) is dependency-free — this extra is only the SDK the metric subclasses.
 deepeval = ["deepeval>=1.0"]
+# The Inspect Scout integration: tracelint's rules as Scout scanners (`scout scan tracelint/...`),
+# registered through the `inspect_ai` entry point below. Scout needs Python 3.11+. The adapter and
+# the scanners' pure core are dependency-free — this extra is only Scout itself.
+scout = ["inspect_scout>=0.6"]
 # `tracelint.capture` — record an agent run to a lintable trace file. The base extra is just the
 # OpenTelemetry SDK (the uniform capture mechanism); each per-framework extra adds that framework's
 # stock OpenInference instrumentor, which capture wraps rather than reimplements.
@@ -65,6 +69,11 @@ dev = [
 
 [project.scripts]
 tracelint = "tracelint.cli:main"
+
+# Inspect's extension registry: `scout scan tracelint/<scanner>` loads this module, which registers
+# the scanners when Inspect Scout is installed and nothing otherwise.
+[project.entry-points.inspect_ai]
+tracelint = "tracelint.integrations.scout._registry"
 
 [project.urls]
 Homepage = "https://tracelint.com"

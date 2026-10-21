@@ -21,7 +21,7 @@ import json
 import re
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
 from tracelint.trace import Message, ResultStatus, Role, ToolCall, Trace
 
@@ -42,6 +42,16 @@ SUBAGENT_LAUNCH = re.compile(
 
 #: The coverage measures ``--fail-under`` accepts, as ``name=percent``.
 MEASURES = ("results", "outcome", "arguments", "reasoning")
+
+
+class RecordIssue(NamedTuple):
+    """One thing wrong with a record: a stable ``code``, the phrase ``doctor`` prints, and whether
+    it rests on a heuristic (placeholder text, a tool's name) rather than on the record's
+    structure."""
+
+    code: str
+    text: str
+    heuristic: bool = False
 
 
 @dataclass
@@ -77,30 +87,40 @@ class RecordCheck:
     def subagents_missing(self) -> int:
         return max(self.subagent_launches - self.subagent_runs, 0)
 
-    def issues(self) -> list[str]:
-        """What is wrong with this record, one phrase each (empty when nothing is)."""
+    def record_issues(self) -> list[RecordIssue]:
+        """What is wrong with this record, each with a stable code (empty when nothing is)."""
         out = []
         if self.empty:
-            out.append("empty: no steps")
+            out.append(RecordIssue("empty", "empty: no steps"))
         if self.calls and self.results_recorded < self.calls:
-            out.append(f"{self.calls - self.results_recorded}/{self.calls} calls have no result")
-        if self.calls and self.arguments_recorded < self.calls:
+            missing = self.calls - self.results_recorded
             out.append(
-                f"{self.calls - self.arguments_recorded}/{self.calls} calls have no arguments"
+                RecordIssue("results_missing", f"{missing}/{self.calls} calls have no result")
+            )
+        if self.calls and self.arguments_recorded < self.calls:
+            missing = self.calls - self.arguments_recorded
+            out.append(
+                RecordIssue("arguments_missing", f"{missing}/{self.calls} calls have no arguments")
             )
         if self.placeholder_turns:
-            out.append(
-                f"{self.placeholder_turns}/{self.assistant_turns} assistant turns are placeholders"
-            )
+            share = f"{self.placeholder_turns}/{self.assistant_turns}"
+            text = f"{share} assistant turns are placeholders"
+            out.append(RecordIssue("placeholder_turns", text, heuristic=True))
         if self.ends_unanswered:
-            out.append("ends on a call with no result")
+            out.append(RecordIssue("ends_unanswered", "ends on a call with no result"))
         if self.subagents_missing:
-            out.append(f"{self.subagents_missing} subagent run(s) not recorded")
+            text = f"{self.subagents_missing} subagent run(s) not recorded"
+            out.append(RecordIssue("subagents_missing", text, heuristic=True))
         if self.duplicate_call_ids:
-            out.append(f"{self.duplicate_call_ids} duplicate call id(s)")
+            text = f"{self.duplicate_call_ids} duplicate call id(s)"
+            out.append(RecordIssue("duplicate_call_ids", text))
         if self.redactions:
-            out.append(f"{self.redactions} redacted value(s)")
+            out.append(RecordIssue("redactions", f"{self.redactions} redacted value(s)"))
         return out
+
+    def issues(self) -> list[str]:
+        """What is wrong with this record, one phrase each (empty when nothing is)."""
+        return [issue.text for issue in self.record_issues()]
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)

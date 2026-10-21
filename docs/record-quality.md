@@ -34,6 +34,9 @@ And per trace:
 | redacted values | `[REDACTED]` / `<REDACTED_…>` markers: values a filter replaced, so analysis of them is unreliable |
 | empty traces, unreadable files | nothing usable. `doctor` lists each unreadable file and keeps going. |
 
+In [Inspect Scout](integrations/inspect-scout.md#record-quality-judging-the-record-not-the-agent),
+`scout scan tracelint/record_quality` runs the same checks on each transcript it scans or imports.
+
 `--group-by dir` breaks the measures down by the first folder below the inputs' common root, which
 is usually one per harness or per run. `--group-by model` breaks them down by the model the trace
 records.
